@@ -1,0 +1,90 @@
+import asyncio
+from unittest.mock import patch
+import pytest
+from terminal_hub.server import create_server
+
+
+def call(server, tool_name, args):
+    return asyncio.run(server._tool_manager.call_tool(tool_name, args))
+
+
+@pytest.fixture
+def workspace(tmp_path):
+    (tmp_path / ".terminal_hub" / "issues").mkdir(parents=True)
+    return tmp_path
+
+
+# ── check_auth ────────────────────────────────────────────────────────────────
+
+def test_check_auth_authenticated(workspace):
+    from terminal_hub.auth import TokenSource
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("terminal_hub.server.resolve_token", return_value=("mytoken", TokenSource.ENV)):
+        server = create_server()
+        result = call(server, "check_auth", {})
+    assert result["authenticated"] is True
+    assert result["source"] == "env"
+
+
+def test_check_auth_not_authenticated(workspace):
+    from terminal_hub.auth import TokenSource
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("terminal_hub.server.resolve_token", return_value=(None, TokenSource.NONE)):
+        server = create_server()
+        result = call(server, "check_auth", {})
+    assert result["authenticated"] is False
+    assert "options" in result
+    assert len(result["options"]) == 2
+
+
+# ── verify_auth ───────────────────────────────────────────────────────────────
+
+def test_verify_auth_success(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("terminal_hub.server.verify_gh_cli_auth", return_value=(True, "Verified.")):
+        server = create_server()
+        result = call(server, "verify_auth", {})
+    assert result["authenticated"] is True
+    assert result["source"] == "gh_cli"
+
+
+def test_verify_auth_failure(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("terminal_hub.server.verify_gh_cli_auth", return_value=(False, "Run: gh auth login")):
+        server = create_server()
+        result = call(server, "verify_auth", {})
+    assert result["authenticated"] is False
+    assert "options" in result
+
+
+# ── get_github_client ─────────────────────────────────────────────────────────
+
+def test_create_issue_no_repo_detected(workspace):
+    """Cover get_github_client path where token exists but no repo is found."""
+    from terminal_hub.auth import TokenSource
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("terminal_hub.server.resolve_token", return_value=("tok", TokenSource.ENV)), \
+         patch("terminal_hub.server.detect_repo", return_value=None), \
+         patch("os.environ.get", return_value=None):
+        server = create_server()
+        result = call(server, "create_issue", {"title": "x", "body": "y"})
+    assert result["error"] == "github_unavailable"
+
+
+# ── write failure paths ───────────────────────────────────────────────────────
+
+def test_update_project_description_write_failure(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("terminal_hub.server.write_doc_file", side_effect=OSError("disk full")):
+        server = create_server()
+        result = call(server, "update_project_description", {"content": "text"})
+    assert result["error"] == "write_failed"
+    assert "disk full" in result["message"]
+
+
+def test_update_architecture_write_failure(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("terminal_hub.server.write_doc_file", side_effect=OSError("disk full")):
+        server = create_server()
+        result = call(server, "update_architecture", {"content": "text"})
+    assert result["error"] == "write_failed"

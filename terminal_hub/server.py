@@ -3,7 +3,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from terminal_hub.auth import TokenSource, resolve_token
+from terminal_hub.auth import TokenSource, get_auth_options, resolve_token, verify_gh_cli_auth
 from terminal_hub.github_client import GitHubClient
 from terminal_hub.prompts import TERMINAL_HUB_INSTRUCTIONS
 from terminal_hub.workspace import detect_repo, init_workspace
@@ -42,5 +42,40 @@ def create_server() -> FastMCP:
     @mcp.prompt()
     def terminal_hub_instructions() -> str:
         return TERMINAL_HUB_INSTRUCTIONS
+
+    @mcp.tool()
+    def check_auth() -> dict:
+        """Check GitHub authentication status.
+        If not authenticated, presents login options to show the user.
+        Call this whenever a GitHub tool returns an auth error."""
+        token, source = resolve_token()
+        if token:
+            return {
+                "authenticated": True,
+                "source": source.value,
+                "message": f"Authenticated via {source.value.replace('_', ' ')}.",
+            }
+        return {
+            "authenticated": False,
+            "message": "No GitHub authentication found.",
+            "options": get_auth_options(),
+        }
+
+    @mcp.tool()
+    def verify_auth() -> dict:
+        """Verify GitHub CLI authentication after the user runs gh auth login.
+        Call this after the user reports they have completed gh auth login."""
+        success, message = verify_gh_cli_auth()
+        if success:
+            return {
+                "authenticated": True,
+                "source": "gh_cli",
+                "message": message,
+            }
+        return {
+            "authenticated": False,
+            "message": message,
+            "options": get_auth_options(),
+        }
 
     return mcp

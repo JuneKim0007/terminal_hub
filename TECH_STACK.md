@@ -47,27 +47,11 @@ Repo auto-detected from `git remote get-url origin`, overridable via `GITHUB_REP
 
 ---
 
-## Terminal UI
+## Workspace Setup
 
-### questionary
-**Role:** Renders keyboard-driven selection menus — arrow keys to navigate, Enter to confirm.
+Workspace setup (choosing Local / New Repo / Connect Repo) is handled entirely inside the Claude Code conversation via a dedicated `setup_workspace` MCP tool. When Claude detects no `.terminal_hub/config.yaml` exists, it calls `setup_workspace` with the user's chosen mode and optional repo info.
 
-**Why questionary:**
-- Purpose-built for interactive terminal menus
-- Actively maintained
-- Built on `prompt_toolkit`, which handles raw keyboard input natively on Windows, macOS, and Linux
-- Minimal dependency footprint — `prompt_toolkit` is pulled in automatically
-
-**Why not the alternatives:**
-
-| Library | Reason not chosen |
-|---------|-------------------|
-| `curses` | Requires `windows-curses` separately on Windows; low-level and verbose |
-| `InquirerPy` | No releases in 12+ months — effectively unmaintained |
-| `Textual` | Full-screen app framework; too heavy for simple selection menus |
-| `blessed` | Lower-level; not designed for interactive menus |
-
-**Fallback behavior:** If the terminal does not support interactive input (e.g. piped stdin, headless CI), questionary falls back to a numbered list the user can answer by typing. This ensures Docker and CI compatibility.
+There is no separate terminal UI process, no `questionary` dependency, and no separate `terminal-hub-setup` command. Claude presents the options as plain text in conversation and the user replies — matching how Claude Code hooks work natively.
 
 ---
 
@@ -111,7 +95,7 @@ Issue files use YAML front matter for structured metadata (title, GitHub URL, da
 |-------------|--------|
 | macOS | Fully supported |
 | Linux | Fully supported |
-| Windows (cmd / PowerShell) | Supported via prompt_toolkit winapi backend |
+| Windows (cmd / PowerShell) | Supported |
 | Windows WSL | Supported (treated as Linux) |
 | Docker | Supported in TTY mode (`docker run -it`) |
 

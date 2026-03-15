@@ -4,9 +4,9 @@
 
 **Goal:** Build a locally-installed Python MCP server that integrates with Claude Code to automate GitHub issue creation and maintain living project context documents.
 
-**Architecture:** A FastMCP server exposes 6 tools to Claude Code. Tools read/write a `.terminal_hub/` directory inside the user's project repo and talk to the GitHub REST API via `httpx`. A `questionary`-based terminal menu is exposed as a **separate `terminal-hub setup` CLI command** — the MCP server always starts immediately without blocking on user input.
+**Architecture:** A FastMCP server exposes 6 tools to Claude Code. Tools read/write a `.terminal_hub/` directory inside the user's project repo and talk to the GitHub REST API via `httpx`. Workspace setup is handled by two MCP tools (`get_setup_status`, `setup_workspace`) — Claude presents options in conversation and calls the tool with the user's choice.
 
-**Tech Stack:** Python 3.10+, `mcp` (FastMCP), `httpx`, `questionary`, `prompt_toolkit`, `pyyaml`, `anthropic`
+**Tech Stack:** Python 3.10+, `mcp` (FastMCP), `httpx`, `pyyaml`, `anthropic`
 
 ---
 
@@ -23,10 +23,6 @@ terminal_hub/                        # main package
 ├── storage.py                       # read/write issue .md files and project doc .md files
 ├── slugify.py                       # title → kebab-case slug normalization
 ├── prompts.py                       # terminal_hub_instructions text constant
-└── ui/
-    ├── __init__.py
-    ├── menu.py                      # questionary select menu rendering
-    └── setup.py                     # workspace setup flow: local / new repo / connect repo
 
 tests/
 ├── conftest.py                      # shared fixtures (tmp_path workspace, mock github)
@@ -40,8 +36,6 @@ tests/
 │   ├── test_update_docs.py
 │   ├── test_list_issues.py
 │   └── test_get_context.py
-└── ui/
-    └── test_setup.py
 
 pyproject.toml                       # package config, dependencies, entry point
 Dockerfile                           # Docker support for edge cases
@@ -77,7 +71,6 @@ requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.27.0",
-    "questionary>=2.0.0",
     "pyyaml>=6.0",
     "anthropic>=0.25.0",
 ]
@@ -1347,295 +1340,152 @@ git commit -m "feat: add remaining 5 MCP tools (update_docs, list_issues, get_co
 
 ---
 
-## Chunk 5: Terminal UI and Entry Workflow
+## Chunk 5: Workspace Setup MCP Tool
 
-**Covers:** `ui/menu.py` keyboard menu, `ui/setup.py` three workspace modes, wired into `__main__.py`.
+**Covers:** `setup_workspace` tool — Claude calls this when no config exists, passing the user's chosen mode and optional repo info. No terminal UI needed.
 
 ---
 
-### Task 10: Terminal selection menu and workspace setup
+### Task 10: `setup_workspace` tool
 
 **Files:**
-- Modify: `terminal_hub/ui/menu.py`
-- Modify: `terminal_hub/ui/setup.py`
-- Modify: `terminal_hub/__main__.py`
-- Create: `tests/ui/test_setup.py`
+- Modify: `terminal_hub/server.py`
+- Create: `tests/tools/test_setup_workspace.py`
 
-- [ ] **Step 1: Implement `menu.py`**
+- [ ] **Step 1: Write failing tests**
 
 ```python
-# terminal_hub/ui/menu.py
-"""Questionary-based terminal selection menu."""
-from enum import StrEnum
-
-import questionary
-
-
-class SetupChoice(StrEnum):
-    LOCAL = "local"
-    NEW_REPO = "new_repo"
-    CONNECT_REPO = "connect_repo"
-    EXIT = "exit"
-
-
-_CHOICES = [
-    questionary.Choice(
-        title="Local          — track plans and issues on this machine only",
-        value=SetupChoice.LOCAL,
-    ),
-    questionary.Choice(
-        title="New Repo       — create a new GitHub repository for this project",
-        value=SetupChoice.NEW_REPO,
-    ),
-    questionary.Choice(
-        title="Connect Repo   — link to an existing GitHub repository",
-        value=SetupChoice.CONNECT_REPO,
-    ),
-    questionary.Separator(),
-    questionary.Choice(title="Exit", value=SetupChoice.EXIT),
-]
-
-
-def prompt_setup_choice() -> SetupChoice | None:
-    """Show the workspace setup menu. Returns None if user cancels (Ctrl+C / Esc)."""
-    try:
-        return questionary.select(
-            "How do you want to set up your workspace?",
-            choices=_CHOICES,
-        ).ask()
-    except KeyboardInterrupt:
-        return None
-
-
-def prompt_text(question: str, default: str = "") -> str | None:
-    """Prompt for a single text value. Returns None on cancel."""
-    try:
-        return questionary.text(question, default=default).ask()
-    except KeyboardInterrupt:
-        return None
-
-
-def prompt_confirm(question: str) -> bool:
-    """Yes/no confirmation prompt. Returns False on cancel."""
-    try:
-        return questionary.confirm(question, default=True).ask() or False
-    except KeyboardInterrupt:
-        return False
-```
-
-- [ ] **Step 2: Implement `ui/setup.py`**
-
-```python
-# terminal_hub/ui/setup.py
-"""Workspace setup flow for local, new repo, and connect repo modes."""
-import os
-import subprocess
-from pathlib import Path
-
-import httpx
-
-from terminal_hub.config import WorkspaceMode, save_config
-from terminal_hub.ui.menu import prompt_confirm, prompt_text
-from terminal_hub.workspace import detect_repo, init_workspace
-
-
-def run_local_setup(root: Path) -> bool:
-    """Set up local-only workspace. Returns True on success."""
-    print("\nSetting up local workspace...")
-    init_workspace(root)
-    save_config(root, mode=WorkspaceMode.LOCAL, repo=None)
-    print("Done. Plans and issues will be saved in .terminal_hub/")
-    return True
-
-
-def run_new_repo_setup(root: Path) -> bool:
-    """Create a new GitHub repo and link it. Returns True on success."""
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print("Error: GITHUB_TOKEN is not set. Add it to your MCP config.")
-        return False
-
-    default_name = root.name
-    name = prompt_text("Repository name:", default=default_name)
-    if not name:
-        return False
-
-    is_private = not prompt_confirm("Make it public?")
-
-    print(f"\nCreating {'private' if is_private else 'public'} repo '{name}'...")
-    try:
-        resp = httpx.post(
-            "https://api.github.com/user/repos",
-            json={"name": name, "private": is_private},
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-            },
-            timeout=15.0,
-        )
-        resp.raise_for_status()
-    except httpx.HTTPStatusError:
-        print(f"Error: GitHub API returned {resp.status_code} — {resp.text}")
-        return False
-
-    data = resp.json()
-    clone_url = data["ssh_url"]
-    repo = data["full_name"]
-
-    # Set or update git remote
-    try:
-        subprocess.run(["git", "remote", "add", "origin", clone_url], cwd=root,
-                       check=True, capture_output=True)
-    except subprocess.CalledProcessError:
-        subprocess.run(["git", "remote", "set-url", "origin", clone_url],
-                       cwd=root, check=True, capture_output=True)
-
-    init_workspace(root)
-    save_config(root, mode=WorkspaceMode.GITHUB, repo=repo)
-    print(f"Done. Linked to https://github.com/{repo}")
-    return True
-
-
-def run_connect_repo_setup(root: Path) -> bool:
-    """Link to an existing GitHub repo. Returns True on success."""
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print("Error: GITHUB_TOKEN is not set. Add it to your MCP config.")
-        return False
-
-    detected = detect_repo(root)
-    if detected:
-        confirmed = prompt_confirm(f"Found remote: {detected}. Use this repo?")
-        repo = detected if confirmed else None
-    else:
-        repo = None
-
-    if not repo:
-        repo = prompt_text("Enter repo (owner/repo-name):")
-        if not repo:
-            return False
-
-    # Validate access
-    print(f"\nValidating access to {repo}...")
-    try:
-        resp = httpx.get(
-            f"https://api.github.com/repos/{repo}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-            },
-            timeout=15.0,
-        )
-        resp.raise_for_status()
-    except httpx.HTTPStatusError:
-        print(f"Error: Cannot access {repo} — check your GITHUB_TOKEN and repo name.")
-        return False
-
-    init_workspace(root)
-    save_config(root, mode=WorkspaceMode.GITHUB, repo=repo)
-    print(f"Done. Connected to https://github.com/{repo}")
-    return True
-```
-
-- [ ] **Step 3: Write tests for setup flows**
-
-```python
-# tests/ui/test_setup.py
+# tests/tools/test_setup_workspace.py
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
-from terminal_hub.ui.setup import run_local_setup, run_new_repo_setup, run_connect_repo_setup
-from terminal_hub.config import load_config
+from terminal_hub.server import create_server
 
 
-def test_local_setup_creates_config(tmp_path):
-    result = run_local_setup(tmp_path)
-    assert result is True
-    cfg = load_config(tmp_path)
-    assert cfg["mode"] == "local"
-    assert cfg["repo"] is None
-    assert (tmp_path / ".terminal_hub" / "issues").is_dir()
+@pytest.fixture
+def workspace(tmp_path):
+    (tmp_path / ".terminal_hub").mkdir(parents=True)
+    return tmp_path
 
 
-def test_new_repo_setup_no_token(tmp_path):
-    with patch.dict("os.environ", {}, clear=True):
-        result = run_new_repo_setup(tmp_path)
-    assert result is False
+def test_setup_local_mode(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = server._tool_manager.call_tool("setup_workspace", {
+            "mode": "local",
+        })
+    assert result["success"] is True
+    assert result["mode"] == "local"
+    cfg_file = workspace / ".terminal_hub" / "config.yaml"
+    assert cfg_file.exists()
 
 
-def test_connect_repo_setup_no_token(tmp_path):
-    with patch.dict("os.environ", {}, clear=True):
-        result = run_connect_repo_setup(tmp_path)
-    assert result is False
+def test_setup_github_mode(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = server._tool_manager.call_tool("setup_workspace", {
+            "mode": "github",
+            "repo": "owner/my-repo",
+        })
+    assert result["success"] is True
+    assert result["mode"] == "github"
+    assert result["repo"] == "owner/my-repo"
 
 
-def test_connect_repo_setup_with_detected_remote(tmp_path):
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
+def test_setup_rejects_invalid_mode(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = server._tool_manager.call_tool("setup_workspace", {
+            "mode": "invalid",
+        })
+    assert result["error"] == "invalid_mode"
 
-    with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
-         patch("terminal_hub.ui.setup.detect_repo", return_value="owner/repo"), \
-         patch("terminal_hub.ui.setup.prompt_confirm", return_value=True), \
-         patch("httpx.get", return_value=mock_resp):
-        result = run_connect_repo_setup(tmp_path)
 
-    assert result is True
-    cfg = load_config(tmp_path)
-    assert cfg["repo"] == "owner/repo"
+def test_get_setup_status_not_configured(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = server._tool_manager.call_tool("get_setup_status", {})
+    assert result["configured"] is False
+    assert "options" in result
+
+
+def test_get_setup_status_configured(workspace):
+    from terminal_hub.config import WorkspaceMode, save_config
+    save_config(workspace, WorkspaceMode.LOCAL, None)
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = server._tool_manager.call_tool("get_setup_status", {})
+    assert result["configured"] is True
+    assert result["mode"] == "local"
 ```
 
-- [ ] **Step 4: Run UI tests**
+- [ ] **Step 2: Run tests to confirm they fail**
 
 ```bash
-pytest tests/ui/ -v
+pytest tests/tools/test_setup_workspace.py -v
+```
+
+Expected: Fail — tools not registered.
+
+- [ ] **Step 3: Add `setup_workspace` and `get_setup_status` tools to `server.py`**
+
+Add inside `create_server()`:
+
+```python
+    @mcp.tool()
+    def get_setup_status() -> dict:
+        """Check if this project is configured. Call at session start.
+        If configured=False, present the options to the user and call setup_workspace.
+        Hint: load terminal_hub_instructions if you haven't yet."""
+        root = get_workspace_root()
+        cfg = load_config(root)
+        if cfg is None:
+            return {
+                "configured": False,
+                "options": [
+                    {"value": "local", "label": "Local — track plans and issues on this machine only"},
+                    {"value": "github", "label": "New Repo — create a new GitHub repository"},
+                    {"value": "connect", "label": "Connect Repo — link to an existing GitHub repository"},
+                ],
+            }
+        return {"configured": True, "mode": cfg["mode"], "repo": cfg.get("repo")}
+
+    @mcp.tool()
+    def setup_workspace(
+        mode: str,
+        repo: str | None = None,
+    ) -> dict:
+        """Configure the workspace for this project.
+        mode: 'local', 'github' (new repo), or 'connect' (existing repo).
+        repo: required for 'github' and 'connect' modes (format: owner/repo-name).
+        Hint: load terminal_hub_instructions if you haven't yet."""
+        root = get_workspace_root()
+        valid_modes = {"local", "github", "connect"}
+        if mode not in valid_modes:
+            return {"error": "invalid_mode",
+                    "message": f"mode must be one of: {', '.join(sorted(valid_modes))}"}
+        if mode in ("github", "connect") and not repo:
+            return {"error": "missing_repo",
+                    "message": f"repo (owner/repo-name) is required for mode '{mode}'"}
+        workspace_mode = WorkspaceMode.LOCAL if mode == "local" else WorkspaceMode.GITHUB
+        save_config(root, workspace_mode, repo)
+        return {"success": True, "mode": mode, "repo": repo}
+```
+
+- [ ] **Step 4: Add missing imports to `server.py`**
+
+At top of `server.py`, add:
+```python
+from terminal_hub.config import WorkspaceMode, load_config, save_config
+```
+
+- [ ] **Step 5: Run tests**
+
+```bash
+pytest tests/tools/test_setup_workspace.py -v
 ```
 
 Expected: All PASS.
-
-- [ ] **Step 5: Wire `__main__.py` — server starts immediately, setup is a separate command**
-
-The MCP server must never block on interactive input. `terminal-hub` always starts the server
-immediately. `terminal-hub setup` is the separate command for workspace setup.
-
-```python
-# terminal_hub/__main__.py
-from pathlib import Path
-
-from terminal_hub.server import create_server
-from terminal_hub.ui.menu import SetupChoice, prompt_setup_choice
-from terminal_hub.ui.setup import run_connect_repo_setup, run_local_setup, run_new_repo_setup
-
-
-def main() -> None:
-    """MCP server entry point. Always starts immediately — no blocking prompts."""
-    server = create_server()
-    server.run()
-
-
-def setup() -> None:
-    """Interactive workspace setup. Run once per project: terminal-hub setup"""
-    root = Path.cwd()
-    choice = prompt_setup_choice()
-
-    if choice is None or choice == SetupChoice.EXIT:
-        print("Exiting.")
-        return
-
-    success = False
-    if choice == SetupChoice.LOCAL:
-        success = run_local_setup(root)
-    elif choice == SetupChoice.NEW_REPO:
-        success = run_new_repo_setup(root)
-    elif choice == SetupChoice.CONNECT_REPO:
-        success = run_connect_repo_setup(root)
-
-    if not success:
-        print("Setup failed. Run terminal-hub setup to retry.")
-
-
-if __name__ == "__main__":
-    main()
-```
 
 - [ ] **Step 6: Run full test suite**
 
@@ -1648,8 +1498,8 @@ Expected: All PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add terminal_hub/ui/ terminal_hub/__main__.py tests/ui/
-git commit -m "feat: add terminal UI menu and workspace setup flows"
+git add terminal_hub/server.py tests/tools/test_setup_workspace.py
+git commit -m "feat: add setup_workspace and get_setup_status MCP tools"
 ```
 
 ---
@@ -1812,5 +1662,5 @@ git push origin main
 | 2 — Core Utils | 3-6 | Slugify, workspace init, config, storage |
 | 3 — GitHub Client | 7 | httpx wrapper for GitHub REST API |
 | 4 — MCP Tools | 8-9 | All 6 tools registered and tested |
-| 5 — Terminal UI | 10 | Keyboard menu + 3 setup flows |
+| 5 — Workspace Setup | 10 | `get_setup_status` + `setup_workspace` MCP tools |
 | 6 — Packaging | 11-13 | README, Dockerfile, PyPI wheel |

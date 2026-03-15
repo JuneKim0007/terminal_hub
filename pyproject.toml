@@ -23,3 +23,11 @@ packages = ["terminal_hub"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=terminal_hub --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["terminal_hub"]
+omit = ["terminal_hub/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true

@@ -98,6 +98,22 @@ def test_client_sets_auth_header():
     assert client._client.headers["Authorization"] == "Bearer my-token"
 
 
+def test_parse_error_429():
+    err = parse_error(429, "rate limit exceeded")
+    assert err["error"] == "rate_limited"
+    assert "rate" in err["message"].lower() or "rate" in err["suggestion"].lower()
+
+
+def test_create_issue_timeout_raises_with_suggestion():
+    import httpx
+    client = make_client()
+    with patch.object(client._client, "post", side_effect=httpx.TimeoutException("timed out")):
+        with pytest.raises(GitHubError) as exc_info:
+            client.create_issue(title="x", body="y", labels=[], assignees=[])
+    assert exc_info.value.error_code == "timeout"
+    assert exc_info.value.suggestion is not None
+
+
 def test_github_error_to_dict():
     err = GitHubError("something failed", error_code="auth_failed", suggestion="fix your token")
     d = err.to_dict()

@@ -101,6 +101,16 @@ def test_resolve_slug_collision_increments(workspace):
     assert resolve_slug(workspace, "fix-bug") == "fix-bug-2"
 
 
+def test_read_issue_frontmatter_returns_none_when_missing(workspace):
+    assert read_issue_frontmatter(workspace, "no-such-slug") is None
+
+
+def test_read_issue_frontmatter_returns_none_when_no_frontmatter(workspace):
+    path = workspace / ".terminal_hub" / "issues" / "plain.md"
+    path.write_text("# Just a heading\nNo front matter here.")
+    assert read_issue_frontmatter(workspace, "plain") is None
+
+
 def test_resolve_slug_multiple_collisions(workspace):
     issues = workspace / ".terminal_hub" / "issues"
     (issues / "fix-bug.md").write_text("x")

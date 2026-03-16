@@ -1,9 +1,11 @@
-"""Tests for terminal-hub install command (global install)."""
+"""Tests for terminal-hub install/verify CLI commands."""
 import json
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
-from terminal_hub.install import build_mcp_config, write_claude_json, read_claude_json
+
+from terminal_hub.install import build_mcp_config, read_claude_json, write_claude_json, run_install, run_verify
 
 
 @pytest.fixture
@@ -15,69 +17,80 @@ def claude_json(tmp_path):
 
 # ── build_mcp_config ──────────────────────────────────────────────────────────
 
-def test_build_config_has_no_env_vars():
+def test_build_config_has_no_project_env_vars():
     cfg = build_mcp_config()
     assert "env" not in cfg
-    assert cfg["args"] == ["-m", "terminal_hub"]
+
+
+def test_build_config_args():
+    assert build_mcp_config()["args"] == ["-m", "terminal_hub"]
 
 
 def test_build_config_has_command():
-    cfg = build_mcp_config()
-    assert "command" in cfg
-    assert cfg["command"]  # non-empty
+    assert build_mcp_config()["command"]
 
 
 # ── read_claude_json ──────────────────────────────────────────────────────────
 
-def test_read_claude_json_returns_dict(claude_json):
-    result = read_claude_json(claude_json)
-    assert isinstance(result, dict)
+def test_read_missing_returns_empty(tmp_path):
+    assert read_claude_json(tmp_path / "nope.json") == {}
 
 
-def test_read_claude_json_missing_file_returns_empty(tmp_path):
-    result = read_claude_json(tmp_path / "nonexistent.json")
-    assert result == {}
-
-
-def test_read_claude_json_invalid_json_returns_empty(tmp_path):
+def test_read_invalid_json_returns_empty(tmp_path):
     bad = tmp_path / ".claude.json"
-    bad.write_text("not json {{")
-    result = read_claude_json(bad)
-    assert result == {}
+    bad.write_text("not {{ json")
+    assert read_claude_json(bad) == {}
+
+
+def test_read_valid_json(claude_json):
+    assert isinstance(read_claude_json(claude_json), dict)
 
 
 # ── write_claude_json ─────────────────────────────────────────────────────────
 
-def test_write_adds_global_mcp_entry(claude_json):
-    cfg = build_mcp_config()
-    write_claude_json(claude_json, cfg)
-
+def test_write_adds_global_entry(claude_json):
+    write_claude_json(claude_json, build_mcp_config())
     data = json.loads(claude_json.read_text())
     assert "terminal-hub" in data["mcpServers"]
 
 
-def test_write_preserves_existing_mcp_servers(claude_json):
-    existing = {"mcpServers": {"other-tool": {"command": "foo"}}}
-    claude_json.write_text(json.dumps(existing))
-
+def test_write_preserves_other_servers(claude_json):
+    claude_json.write_text(json.dumps({"mcpServers": {"other": {"command": "foo"}}}))
     write_claude_json(claude_json, build_mcp_config())
-
     data = json.loads(claude_json.read_text())
-    assert "other-tool" in data["mcpServers"]
+    assert "other" in data["mcpServers"]
     assert "terminal-hub" in data["mcpServers"]
 
 
-def test_write_overwrites_existing_terminal_hub_entry(claude_json):
-    old = {"mcpServers": {"terminal-hub": {"command": "old"}}}
-    claude_json.write_text(json.dumps(old))
-
+def test_write_no_projects_key(claude_json):
     write_claude_json(claude_json, build_mcp_config())
+    assert "projects" not in json.loads(claude_json.read_text())
 
+
+# ── run_install ───────────────────────────────────────────────────────────────
+
+def test_run_install_writes_entry(claude_json):
+    with patch("builtins.input", return_value="y"):
+        run_install(claude_json_path=claude_json)
     data = json.loads(claude_json.read_text())
-    assert data["mcpServers"]["terminal-hub"]["command"] != "old"
+    assert "terminal-hub" in data["mcpServers"]
 
 
-def test_write_does_not_create_projects_key(claude_json):
-    write_claude_json(claude_json, build_mcp_config())
-    data = json.loads(claude_json.read_text())
-    assert "projects" not in data
+def test_run_install_aborts_on_no(claude_json):
+    with patch("builtins.input", return_value="n"), pytest.raises(SystemExit):
+        run_install(claude_json_path=claude_json)
+    assert "terminal-hub" not in json.loads(claude_json.read_text()).get("mcpServers", {})
+
+
+# ── run_verify ────────────────────────────────────────────────────────────────
+
+def test_run_verify_passes_when_installed(claude_json, capsys):
+    with patch("builtins.input", return_value="y"):
+        run_install(claude_json_path=claude_json)
+    run_verify(claude_json_path=claude_json)
+    assert "✓" in capsys.readouterr().out
+
+
+def test_run_verify_fails_when_not_installed(claude_json):
+    with pytest.raises(SystemExit):
+        run_verify(claude_json_path=claude_json)

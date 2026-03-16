@@ -1,0 +1,41 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "terminal-hub",
+  "description": "GitHub issue tracking and project context management — creates issues, saves architecture notes, and remembers your project across sessions via MCP.",
+  "owner": {
+    "name": "JuneKim0007",
+    "email": ""
+  },
+  "metadata": {
+    "description": "MCP-powered GitHub automation for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "terminal-hub",
+      "source": "./",
+      "description": "Installs workflow agents and hooks. Requires: pip install terminal-hub && terminal-hub install",
+      "version": "0.1.0",
+      "author": {
+        "name": "JuneKim0007"
+      },
+      "homepage": "https://github.com/JuneKim0007/terminal_hub",
+      "repository": "https://github.com/JuneKim0007/terminal_hub",
+      "license": "MIT",
+      "keywords": [
+        "github",
+        "issues",
+        "mcp",
+        "project-management"
+      ],
+      "category": "workflow",
+      "tags": [
+        "github",
+        "issues",
+        "mcp",
+        "agents",
+        "hooks"
+      ],
+      "strict": false
+    }
+  ]
+}

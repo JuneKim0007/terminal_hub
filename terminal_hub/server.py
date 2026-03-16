@@ -15,6 +15,7 @@ from terminal_hub.env_store import read_env, write_env
 from terminal_hub.errors import msg
 from terminal_hub.github_client import GitHubClient, GitHubError, load_default_labels
 from terminal_hub.slugify import slugify
+
 from terminal_hub.storage import (
     IssueStatus,
     list_issue_files,

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "agents-core",
+      "kind": "agents",
+      "description": "Workflow prompt agents for terminal-hub session start, issue tracking, project context, and auth recovery.",
+      "paths": [
+        "agents"
+      ],
+      "targets": [
+        "claude"
+      ],
+      "dependencies": [],
+      "defaultInstall": true,
+      "cost": "light",
+      "stability": "stable"
+    },
+    {
+      "id": "hooks-runtime",
+      "kind": "hooks",
+      "description": "PreToolUse hook that reminds Claude to refer to terminal-hub instructions before each tool call.",
+      "paths": [
+        ".claude/settings.json"
+      ],
+      "targets": [
+        "claude"
+      ],
+      "dependencies": [],
+      "defaultInstall": true,
+      "cost": "light",
+      "stability": "stable"
+    }
+  ]
+}

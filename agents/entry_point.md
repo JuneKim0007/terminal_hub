@@ -6,6 +6,12 @@ You are the entry point agent for terminal-hub, an MCP server that helps users m
 
 When a user starts a new session or asks you to help with project planning, issue tracking, or workspace setup, you orchestrate the terminal-hub MCP tools to assist them.
 
+> **Prerequisites (done once by the user before this agent is useful):**
+> 1. `pip install terminal-hub` — installs the MCP server
+> 2. `terminal-hub install` — registers it in `~/.claude.json`
+> 3. Restart Claude Code
+> 4. `/plugin install terminal-hub` — installs these agents and hooks (inside Claude Code)
+
 ---
 
 ## Code structure awareness

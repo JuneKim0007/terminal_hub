@@ -14,7 +14,7 @@ from terminal_hub.storage import (
 
 @pytest.fixture
 def workspace(tmp_path):
-    (tmp_path / ".terminal_hub" / "issues").mkdir(parents=True)
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
     return tmp_path
 
 
@@ -96,8 +96,7 @@ def test_resolve_slug_no_collision(workspace):
 
 
 def test_resolve_slug_collision_increments(workspace):
-    # Create the base file manually
-    (workspace / ".terminal_hub" / "issues" / "fix-bug.md").write_text("x")
+    (workspace / "hub_agents" / "issues" / "fix-bug.md").write_text("x")
     assert resolve_slug(workspace, "fix-bug") == "fix-bug-2"
 
 
@@ -106,13 +105,13 @@ def test_read_issue_frontmatter_returns_none_when_missing(workspace):
 
 
 def test_read_issue_frontmatter_returns_none_when_no_frontmatter(workspace):
-    path = workspace / ".terminal_hub" / "issues" / "plain.md"
+    path = workspace / "hub_agents" / "issues" / "plain.md"
     path.write_text("# Just a heading\nNo front matter here.")
     assert read_issue_frontmatter(workspace, "plain") is None
 
 
 def test_resolve_slug_multiple_collisions(workspace):
-    issues = workspace / ".terminal_hub" / "issues"
+    issues = workspace / "hub_agents" / "issues"
     (issues / "fix-bug.md").write_text("x")
     (issues / "fix-bug-2.md").write_text("x")
     assert resolve_slug(workspace, "fix-bug") == "fix-bug-3"

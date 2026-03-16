@@ -10,7 +10,7 @@ def call(server, tool_name, args):
 
 @pytest.fixture
 def workspace(tmp_path):
-    (tmp_path / ".terminal_hub" / "issues").mkdir(parents=True)
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
     return tmp_path
 
 
@@ -64,8 +64,7 @@ def test_create_issue_no_repo_detected(workspace):
     from terminal_hub.auth import TokenSource
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
          patch("terminal_hub.server.resolve_token", return_value=("tok", TokenSource.ENV)), \
-         patch("terminal_hub.server.detect_repo", return_value=None), \
-         patch("os.environ.get", return_value=None):
+         patch("terminal_hub.server.detect_repo", return_value=None):
         server = create_server()
         result = call(server, "create_issue", {"title": "x", "body": "y"})
     assert result["error"] == "github_unavailable"

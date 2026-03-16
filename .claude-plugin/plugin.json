@@ -1,0 +1,20 @@
+{
+  "name": "terminal-hub",
+  "version": "0.1.0",
+  "description": "GitHub issue tracking and project context management for Claude Code — creates issues, saves architecture notes, and remembers your project across sessions.",
+  "author": {
+    "name": "JuneKim0007",
+    "url": "https://github.com/JuneKim0007"
+  },
+  "homepage": "https://github.com/JuneKim0007/terminal_hub",
+  "repository": "https://github.com/JuneKim0007/terminal_hub",
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "issues",
+    "mcp",
+    "project-management",
+    "agents",
+    "hooks"
+  ]
+}

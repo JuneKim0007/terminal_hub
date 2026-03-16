@@ -1,6 +1,6 @@
 # terminal-hub Quickstart
 
-> terminal-hub is an MCP server that lets Claude Code create GitHub issues, track project context, and remember your project setup — all from inside a conversation.
+> terminal-hub lets Claude Code create GitHub issues, track project context, and remember your project setup — all from inside a conversation.
 
 ---
 
@@ -8,141 +8,121 @@
 
 You need:
 - **Python 3.10+** — check with `python3 --version`
-- **Claude Code** installed — check with `claude --version`
-- **A GitHub account** (optional — you can run in local-only mode without one)
+- **Claude Code** — check with `claude --version`
+- **A GitHub account** (optional — local-only mode works without one)
 
 ---
 
-## Step 1 — Install terminal-hub
+## Step 1 — Install the package
 
 ```bash
-# Clone the repo
-git clone https://github.com/JuneKim0007/terminal_hub.git
-cd terminal_hub
-
-# Install it as a package so the terminal-hub command is available
-pip install -e .
+pip install terminal-hub
 ```
 
-> `-e .` installs in "editable" mode — changes to the code take effect immediately, no reinstall needed.
+This makes the `terminal-hub` command available and installs the MCP server.
+
+> On some systems you may need `pip3` instead of `pip`.
 
 ---
 
-## Step 2 — Register it with Claude Code (one-time, global)
+## Step 2 — Register with Claude Code
 
 ```bash
 terminal-hub install
 ```
 
-You'll see a preview of what will be written to `~/.claude.json`, then a confirmation prompt.
+You'll see a preview of what gets written to `~/.claude.json`, then a confirmation prompt. Type `y`.
 
 ```
 Will add to ~/.claude.json (global):
-  mcpServers["terminal-hub"] = {
-    "command": "/usr/bin/python3",
-    "args": ["-m", "terminal_hub"]
-  }
+  mcpServers["terminal-hub"] = { ... }
 
 Write this config? [y/N] y
 ✓ Written to /Users/you/.claude.json
 ✓ Restart Claude Code to apply changes.
 ```
 
-Type `y` and press Enter.
-
-> This only needs to be done **once**. terminal-hub will be available in every project after this.
+> This registers the MCP server globally — you only do this **once**.
 
 ---
 
 ## Step 3 — Restart Claude Code
 
-Close and reopen Claude Code (or run `claude` again in your terminal).
-
-This is required — Claude Code reads `~/.claude.json` on startup.
+Close and reopen Claude Code. It reads `~/.claude.json` on startup.
 
 ---
 
-## Step 4 — Open any project
+## Step 4 — Install the plugin (inside Claude Code)
 
-Navigate to the project directory you want to use terminal-hub with:
+Run this inside a Claude Code conversation:
 
-```bash
-cd /path/to/your-project
-claude    # open Claude Code in this directory
+```
+/plugin install terminal-hub
 ```
 
----
-
-## Step 5 — Let Claude set it up
-
-The first time you use terminal-hub in a project, just tell Claude:
-
-> "Set up terminal-hub for this project"
-
-Claude will:
-1. Check if the project is initialised
-2. Ask if you want GitHub integration (and for your repo name if yes)
-3. Call `setup_workspace` — this creates a `hub_agents/` folder in your project
-
-`hub_agents/` stores all terminal-hub data locally. It is **automatically added to `.gitignore`** so it is never committed.
+This installs the workflow agents and hooks — the prompts that guide Claude through issue creation, project context, and auth recovery automatically.
 
 ---
 
-## Step 6 — GitHub auth (if using GitHub integration)
+## Step 5 — Open a project and start
 
-If you said yes to GitHub, Claude will check your auth status. If you're not logged in:
+Navigate to your project and open Claude Code:
 
 ```bash
-# Run this in your terminal (not inside Claude)
-gh auth login
+cd my-project
+claude
 ```
 
-Follow the prompts, then tell Claude: **"I've logged in"** — it will verify and continue.
+Then just say: **"Set up terminal-hub for this project"**
 
-> Don't have `gh`? Install it from https://cli.github.com or set `GITHUB_TOKEN=<your_token>` in your environment instead.
+Claude will ask if you want GitHub integration, set up a `hub_agents/` folder, and be ready to go.
 
 ---
 
-## You're ready
+## What you can do
 
-From here, just talk to Claude naturally:
-
-| What you say | What Claude does |
-|---|---|
+| Say to Claude | What happens |
+|---------------|-------------|
 | "Create an issue for the login bug" | Creates a GitHub issue + saves it locally |
-| "What issues are we tracking?" | Lists all tracked issues |
+| "What are we tracking?" | Lists all issues |
 | "Save a description of this project" | Writes to `hub_agents/project_description.md` |
-| "What was the architecture we decided on?" | Reads back saved architecture notes |
+| "What architecture did we decide on?" | Reads back saved notes |
 
 ---
 
-## Verify the setup at any time
+## Verify at any time
 
 ```bash
-# Check that terminal-hub is registered globally
 terminal-hub verify
 ```
 
 ```
 ✓ terminal-hub is configured globally.
-{
-  "command": "/usr/bin/python3",
-  "args": ["-m", "terminal_hub"]
-}
 ```
 
 ---
 
 ## Troubleshooting
 
-**Claude doesn't seem to know about terminal-hub**
-→ Make sure you restarted Claude Code after running `terminal-hub install`
-
-**"No GitHub repo configured"**
-→ Ask Claude to run `setup_workspace` again and provide your repo (format: `owner/repo-name`)
-
-**GitHub calls fail with auth errors**
-→ Run `gh auth login` in your terminal, then tell Claude "I've logged in"
+**Claude doesn't see terminal-hub tools**
+→ Did you restart Claude Code after `terminal-hub install`?
 
 **`terminal-hub` command not found**
-→ Make sure you ran `pip install -e .` from inside the `terminal_hub/` directory
+→ Run `pip install terminal-hub` first. If it still fails, check that pip's bin directory is in your `PATH`.
+
+**GitHub calls fail**
+→ Run `gh auth login` in your terminal, then tell Claude "I've logged in". No `gh`? Set `GITHUB_TOKEN=<token>` in your environment instead.
+
+**"No GitHub repo configured"**
+→ Ask Claude: "Set up terminal-hub for this project" and provide your repo as `owner/repo-name`.
+
+---
+
+## Developer install (contributors)
+
+```bash
+git clone https://github.com/JuneKim0007/terminal_hub.git
+cd terminal_hub
+pip install -e .         # editable install — code changes take effect immediately
+terminal-hub install
+```

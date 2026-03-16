@@ -20,14 +20,14 @@ def test_get_project_context_single(workspace):
     write_doc_file(workspace, "project_description", "# Project\n")
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "get_project_context", {"file": "project_description"})
+        result = call(server, "get_project_context", {"doc_key": "project_description"})
     assert result["content"] == "# Project\n"
 
 
 def test_get_project_context_not_found(workspace):
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "get_project_context", {"file": "project_description"})
+        result = call(server, "get_project_context", {"doc_key": "project_description"})
     assert result["content"] is None
 
 
@@ -35,7 +35,7 @@ def test_get_project_context_all(workspace):
     write_doc_file(workspace, "project_description", "# Project\n")
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "get_project_context", {"file": "all"})
+        result = call(server, "get_project_context", {"doc_key": "all"})
     assert result["project_description"] == "# Project\n"
     assert result["architecture"] is None
 

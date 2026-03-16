@@ -5,6 +5,7 @@ All error messages come from error_msg.json via errors.msg().
 """
 import json
 from pathlib import Path
+from types import TracebackType
 
 import httpx
 
@@ -16,9 +17,10 @@ _LABELS_FILE = Path(__file__).parent / "labels.json"
 BASE_URL = "https://api.github.com"
 
 
-def _load_default_labels() -> list[dict]:
+def load_default_labels() -> list[dict]:
+    """Return the list of default label definitions from labels.json."""
     try:
-        return json.loads(_LABELS_FILE.read_text())
+        return json.loads(_LABELS_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
 
@@ -36,7 +38,6 @@ class GitHubError(Exception):
         return {
             "error": self.error_code,
             "message": str(self),
-            "_hook": None,
         }
 
 
@@ -72,7 +73,22 @@ class GitHubClient:
             timeout=30.0,
         )
 
-    def _url(self, section: str, name: str, **kwargs) -> tuple[str, str]:
+    def __enter__(self) -> "GitHubClient":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self._client.close()
+
+    def close(self) -> None:
+        """Close the underlying HTTP connection pool."""
+        self._client.close()
+
+    def _url(self, section: str, name: str, **kwargs: str) -> tuple[str, str]:
         """Return (method, full_url) for a named command."""
         method, path = endpoint(section, name)
         return method, BASE_URL + path.format(repo=self.repo, **kwargs)
@@ -140,11 +156,11 @@ class GitHubClient:
             return None
 
         existing = self.get_labels()
-        missing = [l for l in labels if l not in existing]
+        missing = [label for label in labels if label not in existing]
         if not missing:
             return None
 
-        default_defs = {d["name"]: d for d in _load_default_labels()}
+        default_defs = {d["name"]: d for d in load_default_labels()}
         failed: list[str] = []
 
         for name in missing:

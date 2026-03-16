@@ -1,7 +1,7 @@
 import pytest
 import httpx
 from unittest.mock import MagicMock, patch
-from terminal_hub.github_client import GitHubClient, GitHubError, parse_error, _load_default_labels
+from terminal_hub.github_client import GitHubClient, GitHubError, parse_error, load_default_labels
 
 
 # ── parse_error ───────────────────────────────────────────────────────────────
@@ -119,25 +119,25 @@ def test_github_error_to_dict():
     d = err.to_dict()
     assert d["error"] == "auth_failed"
     assert d["message"] == "something failed"
-    assert d["_hook"] is None
+    assert "_hook" not in d  # _hook is added by the call site in server.py, not by the exception
 
 
 # ── _load_default_labels ──────────────────────────────────────────────────────
 
 def test_load_default_labels_returns_list():
-    labels = _load_default_labels()
+    labels = load_default_labels()
     assert isinstance(labels, list)
     assert len(labels) > 0
 
 
 def test_load_default_labels_have_required_fields():
-    for label in _load_default_labels():
+    for label in load_default_labels():
         assert "name" in label
         assert "color" in label
 
 
 def test_load_default_labels_includes_bug_and_feature():
-    names = {l["name"] for l in _load_default_labels()}
+    names = {label["name"] for label in load_default_labels()}
     assert "bug" in names
     assert "feature" in names
 

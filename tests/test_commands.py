@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 import pytest
-from terminal_hub.commands import endpoint, gh_cmd, _CMDS
+from terminal_hub.commands import endpoint, _CMDS
 
 
 def test_endpoint_returns_method_and_path():
@@ -23,16 +23,9 @@ def test_endpoint_create_label():
     assert "labels" in path
 
 
-def test_gh_cmd_auth_token():
-    cmd = gh_cmd("auth_token")
-    assert "gh" in cmd
-    assert "token" in cmd
-
-
-def test_gh_cmd_auth_status():
-    cmd = gh_cmd("auth_status")
-    assert "gh" in cmd
-    assert "status" in cmd
+def test_gh_cli_commands_defined():
+    assert "auth_token" in _CMDS["gh_cli"]
+    assert "auth_status" in _CMDS["gh_cli"]
 
 
 def test_endpoint_path_is_formattable():

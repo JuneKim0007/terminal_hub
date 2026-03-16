@@ -1,3 +1,8 @@
+"""MCP server for terminal-hub.
+
+Registers all tools and workflow-guide resources. Entry point is create_server(),
+which returns a configured FastMCP instance ready to call server.run().
+"""
 import json
 from datetime import date
 from pathlib import Path
@@ -8,17 +13,17 @@ from terminal_hub.auth import get_auth_options, resolve_token, verify_gh_cli_aut
 from terminal_hub.config import WorkspaceMode, load_config, save_config
 from terminal_hub.env_store import read_env, write_env
 from terminal_hub.errors import msg
-from terminal_hub.github_client import GitHubClient, GitHubError, _load_default_labels
+from terminal_hub.github_client import GitHubClient, GitHubError, load_default_labels
 from terminal_hub.slugify import slugify
 from terminal_hub.storage import (
-    STATUS_OPEN,
-    STATUS_PENDING,
+    IssueStatus,
     list_issue_files,
     read_doc_file,
     read_issue_file,
     read_issue_frontmatter,
     resolve_slug,
     update_issue_status,
+    validate_slug,
     write_doc_file,
     write_issue_file,
 )
@@ -35,7 +40,7 @@ _G_AUTH    = "terminal-hub://workflow/auth"
 
 def _load_agent(name: str) -> str:
     path = _AGENTS_DIR / name
-    return path.read_text() if path.exists() else ""
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def get_workspace_root() -> Path:
@@ -75,6 +80,7 @@ def get_github_client() -> tuple[GitHubClient | None, str]:
 
 
 def create_server() -> FastMCP:
+    """Create and return the configured FastMCP instance."""
     mcp = FastMCP("terminal-hub", instructions=_load_agent("entry_point.md"))
 
     # ── Resources (workflow guides) ───────────────────────────────────────────
@@ -157,13 +163,11 @@ def create_server() -> FastMCP:
         if err := ensure_initialized(root):
             return err
 
-        # Parse JSON
         try:
             data = json.loads(issue_json)
         except json.JSONDecodeError as exc:
             return {"error": "draft_failed", "message": msg("invalid_json", detail=str(exc)), "_hook": None}
 
-        # Validate required fields
         for field in ("title", "body"):
             if not data.get(field):
                 return {"error": "draft_failed", "message": msg("missing_field", detail=field), "_hook": None}
@@ -174,6 +178,9 @@ def create_server() -> FastMCP:
         assignees: list[str] = data.get("assignees") or []
 
         base_slug = slugify(title)
+        if not base_slug:
+            return {"error": "draft_failed", "message": "Title produced an empty slug — use at least one alphanumeric character.", "_hook": None}
+
         slug = resolve_slug(root, base_slug)
 
         try:
@@ -185,7 +192,7 @@ def create_server() -> FastMCP:
                 assignees=assignees,
                 labels=labels,
                 created_at=date.today(),
-                status=STATUS_PENDING,
+                status=IssueStatus.PENDING,
             )
         except OSError as exc:
             return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
@@ -196,7 +203,7 @@ def create_server() -> FastMCP:
             "preview_body": body[:300] + ("…" if len(body) > 300 else ""),
             "labels": labels,
             "assignees": assignees,
-            "status": STATUS_PENDING,
+            "status": str(IssueStatus.PENDING),
             "local_file": f"hub_agents/issues/{slug}.md",
         }
 
@@ -214,7 +221,11 @@ def create_server() -> FastMCP:
         if err := ensure_initialized(root):
             return err
 
-        # Read local draft
+        try:
+            validate_slug(slug)
+        except ValueError:
+            return {"error": "submit_failed", "message": msg("not_found", detail=slug), "_hook": None}
+
         fm = read_issue_frontmatter(root, slug)
         if fm is None:
             return {"error": "submit_failed", "message": msg("not_found", detail=slug), "_hook": None}
@@ -229,29 +240,28 @@ def create_server() -> FastMCP:
             }
 
         labels: list[str] = fm.get("labels") or []
-        if labels:
-            label_err = gh.ensure_labels(labels)
-            if label_err:
-                return {"error": "label_bootstrap_failed", "message": label_err, "_hook": None}
-
-        # Read body from file
         raw = read_issue_file(root, slug) or ""
         body = raw.split("---", 2)[-1].strip() if raw.startswith("---") else raw
 
-        try:
-            result = gh.create_issue(
-                title=fm["title"],
-                body=body,
-                labels=labels,
-                assignees=fm.get("assignees") or [],
-            )
-        except GitHubError as exc:
-            return {**exc.to_dict(), "_hook": None}
+        with gh:
+            if labels:
+                label_err = gh.ensure_labels(labels)
+                if label_err:
+                    return {"error": "label_bootstrap_failed", "message": label_err, "_hook": None}
 
-        # Update local file
+            try:
+                result = gh.create_issue(
+                    title=fm["title"],
+                    body=body,
+                    labels=labels,
+                    assignees=fm.get("assignees") or [],
+                )
+            except GitHubError as exc:
+                return {**exc.to_dict(), "_hook": None}
+
         update_issue_status(
             root, slug,
-            status=STATUS_OPEN,
+            status=IssueStatus.OPEN,
             issue_number=result["number"],
             github_url=result["html_url"],
         )
@@ -278,6 +288,12 @@ def create_server() -> FastMCP:
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
+
+        try:
+            validate_slug(slug)
+        except ValueError:
+            return {"error": "not_found", "message": msg("not_found", detail=slug), "_hook": None}
+
         content = read_issue_file(root, slug)
         if content is None:
             return {"error": "not_found", "message": msg("not_found", detail=slug), "_hook": None}
@@ -295,7 +311,7 @@ def create_server() -> FastMCP:
         try:
             path = write_doc_file(root, "project_description", content)
             return {"updated": True, "file": str(path.relative_to(root))}
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
     @mcp.tool()
@@ -308,23 +324,26 @@ def create_server() -> FastMCP:
         try:
             path = write_doc_file(root, "architecture", content)
             return {"updated": True, "file": str(path.relative_to(root))}
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
     @mcp.tool()
-    def get_project_context(file: str) -> dict:
+    def get_project_context(doc_key: str) -> dict:
         """Read project_description.md and/or architecture_design.md from hub_agents/.
-        file: 'project_description', 'architecture', or 'all'."""
+        doc_key: 'project_description', 'architecture', or 'all'."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
-        if file == "all":
+        if doc_key == "all":
             return {
                 "project_description": read_doc_file(root, "project_description"),
                 "architecture": read_doc_file(root, "architecture"),
             }
-        content = read_doc_file(root, file)
-        return {"file": file, "content": content}
+        try:
+            content = read_doc_file(root, doc_key)
+        except ValueError as exc:
+            return {"error": "not_found", "message": str(exc), "_hook": None}
+        return {"doc_key": doc_key, "content": content}
 
     # ── Workspace setup tools ─────────────────────────────────────────────────
 
@@ -378,8 +397,9 @@ def create_server() -> FastMCP:
         if github_repo:
             gh, _ = get_github_client()
             if gh is not None:
-                all_names = [d["name"] for d in _load_default_labels()]
-                label_warning = gh.ensure_labels(all_names)
+                all_names = [d["name"] for d in load_default_labels()]
+                with gh:
+                    label_warning = gh.ensure_labels(all_names)
 
         result: dict = {
             "success": True,

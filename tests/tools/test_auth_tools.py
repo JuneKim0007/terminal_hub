@@ -59,14 +59,19 @@ def test_verify_auth_failure(workspace):
 
 # ── get_github_client ─────────────────────────────────────────────────────────
 
-def test_create_issue_no_repo_detected(workspace):
+def test_submit_issue_no_repo_detected(workspace):
     """Cover get_github_client path where token exists but no repo is found."""
+    import json
     from terminal_hub.auth import TokenSource
+    from terminal_hub.storage import write_issue_file
+    from datetime import date
+    write_issue_file(root=workspace, slug="x", title="x", body="y",
+                     assignees=[], labels=[], created_at=date.today())
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
          patch("terminal_hub.server.resolve_token", return_value=("tok", TokenSource.ENV)), \
          patch("terminal_hub.server.detect_repo", return_value=None):
         server = create_server()
-        result = call(server, "create_issue", {"title": "x", "body": "y"})
+        result = call(server, "submit_issue", {"slug": "x"})
     assert result["error"] == "github_unavailable"
 
 

@@ -1,5 +1,9 @@
 """Read/write issue .md files and project context documents with YAML front matter."""
+import os
+import re
+import tempfile
 from datetime import date
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +14,49 @@ _DOC_FILES = {
     "architecture": "hub_agents/architecture_design.md",
 }
 
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,59}$")
+
+
+class IssueStatus(str, Enum):
+    """Valid status values for issue files. Subclasses str so YAML serialises as plain strings."""
+
+    PENDING = "pending"
+    OPEN    = "open"
+    CLOSED  = "closed"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+# Keep module-level aliases for backwards compat within the codebase
+STATUS_PENDING = IssueStatus.PENDING
+STATUS_OPEN    = IssueStatus.OPEN
+STATUS_CLOSED  = IssueStatus.CLOSED
+
+
+def validate_slug(slug: str) -> None:
+    """Raise ValueError if *slug* looks like a path traversal or is structurally invalid."""
+    if not _SLUG_RE.fullmatch(slug):
+        raise ValueError(f"Invalid slug {slug!r}: must match [a-z0-9][a-z0-9-]{{0,59}}")
+
 
 def _issues_dir(root: Path) -> Path:
     return root / "hub_agents" / "issues"
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Write *content* to *path* atomically using a temp file + os.replace."""
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def resolve_slug(root: Path, base_slug: str) -> str:
@@ -30,56 +74,117 @@ def write_issue_file(
     root: Path,
     slug: str,
     title: str,
-    issue_number: int,
-    github_url: str,
     body: str,
     assignees: list[str],
     labels: list[str],
     created_at: date,
+    status: IssueStatus | str = IssueStatus.PENDING,
+    issue_number: int | None = None,
+    github_url: str | None = None,
 ) -> Path:
-    """Write an issue .md file with YAML front matter. Returns the file path."""
+    """Write an issue .md file with YAML front matter atomically. Returns the file path."""
+    validate_slug(slug)
     path = _issues_dir(root) / f"{slug}.md"
-    frontmatter = {
+    frontmatter: dict[str, Any] = {
         "title": title,
-        "issue_number": issue_number,
-        "github_url": github_url,
+        "status": str(status),
         "created_at": created_at.strftime("%Y-%m-%d"),
         "assignees": assignees,
         "labels": labels,
     }
+    if issue_number is not None:
+        frontmatter["issue_number"] = issue_number
+    if github_url is not None:
+        frontmatter["github_url"] = github_url
+
     content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{body}\n"
-    path.write_text(content)
+    _atomic_write(path, content)
+    return path
+
+
+def update_issue_status(
+    root: Path,
+    slug: str,
+    status: IssueStatus | str,
+    issue_number: int | None = None,
+    github_url: str | None = None,
+) -> Path | None:
+    """Update status (and optionally issue_number/github_url) on an existing issue file.
+
+    Returns the path on success, None if the file doesn't exist.
+    Writes atomically to prevent partial-write data loss.
+    """
+    validate_slug(slug)
+    path = _issues_dir(root) / f"{slug}.md"
+    if not path.exists():
+        return None
+
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    fm: dict[str, Any] = yaml.safe_load(parts[1]) or {}
+    body = parts[2].lstrip("\n") if len(parts) > 2 else ""
+
+    fm["status"] = str(status)
+    if issue_number is not None:
+        fm["issue_number"] = issue_number
+    if github_url is not None:
+        fm["github_url"] = github_url
+
+    _atomic_write(path, f"---\n{yaml.dump(fm, default_flow_style=False)}---\n\n{body}")
     return path
 
 
 def read_issue_frontmatter(root: Path, slug: str) -> dict[str, Any] | None:
-    """Parse YAML front matter from an issue file. Returns None if file missing."""
+    """Parse YAML front matter from an issue file. Returns None if file missing or malformed."""
+    validate_slug(slug)
     path = _issues_dir(root) / f"{slug}.md"
     if not path.exists():
         return None
-    text = path.read_text()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
     if not text.startswith("---"):
         return None
     parts = text.split("---", 2)
-    return yaml.safe_load(parts[1])
+    try:
+        return yaml.safe_load(parts[1])
+    except yaml.YAMLError:
+        return None
 
 
 def read_issue_file(root: Path, slug: str) -> str | None:
     """Return full file content or None if not found."""
+    validate_slug(slug)
     path = _issues_dir(root) / f"{slug}.md"
-    return path.read_text() if path.exists() else None
+    if not path.exists():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def list_issue_files(root: Path) -> list[dict[str, Any]]:
     """Return metadata for all issue files, sorted by created_at descending."""
+    issues_dir = _issues_dir(root)
+    if not issues_dir.exists():
+        return []
     results = []
-    for md_file in _issues_dir(root).glob("*.md"):
+    for md_file in issues_dir.glob("*.md"):
         slug = md_file.stem
+        try:
+            validate_slug(slug)
+        except ValueError:
+            continue  # skip files with non-slug names
         fm = read_issue_frontmatter(root, slug)
         if fm:
             results.append({
                 "slug": slug,
                 "title": fm.get("title", ""),
+                "status": fm.get("status", str(IssueStatus.PENDING)),
                 "issue_number": fm.get("issue_number"),
                 "github_url": fm.get("github_url"),
                 "created_at": fm.get("created_at"),
@@ -91,14 +196,23 @@ def list_issue_files(root: Path) -> list[dict[str, Any]]:
 
 
 def write_doc_file(root: Path, doc_key: str, content: str) -> Path:
-    """Overwrite a project context doc. doc_key: 'project_description' or 'architecture'."""
+    """Overwrite a project context doc. doc_key must be 'project_description' or 'architecture'."""
+    if doc_key not in _DOC_FILES:
+        raise ValueError(f"Unknown doc_key {doc_key!r}. Valid keys: {list(_DOC_FILES)}")
     path = root / _DOC_FILES[doc_key]
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    _atomic_write(path, content)
     return path
 
 
 def read_doc_file(root: Path, doc_key: str) -> str | None:
     """Return content of a project context doc or None if it doesn't exist."""
+    if doc_key not in _DOC_FILES:
+        raise ValueError(f"Unknown doc_key {doc_key!r}. Valid keys: {list(_DOC_FILES)}")
     path = root / _DOC_FILES[doc_key]
-    return path.read_text() if path.exists() else None
+    if not path.exists():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None

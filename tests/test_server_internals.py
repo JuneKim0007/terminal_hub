@@ -47,14 +47,11 @@ def test_get_github_client_no_repo_returns_error():
 
 # ── terminal_hub_instructions prompt ─────────────────────────────────────────
 
-def test_prompt_returns_instructions(tmp_path):
-    from terminal_hub.prompts import TERMINAL_HUB_INSTRUCTIONS
+def test_server_instructions_loaded_from_entry_point(tmp_path):
+    from terminal_hub.server import _load_agent
     with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path):
         server = create_server()
-
-    prompt_fn = server._prompt_manager.get_prompt("terminal_hub_instructions")
-    result = prompt_fn.fn()
-    assert result == TERMINAL_HUB_INSTRUCTIONS
+    assert server.instructions == _load_agent("entry_point.md")
 
 
 # ── create_issue: local write failure after GitHub success ────────────────────

@@ -17,11 +17,12 @@ from terminal_hub.storage import (
     write_doc_file,
     write_issue_file,
 )
-from terminal_hub.workspace import detect_repo, init_workspace
+from terminal_hub.workspace import detect_repo, init_workspace, resolve_workspace_root
 
 
 def get_workspace_root() -> Path:
-    return Path.cwd()
+    """Return resolved workspace root. Falls back to cwd if resolution fails."""
+    return resolve_workspace_root() or Path.cwd()
 
 
 def get_github_client() -> tuple[GitHubClient | None, str]:
@@ -221,8 +222,11 @@ def create_server() -> FastMCP:
         root = get_workspace_root()
         cfg = load_config(root)
         if cfg is None:
+            issues_dir = root / ".terminal_hub" / "issues"
+            has_existing = issues_dir.exists() and any(issues_dir.glob("*.md"))
             return {
                 "configured": False,
+                "has_existing_data": has_existing,
                 "options": [
                     {"value": "local", "label": "Local — track plans and issues on this machine only"},
                     {"value": "github", "label": "GitHub (new repo) — create a new GitHub repository"},

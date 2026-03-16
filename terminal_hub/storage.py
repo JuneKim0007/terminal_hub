@@ -10,6 +10,11 @@ _DOC_FILES = {
     "architecture": "hub_agents/architecture_design.md",
 }
 
+# Valid issue status values
+STATUS_PENDING = "pending"
+STATUS_OPEN    = "open"
+STATUS_CLOSED  = "closed"
+
 
 def _issues_dir(root: Path) -> Path:
     return root / "hub_agents" / "issues"
@@ -30,25 +35,62 @@ def write_issue_file(
     root: Path,
     slug: str,
     title: str,
-    issue_number: int,
-    github_url: str,
     body: str,
     assignees: list[str],
     labels: list[str],
     created_at: date,
+    status: str = STATUS_PENDING,
+    issue_number: int | None = None,
+    github_url: str | None = None,
 ) -> Path:
     """Write an issue .md file with YAML front matter. Returns the file path."""
     path = _issues_dir(root) / f"{slug}.md"
-    frontmatter = {
+    frontmatter: dict[str, Any] = {
         "title": title,
-        "issue_number": issue_number,
-        "github_url": github_url,
+        "status": status,
         "created_at": created_at.strftime("%Y-%m-%d"),
         "assignees": assignees,
         "labels": labels,
     }
+    if issue_number is not None:
+        frontmatter["issue_number"] = issue_number
+    if github_url is not None:
+        frontmatter["github_url"] = github_url
+
     content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{body}\n"
     path.write_text(content)
+    return path
+
+
+def update_issue_status(
+    root: Path,
+    slug: str,
+    status: str,
+    issue_number: int | None = None,
+    github_url: str | None = None,
+) -> Path | None:
+    """Update status (and optionally issue_number/github_url) on an existing issue file.
+
+    Returns the path on success, None if the file doesn't exist.
+    """
+    path = _issues_dir(root) / f"{slug}.md"
+    if not path.exists():
+        return None
+
+    text = path.read_text()
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    fm: dict[str, Any] = yaml.safe_load(parts[1]) or {}
+    body = parts[2].lstrip("\n") if len(parts) > 2 else ""
+
+    fm["status"] = status
+    if issue_number is not None:
+        fm["issue_number"] = issue_number
+    if github_url is not None:
+        fm["github_url"] = github_url
+
+    path.write_text(f"---\n{yaml.dump(fm, default_flow_style=False)}---\n\n{body}")
     return path
 
 
@@ -80,6 +122,7 @@ def list_issue_files(root: Path) -> list[dict[str, Any]]:
             results.append({
                 "slug": slug,
                 "title": fm.get("title", ""),
+                "status": fm.get("status", STATUS_PENDING),
                 "issue_number": fm.get("issue_number"),
                 "github_url": fm.get("github_url"),
                 "created_at": fm.get("created_at"),

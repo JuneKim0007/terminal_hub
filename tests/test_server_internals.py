@@ -54,25 +54,21 @@ def test_server_instructions_loaded_from_entry_point(tmp_path):
     assert server.instructions == _load_agent("entry_point.md")
 
 
-# ── create_issue: local write failure after GitHub success ────────────────────
+# ── draft_issue: local write failure ─────────────────────────────────────────
 
-def test_create_issue_local_write_failure_returns_warning(tmp_path):
+def test_draft_issue_local_write_failure_returns_error(tmp_path):
+    import json
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
-    mock_gh = MagicMock()
-    mock_gh.create_issue.return_value = {"number": 7, "html_url": "http://gh/7"}
 
     with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path), \
-         patch("terminal_hub.server.get_github_client", return_value=(mock_gh, "")), \
          patch("terminal_hub.server.write_issue_file", side_effect=OSError("disk full")):
         server = create_server()
         result = asyncio.run(server._tool_manager.call_tool(
-            "create_issue", {"title": "x", "body": "y"}
+            "draft_issue", {"issue_json": json.dumps({"title": "x", "body": "y"})}
         ))
 
-    assert result["issue_number"] == 7
-    assert result["local_file"] is None
-    assert result["warning"] == "local_write_failed"
-    assert "disk full" in result["warning_message"]
+    assert result["error"] == "draft_failed"
+    assert result["_hook"] is None
 
 
 # ── ensure_initialized guard ──────────────────────────────────────────────────

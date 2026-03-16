@@ -41,8 +41,8 @@ def test_get_project_context_all(workspace):
 
 
 def test_get_issue_context_found(workspace):
-    write_issue_file(workspace, "fix-bug", "Fix bug", 1, "http://gh", "body", [], [],
-                     date(2026, 3, 15))
+    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug",
+                     body="body", assignees=[], labels=[], created_at=date(2026, 3, 15))
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_issue_context", {"slug": "fix-bug"})

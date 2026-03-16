@@ -9,19 +9,19 @@ from terminal_hub.github_client import GitHubClient, GitHubError, parse_error, _
 def test_parse_error_401():
     err = parse_error(401, "Bad credentials")
     assert err["error"] == "auth_failed"
-    assert "token" in err["suggestion"].lower()
+    assert "token" in err["message"].lower()
 
 
 def test_parse_error_403():
     err = parse_error(403, "Resource not accessible")
     assert err["error"] == "permission_denied"
-    assert "scope" in err["suggestion"].lower()
+    assert "scope" in err["message"].lower()
 
 
 def test_parse_error_404():
     err = parse_error(404, "Not Found")
     assert err["error"] == "repo_not_found"
-    assert "GITHUB_REPO" in err["suggestion"]
+    assert "GITHUB_REPO" in err["message"]
 
 
 def test_parse_error_422():
@@ -64,33 +64,33 @@ def test_create_issue_success():
     assert result["html_url"] == "https://github.com/owner/repo/issues/42"
 
 
-def test_create_issue_auth_failure_raises_with_suggestion():
+def test_create_issue_auth_failure_raises_with_message():
     client = make_client()
     resp = make_response(401, text="Bad credentials")
     with patch.object(client._client, "post", return_value=resp):
         with pytest.raises(GitHubError) as exc_info:
             client.create_issue(title="x", body="y", labels=[], assignees=[])
-    assert exc_info.value.suggestion is not None
-    assert "token" in exc_info.value.suggestion.lower()
+    assert exc_info.value.error_code == "auth_failed"
+    assert "token" in str(exc_info.value).lower()
 
 
-def test_create_issue_repo_not_found_raises_with_suggestion():
+def test_create_issue_repo_not_found_raises_with_message():
     client = make_client()
     resp = make_response(404, text="Not Found")
     with patch.object(client._client, "post", return_value=resp):
         with pytest.raises(GitHubError) as exc_info:
             client.create_issue(title="x", body="y", labels=[], assignees=[])
-    assert exc_info.value.suggestion is not None
-    assert "GITHUB_REPO" in exc_info.value.suggestion
+    assert exc_info.value.error_code == "repo_not_found"
+    assert "GITHUB_REPO" in str(exc_info.value)
 
 
-def test_create_issue_network_error_raises_with_suggestion():
+def test_create_issue_network_error_raises_with_message():
     client = make_client()
     with patch.object(client._client, "post", side_effect=httpx.ConnectError("timeout")):
         with pytest.raises(GitHubError) as exc_info:
             client.create_issue(title="x", body="y", labels=[], assignees=[])
-    assert exc_info.value.suggestion is not None
-    assert "network" in exc_info.value.suggestion.lower() or "connect" in exc_info.value.suggestion.lower()
+    assert exc_info.value.error_code == "network_error"
+    assert "connect" in str(exc_info.value).lower() or "github" in str(exc_info.value).lower()
 
 
 def test_client_sets_auth_header():
@@ -104,22 +104,22 @@ def test_parse_error_429():
     assert "rate" in err["message"].lower() or "rate" in err["suggestion"].lower()
 
 
-def test_create_issue_timeout_raises_with_suggestion():
+def test_create_issue_timeout_raises_with_message():
     import httpx
     client = make_client()
     with patch.object(client._client, "post", side_effect=httpx.TimeoutException("timed out")):
         with pytest.raises(GitHubError) as exc_info:
             client.create_issue(title="x", body="y", labels=[], assignees=[])
     assert exc_info.value.error_code == "timeout"
-    assert exc_info.value.suggestion is not None
+    assert "timed out" in str(exc_info.value).lower() or "timeout" in str(exc_info.value).lower()
 
 
 def test_github_error_to_dict():
-    err = GitHubError("something failed", error_code="auth_failed", suggestion="fix your token")
+    err = GitHubError("something failed", error_code="auth_failed")
     d = err.to_dict()
     assert d["error"] == "auth_failed"
-    assert d["suggestion"] == "fix your token"
     assert d["message"] == "something failed"
+    assert d["_hook"] is None
 
 
 # ── _load_default_labels ──────────────────────────────────────────────────────

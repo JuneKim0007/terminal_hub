@@ -1,14 +1,19 @@
 """GitHub REST API client using httpx.
 
-Errors are always structured with a suggestion so Claude can explain
-exactly what the user needs to do to fix the problem.
+All endpoint paths come from hub_commands.json via commands.endpoint().
+All error messages come from error_msg.json via errors.msg().
 """
 import json
 from pathlib import Path
 
 import httpx
 
+from terminal_hub.commands import endpoint
+from terminal_hub.errors import msg
+
 _LABELS_FILE = Path(__file__).parent / "labels.json"
+
+BASE_URL = "https://api.github.com"
 
 
 def _load_default_labels() -> list[dict]:
@@ -21,83 +26,40 @@ def _load_default_labels() -> list[dict]:
 # ── Error type ────────────────────────────────────────────────────────────────
 
 class GitHubError(Exception):
-    """Raised when a GitHub API call fails.
+    """Raised when a GitHub API call fails."""
 
-    Always carries a human-readable suggestion so Claude can guide the user.
-    """
-
-    def __init__(self, message: str, error_code: str = "github_error", suggestion: str = "") -> None:
+    def __init__(self, message: str, error_code: str = "github_error") -> None:
         super().__init__(message)
         self.error_code = error_code
-        self.suggestion = suggestion
 
     def to_dict(self) -> dict:
         return {
             "error": self.error_code,
             "message": str(self),
-            "suggestion": self.suggestion,
+            "_hook": None,
         }
 
 
 # ── Error mapping ─────────────────────────────────────────────────────────────
 
 def parse_error(status_code: int, body: str) -> dict:
-    """Map an HTTP status code to a structured error dict with a suggestion."""
+    """Map an HTTP status code to a structured error dict."""
     if status_code == 401:
-        return {
-            "error": "auth_failed",
-            "message": "GitHub rejected the token.",
-            "suggestion": (
-                "Your GITHUB_TOKEN is invalid or expired. "
-                "Generate a new one at https://github.com/settings/tokens "
-                "with the 'repo' scope, then update your MCP config."
-            ),
-        }
+        return {"error": "auth_failed",       "message": msg("auth_failed")}
     if status_code == 403:
-        return {
-            "error": "permission_denied",
-            "message": "GitHub denied access.",
-            "suggestion": (
-                "Your GITHUB_TOKEN may be missing the required scope. "
-                "Ensure it has the 'repo' scope at https://github.com/settings/tokens."
-            ),
-        }
+        return {"error": "permission_denied", "message": msg("permission_denied")}
     if status_code == 404:
-        return {
-            "error": "repo_not_found",
-            "message": "The GitHub repository was not found.",
-            "suggestion": (
-                "Check that GITHUB_REPO is set correctly (format: owner/repo-name) "
-                "and that your token has access to it. "
-                "You can override it with GITHUB_REPO=owner/repo in your MCP env config."
-            ),
-        }
+        return {"error": "repo_not_found",    "message": msg("repo_not_found")}
     if status_code == 422:
-        return {
-            "error": "validation_failed",
-            "message": f"GitHub rejected the request: {body}",
-            "suggestion": (
-                "The issue data may be malformed. "
-                "Check that labels and assignees exist in the repository."
-            ),
-        }
+        return {"error": "validation_failed", "message": msg("validation_failed", detail=body)}
     if status_code == 429:
-        return {
-            "error": "rate_limited",
-            "message": "GitHub API rate limit exceeded.",
-            "suggestion": "Wait a few minutes and try again. Authenticated requests allow 5000/hour.",
-        }
-    return {
-        "error": "github_error",
-        "message": f"GitHub returned status {status_code}: {body}",
-        "suggestion": "Check the GitHub status page or try again shortly.",
-    }
+        return {"error": "rate_limited",      "message": msg("rate_limited")}
+    return {"error": "github_error", "message": msg("github_error", status_code=str(status_code), detail=body)}
 
 
 # ── Client ────────────────────────────────────────────────────────────────────
 
 class GitHubClient:
-    BASE_URL = "https://api.github.com"
 
     def __init__(self, token: str, repo: str) -> None:
         self.repo = repo
@@ -110,6 +72,11 @@ class GitHubClient:
             timeout=30.0,
         )
 
+    def _url(self, section: str, name: str, **kwargs) -> tuple[str, str]:
+        """Return (method, full_url) for a named command."""
+        method, path = endpoint(section, name)
+        return method, BASE_URL + path.format(repo=self.repo, **kwargs)
+
     def create_issue(
         self,
         title: str,
@@ -117,12 +84,8 @@ class GitHubClient:
         labels: list[str],
         assignees: list[str],
     ) -> dict:
-        """Create a GitHub issue. Returns response JSON on success.
-
-        Raises GitHubError with a suggestion on any failure so Claude can
-        guide the user to fix the problem without manual debugging.
-        """
-        url = f"{self.BASE_URL}/repos/{self.repo}/issues"
+        """Create a GitHub issue. Returns response JSON on success. Raises GitHubError on failure."""
+        _, url = self._url("github", "create_issue")
         payload = {"title": title, "body": body, "labels": labels, "assignees": assignees}
 
         try:
@@ -130,32 +93,17 @@ class GitHubClient:
             response.raise_for_status()
         except httpx.HTTPStatusError:
             info = parse_error(response.status_code, response.text)
-            raise GitHubError(
-                info["message"],
-                error_code=info["error"],
-                suggestion=info["suggestion"],
-            )
+            raise GitHubError(info["message"], error_code=info["error"])
         except httpx.ConnectError as exc:
-            raise GitHubError(
-                f"Could not connect to GitHub: {exc}",
-                error_code="network_error",
-                suggestion=(
-                    "Check your internet connection. "
-                    "If you are behind a proxy, set HTTPS_PROXY in your environment."
-                ),
-            )
+            raise GitHubError(msg("network_error", detail=str(exc)), error_code="network_error")
         except httpx.TimeoutException:
-            raise GitHubError(
-                "GitHub request timed out.",
-                error_code="timeout",
-                suggestion="Try again in a moment. If this persists, check your network connection.",
-            )
+            raise GitHubError(msg("timeout"), error_code="timeout")
 
         return response.json()
 
     def get_labels(self) -> set[str]:
         """Return the set of label names that exist in the repo."""
-        url = f"{self.BASE_URL}/repos/{self.repo}/labels"
+        _, url = self._url("github", "list_labels")
         names: set[str] = set()
         page = 1
         while True:
@@ -163,7 +111,7 @@ class GitHubClient:
                 resp = self._client.get(url, params={"per_page": 100, "page": page})
                 resp.raise_for_status()
             except httpx.HTTPStatusError:
-                return names  # best-effort; caller decides what to do on error
+                return names
             data = resp.json()
             if not data:
                 break
@@ -174,19 +122,19 @@ class GitHubClient:
         return names
 
     def create_label(self, name: str, color: str, description: str) -> bool:
-        """Create a label. Returns True on success, False if already exists or on error."""
-        url = f"{self.BASE_URL}/repos/{self.repo}/labels"
+        """Create a label. Returns True on success or if already exists."""
+        _, url = self._url("github", "create_label")
         try:
             resp = self._client.post(url, json={"name": name, "color": color, "description": description})
-            return resp.status_code in (201, 422)  # 422 = already exists
+            return resp.status_code in (201, 422)
         except httpx.HTTPError:
             return False
 
     def ensure_labels(self, labels: list[str]) -> str | None:
         """Ensure all requested labels exist, creating missing ones from labels.json.
 
-        Returns None on success, or a short error string if any label could not
-        be found or created (so Claude can surface it to the user).
+        Returns None on success, or an error string when any label could not be
+        found or created — caller returns this to Claude to handle directly.
         """
         if not labels:
             return None
@@ -209,5 +157,5 @@ class GitHubClient:
                 failed.append(name)
 
         if failed:
-            return f"Labels not found and could not be created: {', '.join(failed)}"
+            return msg("label_bootstrap_failed", detail=", ".join(failed))
         return None

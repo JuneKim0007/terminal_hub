@@ -11,7 +11,7 @@ class WorkspaceMode(StrEnum):
     GITHUB = "github"
 
 
-_CONFIG_FILE = ".terminal_hub/config.yaml"
+_CONFIG_FILE = "hub_agents/config.yaml"
 
 
 def load_config(root: Path) -> dict[str, Any] | None:

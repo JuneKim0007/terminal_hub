@@ -1,10 +1,10 @@
-"""Read/write .terminal_hub/.env for per-project credential and path storage."""
+"""Read/write hub_agents/.env for per-project credential and path storage."""
 from pathlib import Path
 
 
 def read_env(root: Path) -> dict[str, str]:
-    """Parse .terminal_hub/.env. Returns empty dict if file missing."""
-    path = root / ".terminal_hub" / ".env"
+    """Parse hub_agents/.env. Returns empty dict if file missing."""
+    path = root / "hub_agents" / ".env"
     if not path.exists():
         return {}
     result = {}
@@ -19,8 +19,8 @@ def read_env(root: Path) -> dict[str, str]:
 
 
 def write_env(root: Path, values: dict[str, str]) -> None:
-    """Merge values into .terminal_hub/.env and ensure it is gitignored."""
-    path = root / ".terminal_hub" / ".env"
+    """Merge values into hub_agents/.env and ensure hub_agents/ is gitignored."""
+    path = root / "hub_agents" / ".env"
     path.parent.mkdir(parents=True, exist_ok=True)
 
     existing = read_env(root)
@@ -33,8 +33,8 @@ def write_env(root: Path, values: dict[str, str]) -> None:
 
 
 def _ensure_gitignored(root: Path) -> None:
-    """Add .terminal_hub/.env to .gitignore if not already present."""
-    entry = ".terminal_hub/.env"
+    """Add hub_agents/ to .gitignore if not already present."""
+    entry = "hub_agents/"
     gitignore = root / ".gitignore"
     if gitignore.exists():
         content = gitignore.read_text()

@@ -9,14 +9,14 @@ from terminal_hub.workspace import detect_repo, init_workspace
 
 def test_init_workspace_creates_directories(tmp_path):
     init_workspace(tmp_path)
-    assert (tmp_path / ".terminal_hub").is_dir()
-    assert (tmp_path / ".terminal_hub" / "issues").is_dir()
+    assert (tmp_path / "hub_agents").is_dir()
+    assert (tmp_path / "hub_agents" / "issues").is_dir()
 
 
 def test_init_workspace_is_idempotent(tmp_path):
     init_workspace(tmp_path)
     init_workspace(tmp_path)
-    assert (tmp_path / ".terminal_hub").is_dir()
+    assert (tmp_path / "hub_agents").is_dir()
 
 
 def test_detect_repo_from_env(tmp_path):

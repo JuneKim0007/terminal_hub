@@ -1,4 +1,4 @@
-"""Tests for terminal-hub install command."""
+"""Tests for terminal-hub install command (global install)."""
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -9,29 +9,22 @@ from terminal_hub.install import build_mcp_config, write_claude_json, read_claud
 @pytest.fixture
 def claude_json(tmp_path):
     path = tmp_path / ".claude.json"
-    path.write_text(json.dumps({"projects": {}}))
+    path.write_text(json.dumps({"mcpServers": {}}))
     return path
-
-
-@pytest.fixture
-def project(tmp_path):
-    (tmp_path / ".git").mkdir()
-    return tmp_path
 
 
 # ── build_mcp_config ──────────────────────────────────────────────────────────
 
-def test_build_config_with_repo(project):
-    cfg = build_mcp_config(project, repo="owner/repo")
+def test_build_config_has_no_env_vars():
+    cfg = build_mcp_config()
+    assert "env" not in cfg
     assert cfg["args"] == ["-m", "terminal_hub"]
-    assert cfg["env"]["PROJECT_ROOT"] == str(project)
-    assert cfg["env"]["GITHUB_REPO"] == "owner/repo"
 
 
-def test_build_config_without_repo(project):
-    cfg = build_mcp_config(project, repo=None)
-    assert "GITHUB_REPO" not in cfg["env"]
-    assert cfg["env"]["PROJECT_ROOT"] == str(project)
+def test_build_config_has_command():
+    cfg = build_mcp_config()
+    assert "command" in cfg
+    assert cfg["command"]  # non-empty
 
 
 # ── read_claude_json ──────────────────────────────────────────────────────────
@@ -55,59 +48,36 @@ def test_read_claude_json_invalid_json_returns_empty(tmp_path):
 
 # ── write_claude_json ─────────────────────────────────────────────────────────
 
-def test_write_adds_mcp_entry(claude_json, project):
-    cfg = build_mcp_config(project, repo="owner/repo")
-    write_claude_json(claude_json, project, cfg)
+def test_write_adds_global_mcp_entry(claude_json):
+    cfg = build_mcp_config()
+    write_claude_json(claude_json, cfg)
 
     data = json.loads(claude_json.read_text())
-    assert "terminal-hub" in data["projects"][str(project)]["mcpServers"]
+    assert "terminal-hub" in data["mcpServers"]
 
 
-def test_write_preserves_existing_projects(claude_json, project, tmp_path):
-    other = tmp_path / "other"
-    existing_data = {
-        "projects": {
-            str(other): {"mcpServers": {"some-other": {}}}
-        }
-    }
-    claude_json.write_text(json.dumps(existing_data))
+def test_write_preserves_existing_mcp_servers(claude_json):
+    existing = {"mcpServers": {"other-tool": {"command": "foo"}}}
+    claude_json.write_text(json.dumps(existing))
 
-    cfg = build_mcp_config(project, repo=None)
-    write_claude_json(claude_json, project, cfg)
+    write_claude_json(claude_json, build_mcp_config())
 
     data = json.loads(claude_json.read_text())
-    assert str(other) in data["projects"]
-    assert str(project) in data["projects"]
+    assert "other-tool" in data["mcpServers"]
+    assert "terminal-hub" in data["mcpServers"]
 
 
-def test_write_preserves_other_mcp_servers(claude_json, project):
-    existing_data = {
-        "projects": {
-            str(project): {"mcpServers": {"other-server": {"command": "foo"}}}
-        }
-    }
-    claude_json.write_text(json.dumps(existing_data))
+def test_write_overwrites_existing_terminal_hub_entry(claude_json):
+    old = {"mcpServers": {"terminal-hub": {"command": "old"}}}
+    claude_json.write_text(json.dumps(old))
 
-    cfg = build_mcp_config(project, repo=None)
-    write_claude_json(claude_json, project, cfg)
+    write_claude_json(claude_json, build_mcp_config())
 
     data = json.loads(claude_json.read_text())
-    servers = data["projects"][str(project)]["mcpServers"]
-    assert "other-server" in servers
-    assert "terminal-hub" in servers
+    assert data["mcpServers"]["terminal-hub"]["command"] != "old"
 
 
-def test_write_overwrites_existing_terminal_hub_entry(claude_json, project):
-    old_data = {
-        "projects": {
-            str(project): {"mcpServers": {"terminal-hub": {"command": "old"}}}
-        }
-    }
-    claude_json.write_text(json.dumps(old_data))
-
-    cfg = build_mcp_config(project, repo="new/repo")
-    write_claude_json(claude_json, project, cfg)
-
+def test_write_does_not_create_projects_key(claude_json):
+    write_claude_json(claude_json, build_mcp_config())
     data = json.loads(claude_json.read_text())
-    entry = data["projects"][str(project)]["mcpServers"]["terminal-hub"]
-    assert entry["env"]["GITHUB_REPO"] == "new/repo"
+    assert "projects" not in data

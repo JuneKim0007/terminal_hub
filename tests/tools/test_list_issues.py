@@ -12,7 +12,7 @@ def call(server, tool_name, args):
 
 @pytest.fixture
 def workspace(tmp_path):
-    (tmp_path / ".terminal_hub" / "issues").mkdir(parents=True)
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
     return tmp_path
 
 

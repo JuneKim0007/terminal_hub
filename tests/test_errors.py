@@ -41,3 +41,24 @@ def test_error_msg_json_is_valid():
     path = Path(__file__).parent.parent / "terminal_hub" / "error_msg.json"
     data = json.loads(path.read_text())
     assert isinstance(data, dict)
+
+
+def test_load_raises_runtime_error_on_missing_file(monkeypatch):
+    from unittest.mock import patch
+    from terminal_hub import errors
+    with patch("terminal_hub.errors.Path.read_text", side_effect=OSError("no file")):
+        with pytest.raises(RuntimeError, match="Failed to load error_msg.json"):
+            errors._load()
+
+
+def test_msg_missing_placeholder_returns_error_string():
+    # Force a template with a placeholder that's not provided
+    from terminal_hub import errors
+    original = errors._MSGS.copy()
+    errors._MSGS["_test_key"] = "Hello {name} and {missing}"
+    try:
+        result = errors.msg("_test_key", name="world")  # 'missing' not supplied
+        assert "missing placeholder" in result
+        assert "_test_key" in result
+    finally:
+        errors._MSGS.pop("_test_key", None)

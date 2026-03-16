@@ -5,7 +5,7 @@ from terminal_hub.env_store import read_env, write_env
 
 @pytest.fixture
 def workspace(tmp_path):
-    (tmp_path / ".terminal_hub").mkdir()
+    (tmp_path / "hub_agents").mkdir()
     return tmp_path
 
 
@@ -41,7 +41,7 @@ def test_write_skips_empty_values(workspace):
 
 
 def test_read_ignores_comments_and_blank_lines(workspace):
-    env_file = workspace / ".terminal_hub" / ".env"
+    env_file = workspace / "hub_agents" / ".env"
     env_file.write_text("# comment\n\nPROJECT_ROOT=/my/project\n")
     result = read_env(workspace)
     assert result == {"PROJECT_ROOT": "/my/project"}
@@ -51,17 +51,17 @@ def test_write_auto_adds_to_gitignore(workspace):
     (workspace / ".gitignore").write_text("*.pyc\n")
     write_env(workspace, {"PROJECT_ROOT": "/x"})
     content = (workspace / ".gitignore").read_text()
-    assert ".terminal_hub/.env" in content
+    assert "hub_agents/" in content
 
 
 def test_write_creates_gitignore_if_missing(workspace):
     write_env(workspace, {"PROJECT_ROOT": "/x"})
     assert (workspace / ".gitignore").exists()
-    assert ".terminal_hub/.env" in (workspace / ".gitignore").read_text()
+    assert "hub_agents/" in (workspace / ".gitignore").read_text()
 
 
 def test_write_does_not_duplicate_gitignore_entry(workspace):
-    (workspace / ".gitignore").write_text(".terminal_hub/.env\n")
+    (workspace / ".gitignore").write_text("hub_agents/\n")
     write_env(workspace, {"PROJECT_ROOT": "/x"})
     content = (workspace / ".gitignore").read_text()
-    assert content.count(".terminal_hub/.env") == 1
+    assert content.count("hub_agents/") == 1

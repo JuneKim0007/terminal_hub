@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from terminal_hub.auth import TokenSource, get_auth_options, resolve_token, verify_gh_cli_auth
 from terminal_hub.config import WorkspaceMode, load_config, save_config
+from terminal_hub.env_store import read_env, write_env
 from terminal_hub.github_client import GitHubClient, GitHubError
 from terminal_hub.prompts import TERMINAL_HUB_INSTRUCTIONS
 from terminal_hub.slugify import slugify
@@ -21,25 +22,39 @@ from terminal_hub.workspace import detect_repo, init_workspace, resolve_workspac
 
 
 def get_workspace_root() -> Path:
-    """Return resolved workspace root. Falls back to cwd if resolution fails."""
-    return resolve_workspace_root() or Path.cwd()
+    return resolve_workspace_root()
+
+
+def ensure_initialized(root: Path) -> dict | None:
+    """Return a needs_init response if hub_agents/ is absent, else None.
+
+    When returned, Claude should ask the user for their GitHub repo (owner/repo)
+    if they want GitHub integration, then call setup_workspace.
+    """
+    if not (root / "hub_agents").exists():
+        return {
+            "status": "needs_init",
+            "message": (
+                "This project hasn't been set up with terminal-hub yet. "
+                "Ask the user: would they like GitHub integration? If yes, what is their repo (owner/repo format)? "
+                "Then call setup_workspace to initialise."
+            ),
+        }
+    return None
 
 
 def get_github_client() -> tuple[GitHubClient | None, str]:
-    """Return (client, error_message). Client is None if auth unavailable.
-
-    error_message is Claude-readable with a suggestion if client is None.
-    """
+    """Return (client, error_message). Client is None if auth unavailable."""
     token, source = resolve_token()
     if token is None:
         return None, source.suggestion()
 
     root = get_workspace_root()
-    repo = os.environ.get("GITHUB_REPO") or detect_repo(root)
+    repo = detect_repo(root)
     if not repo:
         return None, (
-            "No GitHub repo detected. Set GITHUB_REPO=owner/repo in your MCP config env, "
-            "or run from a directory with a git remote set."
+            "No GitHub repo configured for this project. "
+            "Call setup_workspace with github_repo='owner/repo' to set one."
         )
 
     return GitHubClient(token=token, repo=repo), ""
@@ -47,9 +62,6 @@ def get_github_client() -> tuple[GitHubClient | None, str]:
 
 def create_server() -> FastMCP:
     mcp = FastMCP("terminal-hub")
-
-    # Auto-init workspace on startup
-    init_workspace(get_workspace_root())
 
     @mcp.prompt()
     def terminal_hub_instructions() -> str:
@@ -101,11 +113,13 @@ def create_server() -> FastMCP:
         labels: list[str] | None = None,
         assignees: list[str] | None = None,
     ) -> dict:
-        """Create a GitHub issue and save context locally.
+        """Create a GitHub issue and save context locally in hub_agents/issues/.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
-        gh, error_msg = get_github_client()
+        if err := ensure_initialized(root):
+            return err
 
+        gh, error_msg = get_github_client()
         if gh is None:
             return {
                 "error": "github_unavailable",
@@ -156,9 +170,11 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def list_issues() -> dict:
-        """Return all tracked issues from local .terminal_hub/issues/ files.
+        """Return all tracked issues from local hub_agents/issues/ files.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
         return {"issues": list_issue_files(root)}
 
     @mcp.tool()
@@ -166,6 +182,8 @@ def create_server() -> FastMCP:
         """Read a specific issue file by slug to reload context cheaply.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
         content = read_issue_file(root, slug)
         if content is None:
             return {
@@ -178,9 +196,12 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def update_project_description(content: str) -> dict:
-        """Overwrite project_description.md. Call get_project_context first to preserve existing content.
+        """Overwrite hub_agents/project_description.md.
+        Call get_project_context first to preserve existing content.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
         try:
             path = write_doc_file(root, "project_description", content)
             return {"updated": True, "file": str(path.relative_to(root))}
@@ -189,9 +210,12 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def update_architecture(content: str) -> dict:
-        """Overwrite architecture_design.md. Call get_project_context first to preserve existing content.
+        """Overwrite hub_agents/architecture_design.md.
+        Call get_project_context first to preserve existing content.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
         try:
             path = write_doc_file(root, "architecture", content)
             return {"updated": True, "file": str(path.relative_to(root))}
@@ -200,10 +224,12 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def get_project_context(file: str) -> dict:
-        """Read project_description.md and/or architecture_design.md.
+        """Read project_description.md and/or architecture_design.md from hub_agents/.
         file: 'project_description', 'architecture', or 'all'.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
         if file == "all":
             return {
                 "project_description": read_doc_file(root, "project_description"),
@@ -216,48 +242,63 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def get_setup_status() -> dict:
-        """Check if this project is configured. Call at session start.
-        If configured=False, present the options to the user and call setup_workspace.
+        """Check if this project has been initialised.
+        If initialised=False, call setup_workspace.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
-        cfg = load_config(root)
-        if cfg is None:
-            issues_dir = root / ".terminal_hub" / "issues"
-            has_existing = issues_dir.exists() and any(issues_dir.glob("*.md"))
+        hub_dir = root / "hub_agents"
+        if not hub_dir.exists():
             return {
-                "configured": False,
-                "has_existing_data": has_existing,
-                "options": [
-                    {"value": "local", "label": "Local — track plans and issues on this machine only"},
-                    {"value": "github", "label": "GitHub (new repo) — create a new GitHub repository"},
-                    {"value": "connect", "label": "Connect — link to an existing GitHub repository"},
-                ],
+                "initialised": False,
+                "message": (
+                    "hub_agents/ not found. "
+                    "Ask the user if they want GitHub integration and call setup_workspace."
+                ),
             }
-        return {"configured": True, "mode": cfg["mode"], "repo": cfg.get("repo")}
+        cfg = load_config(root)
+        env = read_env(root)
+        return {
+            "initialised": True,
+            "mode": cfg["mode"] if cfg else "unknown",
+            "github_repo": env.get("GITHUB_REPO"),
+        }
 
     @mcp.tool()
     def setup_workspace(
-        mode: str,
-        repo: str | None = None,
+        github_repo: str | None = None,
     ) -> dict:
-        """Configure the workspace for this project.
-        mode: 'local', 'github' (new repo), or 'connect' (existing repo).
-        repo: required for 'github' and 'connect' modes (format: owner/repo-name).
+        """Initialise terminal-hub for this project.
+
+        Creates hub_agents/, stores github_repo in hub_agents/.env if provided,
+        and gitignores hub_agents/.
+
+        github_repo: optional 'owner/repo' — omit for local-only mode.
         Hint: load terminal_hub_instructions if you haven't yet."""
         root = get_workspace_root()
-        valid_modes = {"local", "github", "connect"}
-        if mode not in valid_modes:
-            return {
-                "error": "invalid_mode",
-                "message": f"mode must be one of: {', '.join(sorted(valid_modes))}",
-            }
-        if mode in ("github", "connect") and not repo:
-            return {
-                "error": "missing_repo",
-                "message": f"repo (owner/repo-name) is required for mode '{mode}'",
-            }
-        workspace_mode = WorkspaceMode.LOCAL if mode == "local" else WorkspaceMode.GITHUB
-        save_config(root, workspace_mode, repo)
-        return {"success": True, "mode": mode, "repo": repo}
+
+        init_workspace(root)
+
+        from terminal_hub.env_store import _ensure_gitignored
+        _ensure_gitignored(root)
+
+        values: dict[str, str] = {}
+        if github_repo:
+            values["GITHUB_REPO"] = github_repo
+
+        if values:
+            write_env(root, values)
+
+        mode = WorkspaceMode.GITHUB if github_repo else WorkspaceMode.LOCAL
+        save_config(root, mode, github_repo)
+
+        return {
+            "success": True,
+            "github_repo": github_repo,
+            "hub_dir": str(root / "hub_agents"),
+            "message": (
+                f"Initialised hub_agents/ in {root}. "
+                + (f"GitHub repo set to {github_repo}." if github_repo else "Running in local-only mode.")
+            ),
+        }
 
     return mcp

@@ -11,7 +11,7 @@ def call(server, tool_name, args):
 
 @pytest.fixture
 def workspace(tmp_path):
-    (tmp_path / ".terminal_hub" / "issues").mkdir(parents=True)
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
     return tmp_path
 
 
@@ -27,7 +27,7 @@ def test_create_issue_writes_local_file(workspace):
         server = create_server()
         result = call(server, "create_issue", {"title": "Fix auth bug", "body": "Fix it."})
 
-    assert (workspace / ".terminal_hub" / "issues" / "fix-auth-bug.md").exists()
+    assert (workspace / "hub_agents" / "issues" / "fix-auth-bug.md").exists()
     assert result["issue_number"] == 1
 
 
@@ -55,12 +55,12 @@ def test_create_issue_returns_error_when_no_auth(workspace):
 
 def test_create_issue_collision_resolved(workspace):
     # Pre-create the base slug file to force a -2 slug
-    (workspace / ".terminal_hub" / "issues" / "fix-auth-bug.md").write_text("x")
+    (workspace / "hub_agents" / "issues" / "fix-auth-bug.md").write_text("x")
     with patch("terminal_hub.server.get_github_client", return_value=(_mock_gh(), "")), \
          patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
         call(server, "create_issue", {"title": "Fix auth bug", "body": "body"})
-    assert (workspace / ".terminal_hub" / "issues" / "fix-auth-bug-2.md").exists()
+    assert (workspace / "hub_agents" / "issues" / "fix-auth-bug-2.md").exists()
 
 
 def test_create_issue_github_error_returns_error(workspace):

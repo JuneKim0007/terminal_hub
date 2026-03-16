@@ -6,13 +6,13 @@ from typing import Any
 import yaml
 
 _DOC_FILES = {
-    "project_description": ".terminal_hub/project_description.md",
-    "architecture": ".terminal_hub/architecture_design.md",
+    "project_description": "hub_agents/project_description.md",
+    "architecture": "hub_agents/architecture_design.md",
 }
 
 
 def _issues_dir(root: Path) -> Path:
-    return root / ".terminal_hub" / "issues"
+    return root / "hub_agents" / "issues"
 
 
 def resolve_slug(root: Path, base_slug: str) -> str:
@@ -85,7 +85,7 @@ def list_issue_files(root: Path) -> list[dict[str, Any]]:
                 "created_at": fm.get("created_at"),
                 "assignees": fm.get("assignees", []),
                 "labels": fm.get("labels", []),
-                "file": f".terminal_hub/issues/{slug}.md",
+                "file": f"hub_agents/issues/{slug}.md",
             })
     return sorted(results, key=lambda x: x["created_at"] or "", reverse=True)
 

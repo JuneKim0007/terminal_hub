@@ -1,4 +1,4 @@
-"""Auto-initialize .terminal_hub/ directory structure and detect cwd and GitHub repo."""
+"""Workspace root detection and initialisation helpers."""
 import os
 import re
 import subprocess
@@ -12,47 +12,35 @@ def _cwd() -> Path:
 
 def is_valid_project(path: Path) -> bool:
     """True if the directory looks like a project root."""
-    return (path / ".git").exists() or (path / ".terminal_hub").exists()
+    return (path / ".git").exists() or (path / "hub_agents").exists()
 
 
-def resolve_workspace_root() -> Path | None:
-    """Return the workspace root using a prioritised resolution chain.
+def resolve_workspace_root() -> Path:
+    """Return the workspace root.
 
     Order:
-      1. PROJECT_ROOT env var (explicit override)
-      2. PROJECT_ROOT stored in .terminal_hub/.env in cwd
-      3. cwd itself, if it looks like a project
-      4. None — caller must ask the user
+      1. PROJECT_ROOT env var (explicit override / test injection)
+      2. cwd
     """
-    # 1. Explicit env var
     if root := os.environ.get("PROJECT_ROOT"):
         return Path(root)
-
-    cwd = _cwd()
-
-    # 2. .terminal_hub/.env in cwd
-    from terminal_hub.env_store import read_env
-    env = read_env(cwd)
-    if root := env.get("PROJECT_ROOT"):
-        return Path(root)
-
-    # 3. Validate cwd
-    if is_valid_project(cwd):
-        return cwd
-
-    return None
+    return _cwd()
 
 
 def init_workspace(root: Path) -> None:
-    """Create .terminal_hub/ structure if it does not exist. Idempotent."""
-    (root / ".terminal_hub" / "issues").mkdir(parents=True, exist_ok=True)
+    """Create hub_agents/ structure if it does not exist. Idempotent."""
+    (root / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
 
 
 def detect_repo(root: Path) -> str | None:
-    """Return 'owner/repo' from GITHUB_REPO env var or git remote origin.
+    """Return 'owner/repo' from hub_agents/.env, GITHUB_REPO env var, or git remote origin.
 
-    Returns None if neither is available.
+    Returns None if none are available.
     """
+    from terminal_hub.env_store import read_env
+    if repo := read_env(root).get("GITHUB_REPO"):
+        return repo
+
     if repo := os.environ.get("GITHUB_REPO"):
         return repo
 

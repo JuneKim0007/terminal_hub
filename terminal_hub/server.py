@@ -8,7 +8,6 @@ from terminal_hub.auth import TokenSource, get_auth_options, resolve_token, veri
 from terminal_hub.config import WorkspaceMode, load_config, save_config
 from terminal_hub.env_store import read_env, write_env
 from terminal_hub.github_client import GitHubClient, GitHubError
-from terminal_hub.prompts import TERMINAL_HUB_INSTRUCTIONS
 from terminal_hub.slugify import slugify
 from terminal_hub.storage import (
     list_issue_files,
@@ -20,17 +19,26 @@ from terminal_hub.storage import (
 )
 from terminal_hub.workspace import detect_repo, init_workspace, resolve_workspace_root
 
+_AGENTS_DIR = Path(__file__).parent.parent / "agents"
+
+# ── Guidance URIs ─────────────────────────────────────────────────────────────
+_G_INIT   = "terminal-hub://workflow/init"
+_G_ISSUE  = "terminal-hub://workflow/issue"
+_G_CONTEXT = "terminal-hub://workflow/context"
+_G_AUTH   = "terminal-hub://workflow/auth"
+
+
+def _load_agent(name: str) -> str:
+    path = _AGENTS_DIR / name
+    return path.read_text() if path.exists() else ""
+
 
 def get_workspace_root() -> Path:
     return resolve_workspace_root()
 
 
 def ensure_initialized(root: Path) -> dict | None:
-    """Return a needs_init response if hub_agents/ is absent, else None.
-
-    When returned, Claude should ask the user for their GitHub repo (owner/repo)
-    if they want GitHub integration, then call setup_workspace.
-    """
+    """Return a needs_init response if hub_agents/ is absent, else None."""
     if not (root / "hub_agents").exists():
         return {
             "status": "needs_init",
@@ -39,6 +47,7 @@ def ensure_initialized(root: Path) -> dict | None:
                 "Ask the user: would they like GitHub integration? If yes, what is their repo (owner/repo format)? "
                 "Then call setup_workspace to initialise."
             ),
+            "_guidance": _G_INIT,
         }
     return None
 
@@ -61,11 +70,34 @@ def get_github_client() -> tuple[GitHubClient | None, str]:
 
 
 def create_server() -> FastMCP:
-    mcp = FastMCP("terminal-hub")
+    mcp = FastMCP("terminal-hub", instructions=_load_agent("entry_point.md"))
 
-    @mcp.prompt()
-    def terminal_hub_instructions() -> str:
-        return TERMINAL_HUB_INSTRUCTIONS
+    # ── Resources (workflow guides) ───────────────────────────────────────────
+
+    @mcp.resource("terminal-hub://instructions")
+    def instructions_resource() -> str:
+        """Full entry point instructions and tool reference."""
+        return _load_agent("entry_point.md")
+
+    @mcp.resource("terminal-hub://workflow/init")
+    def workflow_init() -> str:
+        """Step-by-step guide for initialising a new project workspace."""
+        return _load_agent("workflow_init.md")
+
+    @mcp.resource("terminal-hub://workflow/issue")
+    def workflow_issue() -> str:
+        """Guide for creating, listing, and reloading issue context."""
+        return _load_agent("workflow_issue.md")
+
+    @mcp.resource("terminal-hub://workflow/context")
+    def workflow_context() -> str:
+        """Guide for loading and saving project description and architecture."""
+        return _load_agent("workflow_context.md")
+
+    @mcp.resource("terminal-hub://workflow/auth")
+    def workflow_auth() -> str:
+        """Auth recovery guide — check_auth → gh auth login → verify_auth."""
+        return _load_agent("workflow_auth.md")
 
     # ── Auth tools ────────────────────────────────────────────────────────────
 
@@ -85,6 +117,7 @@ def create_server() -> FastMCP:
             "authenticated": False,
             "message": "No GitHub authentication found.",
             "options": get_auth_options(),
+            "_guidance": _G_AUTH,
         }
 
     @mcp.tool()
@@ -102,6 +135,7 @@ def create_server() -> FastMCP:
             "authenticated": False,
             "message": message,
             "options": get_auth_options(),
+            "_guidance": _G_AUTH,
         }
 
     # ── Issue tools ───────────────────────────────────────────────────────────
@@ -113,8 +147,7 @@ def create_server() -> FastMCP:
         labels: list[str] | None = None,
         assignees: list[str] | None = None,
     ) -> dict:
-        """Create a GitHub issue and save context locally in hub_agents/issues/.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        """Create a GitHub issue and save context locally in hub_agents/issues/."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -125,6 +158,7 @@ def create_server() -> FastMCP:
                 "error": "github_unavailable",
                 "message": error_msg,
                 "suggestion": "Call check_auth to present login options to the user.",
+                "_guidance": _G_AUTH,
             }
 
         try:
@@ -170,8 +204,7 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def list_issues() -> dict:
-        """Return all tracked issues from local hub_agents/issues/ files.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        """Return all tracked issues from local hub_agents/issues/ files."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -179,8 +212,7 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def get_issue_context(slug: str) -> dict:
-        """Read a specific issue file by slug to reload context cheaply.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        """Read a specific issue file by slug to reload context cheaply."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -197,8 +229,7 @@ def create_server() -> FastMCP:
     @mcp.tool()
     def update_project_description(content: str) -> dict:
         """Overwrite hub_agents/project_description.md.
-        Call get_project_context first to preserve existing content.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        Call get_project_context first to preserve existing content."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -211,8 +242,7 @@ def create_server() -> FastMCP:
     @mcp.tool()
     def update_architecture(content: str) -> dict:
         """Overwrite hub_agents/architecture_design.md.
-        Call get_project_context first to preserve existing content.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        Call get_project_context first to preserve existing content."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -225,8 +255,7 @@ def create_server() -> FastMCP:
     @mcp.tool()
     def get_project_context(file: str) -> dict:
         """Read project_description.md and/or architecture_design.md from hub_agents/.
-        file: 'project_description', 'architecture', or 'all'.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        file: 'project_description', 'architecture', or 'all'."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -242,9 +271,7 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     def get_setup_status() -> dict:
-        """Check if this project has been initialised.
-        If initialised=False, call setup_workspace.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        """Check if this project has been initialised. Always call this first."""
         root = get_workspace_root()
         hub_dir = root / "hub_agents"
         if not hub_dir.exists():
@@ -254,6 +281,7 @@ def create_server() -> FastMCP:
                     "hub_agents/ not found. "
                     "Ask the user if they want GitHub integration and call setup_workspace."
                 ),
+                "_guidance": _G_INIT,
             }
         cfg = load_config(root)
         env = read_env(root)
@@ -264,16 +292,13 @@ def create_server() -> FastMCP:
         }
 
     @mcp.tool()
-    def setup_workspace(
-        github_repo: str | None = None,
-    ) -> dict:
+    def setup_workspace(github_repo: str | None = None) -> dict:
         """Initialise terminal-hub for this project.
 
         Creates hub_agents/, stores github_repo in hub_agents/.env if provided,
         and gitignores hub_agents/.
 
-        github_repo: optional 'owner/repo' — omit for local-only mode.
-        Hint: load terminal_hub_instructions if you haven't yet."""
+        github_repo: optional 'owner/repo' — omit for local-only mode."""
         root = get_workspace_root()
 
         init_workspace(root)

@@ -38,6 +38,8 @@ def test_setup_local_mode(tmp_path):
         result = call(server, "setup_workspace", {})
     assert result["success"] is True
     assert (tmp_path / "hub_agents" / "config.yaml").exists()
+    assert "_display" in result
+    assert "local" in result["_display"]
 
 
 def test_setup_with_github_repo(tmp_path):
@@ -48,6 +50,8 @@ def test_setup_with_github_repo(tmp_path):
     assert result["github_repo"] == "owner/my-repo"
     from terminal_hub.env_store import read_env
     assert read_env(tmp_path)["GITHUB_REPO"] == "owner/my-repo"
+    assert "_display" in result
+    assert "owner/my-repo" in result["_display"]
 
 
 def test_setup_creates_hub_agents_dir(tmp_path):

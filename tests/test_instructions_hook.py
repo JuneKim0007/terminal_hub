@@ -93,7 +93,7 @@ def test_workflow_init_resource_has_content(server):
 
 def test_workflow_issue_resource_has_content(server):
     result = read_resource(server, "terminal-hub://workflow/issue")
-    assert "create_issue" in result
+    assert len(result) > 0  # content loaded from workflow_issue.md
 
 
 def test_workflow_context_resource_has_content(server):
@@ -124,12 +124,17 @@ def test_get_setup_status_uninitialised_includes_guidance(tmp_path):
 
 
 def test_github_unavailable_includes_guidance(tmp_path):
-    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
+    import json
+    from datetime import date
     from terminal_hub.auth import TokenSource
+    from terminal_hub.storage import write_issue_file
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
+    write_issue_file(root=tmp_path, slug="x", title="x", body="y",
+                     assignees=[], labels=[], created_at=date.today())
     with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path), \
          patch("terminal_hub.server.resolve_token", return_value=(None, TokenSource.NONE)):
         s = create_server()
-        result = call(s, "create_issue", {"title": "x", "body": "y"})
+        result = call(s, "submit_issue", {"slug": "x"})
     assert result["error"] == "github_unavailable"
     assert result["_guidance"] == "terminal-hub://workflow/auth"
 

@@ -1,19 +1,29 @@
-import os
+"""MCP server for terminal-hub.
+
+Registers all tools and workflow-guide resources. Entry point is create_server(),
+which returns a configured FastMCP instance ready to call server.run().
+"""
+import json
 from datetime import date
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from terminal_hub.auth import TokenSource, get_auth_options, resolve_token, verify_gh_cli_auth
+from terminal_hub.auth import get_auth_options, resolve_token, verify_gh_cli_auth
 from terminal_hub.config import WorkspaceMode, load_config, save_config
 from terminal_hub.env_store import read_env, write_env
-from terminal_hub.github_client import GitHubClient, GitHubError
+from terminal_hub.errors import msg
+from terminal_hub.github_client import GitHubClient, GitHubError, load_default_labels
 from terminal_hub.slugify import slugify
 from terminal_hub.storage import (
+    IssueStatus,
     list_issue_files,
     read_doc_file,
     read_issue_file,
+    read_issue_frontmatter,
     resolve_slug,
+    update_issue_status,
+    validate_slug,
     write_doc_file,
     write_issue_file,
 )
@@ -22,15 +32,15 @@ from terminal_hub.workspace import detect_repo, init_workspace, resolve_workspac
 _AGENTS_DIR = Path(__file__).parent.parent / "agents"
 
 # ── Guidance URIs ─────────────────────────────────────────────────────────────
-_G_INIT   = "terminal-hub://workflow/init"
-_G_ISSUE  = "terminal-hub://workflow/issue"
+_G_INIT    = "terminal-hub://workflow/init"
+_G_ISSUE   = "terminal-hub://workflow/issue"
 _G_CONTEXT = "terminal-hub://workflow/context"
-_G_AUTH   = "terminal-hub://workflow/auth"
+_G_AUTH    = "terminal-hub://workflow/auth"
 
 
 def _load_agent(name: str) -> str:
     path = _AGENTS_DIR / name
-    return path.read_text() if path.exists() else ""
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def get_workspace_root() -> Path:
@@ -70,6 +80,7 @@ def get_github_client() -> tuple[GitHubClient | None, str]:
 
 
 def create_server() -> FastMCP:
+    """Create and return the configured FastMCP instance."""
     mcp = FastMCP("terminal-hub", instructions=_load_agent("entry_point.md"))
 
     # ── Resources (workflow guides) ───────────────────────────────────────────
@@ -126,11 +137,7 @@ def create_server() -> FastMCP:
         Call this after the user reports they have completed gh auth login."""
         success, message = verify_gh_cli_auth()
         if success:
-            return {
-                "authenticated": True,
-                "source": "gh_cli",
-                "message": message,
-            }
+            return {"authenticated": True, "source": "gh_cli", "message": message}
         return {
             "authenticated": False,
             "message": message,
@@ -141,70 +148,135 @@ def create_server() -> FastMCP:
     # ── Issue tools ───────────────────────────────────────────────────────────
 
     @mcp.tool()
-    def create_issue(
-        title: str,
-        body: str,
-        labels: list[str] | None = None,
-        assignees: list[str] | None = None,
-    ) -> dict:
-        """Create a GitHub issue and save context locally in hub_agents/issues/."""
+    def draft_issue(issue_json: str) -> dict:
+        """Parse a structured JSON issue draft and save it locally as status=pending.
+
+        issue_json must be a JSON string with keys:
+          title (str, required), body (str, required),
+          labels (list[str], optional), assignees (list[str], optional)
+
+        Returns {slug, title, preview_body, status} so Claude can show the user
+        a preview and ask for approval before calling submit_issue.
+        Local-only users can stop here — the draft is cached in hub_agents/issues/.
+        """
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
 
-        gh, error_msg = get_github_client()
-        if gh is None:
-            return {
-                "error": "github_unavailable",
-                "message": error_msg,
-                "suggestion": "Call check_auth to present login options to the user.",
-                "_guidance": _G_AUTH,
-            }
-
         try:
-            data = gh.create_issue(
-                title=title,
-                body=body,
-                labels=labels or [],
-                assignees=assignees or [],
-            )
-        except GitHubError as exc:
-            return exc.to_dict()
+            data = json.loads(issue_json)
+        except json.JSONDecodeError as exc:
+            return {"error": "draft_failed", "message": msg("invalid_json", detail=str(exc)), "_hook": None}
+
+        for field in ("title", "body"):
+            if not data.get(field):
+                return {"error": "draft_failed", "message": msg("missing_field", detail=field), "_hook": None}
+
+        title: str = data["title"]
+        body: str = data["body"]
+        labels: list[str] = data.get("labels") or []
+        assignees: list[str] = data.get("assignees") or []
 
         base_slug = slugify(title)
+        if not base_slug:
+            return {"error": "draft_failed", "message": "Title produced an empty slug — use at least one alphanumeric character.", "_hook": None}
+
         slug = resolve_slug(root, base_slug)
 
         try:
-            path = write_issue_file(
+            write_issue_file(
                 root=root,
                 slug=slug,
                 title=title,
-                issue_number=data["number"],
-                github_url=data["html_url"],
                 body=body,
-                assignees=assignees or [],
-                labels=labels or [],
+                assignees=assignees,
+                labels=labels,
                 created_at=date.today(),
+                status=IssueStatus.PENDING,
             )
-            local_file = str(path.relative_to(root))
         except OSError as exc:
-            return {
-                "issue_number": data["number"],
-                "url": data["html_url"],
-                "local_file": None,
-                "warning": "local_write_failed",
-                "warning_message": f"Issue created on GitHub but local file could not be written: {exc}",
-            }
+            return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
 
         return {
-            "issue_number": data["number"],
-            "url": data["html_url"],
-            "local_file": local_file,
+            "slug": slug,
+            "title": title,
+            "preview_body": body[:300] + ("…" if len(body) > 300 else ""),
+            "labels": labels,
+            "assignees": assignees,
+            "status": str(IssueStatus.PENDING),
+            "local_file": f"hub_agents/issues/{slug}.md",
+        }
+
+    @mcp.tool()
+    def submit_issue(slug: str) -> dict:
+        """Submit a pending local issue draft to GitHub.
+
+        Reads the local hub_agents/issues/<slug>.md file, bootstraps any missing
+        labels, creates the GitHub issue, then updates the local file to status=open.
+
+        Call this only after the user has approved the draft shown by draft_issue.
+        On any failure Claude handles the error directly — no automatic retry.
+        """
+        root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
+
+        try:
+            validate_slug(slug)
+        except ValueError:
+            return {"error": "submit_failed", "message": msg("not_found", detail=slug), "_hook": None}
+
+        fm = read_issue_frontmatter(root, slug)
+        if fm is None:
+            return {"error": "submit_failed", "message": msg("not_found", detail=slug), "_hook": None}
+
+        gh, error_message = get_github_client()
+        if gh is None:
+            return {
+                "error": "github_unavailable",
+                "message": error_message,
+                "_guidance": _G_AUTH,
+                "_hook": None,
+            }
+
+        labels: list[str] = fm.get("labels") or []
+        raw = read_issue_file(root, slug) or ""
+        body = raw.split("---", 2)[-1].strip() if raw.startswith("---") else raw
+
+        with gh:
+            if labels:
+                label_err = gh.ensure_labels(labels)
+                if label_err:
+                    return {"error": "label_bootstrap_failed", "message": label_err, "_hook": None}
+
+            try:
+                result = gh.create_issue(
+                    title=fm["title"],
+                    body=body,
+                    labels=labels,
+                    assignees=fm.get("assignees") or [],
+                )
+            except GitHubError as exc:
+                return {**exc.to_dict(), "_hook": None}
+
+        update_issue_status(
+            root, slug,
+            status=IssueStatus.OPEN,
+            issue_number=result["number"],
+            github_url=result["html_url"],
+        )
+
+        return {
+            "issue_number": result["number"],
+            "url": result["html_url"],
+            "slug": slug,
+            "local_file": f"hub_agents/issues/{slug}.md",
         }
 
     @mcp.tool()
     def list_issues() -> dict:
-        """Return all tracked issues from local hub_agents/issues/ files."""
+        """Return all tracked issues from local hub_agents/issues/ files.
+        Each entry includes a 'status' field: pending | open | closed."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -216,12 +288,15 @@ def create_server() -> FastMCP:
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
+
+        try:
+            validate_slug(slug)
+        except ValueError:
+            return {"error": "not_found", "message": msg("not_found", detail=slug), "_hook": None}
+
         content = read_issue_file(root, slug)
         if content is None:
-            return {
-                "error": "not_found",
-                "message": f"No issue file found for slug '{slug}'. Use list_issues to see available slugs.",
-            }
+            return {"error": "not_found", "message": msg("not_found", detail=slug), "_hook": None}
         return {"slug": slug, "content": content}
 
     # ── Project context tools ─────────────────────────────────────────────────
@@ -236,8 +311,8 @@ def create_server() -> FastMCP:
         try:
             path = write_doc_file(root, "project_description", content)
             return {"updated": True, "file": str(path.relative_to(root))}
-        except OSError as exc:
-            return {"error": "write_failed", "message": str(exc)}
+        except (OSError, ValueError) as exc:
+            return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
     @mcp.tool()
     def update_architecture(content: str) -> dict:
@@ -249,23 +324,26 @@ def create_server() -> FastMCP:
         try:
             path = write_doc_file(root, "architecture", content)
             return {"updated": True, "file": str(path.relative_to(root))}
-        except OSError as exc:
-            return {"error": "write_failed", "message": str(exc)}
+        except (OSError, ValueError) as exc:
+            return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
     @mcp.tool()
-    def get_project_context(file: str) -> dict:
+    def get_project_context(doc_key: str) -> dict:
         """Read project_description.md and/or architecture_design.md from hub_agents/.
-        file: 'project_description', 'architecture', or 'all'."""
+        doc_key: 'project_description', 'architecture', or 'all'."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
-        if file == "all":
+        if doc_key == "all":
             return {
                 "project_description": read_doc_file(root, "project_description"),
                 "architecture": read_doc_file(root, "architecture"),
             }
-        content = read_doc_file(root, file)
-        return {"file": file, "content": content}
+        try:
+            content = read_doc_file(root, doc_key)
+        except ValueError as exc:
+            return {"error": "not_found", "message": str(exc), "_hook": None}
+        return {"doc_key": doc_key, "content": content}
 
     # ── Workspace setup tools ─────────────────────────────────────────────────
 
@@ -309,14 +387,21 @@ def create_server() -> FastMCP:
         values: dict[str, str] = {}
         if github_repo:
             values["GITHUB_REPO"] = github_repo
-
         if values:
             write_env(root, values)
 
         mode = WorkspaceMode.GITHUB if github_repo else WorkspaceMode.LOCAL
         save_config(root, mode, github_repo)
 
-        return {
+        label_warning: str | None = None
+        if github_repo:
+            gh, _ = get_github_client()
+            if gh is not None:
+                all_names = [d["name"] for d in load_default_labels()]
+                with gh:
+                    label_warning = gh.ensure_labels(all_names)
+
+        result: dict = {
             "success": True,
             "github_repo": github_repo,
             "hub_dir": str(root / "hub_agents"),
@@ -325,5 +410,8 @@ def create_server() -> FastMCP:
                 + (f"GitHub repo set to {github_repo}." if github_repo else "Running in local-only mode.")
             ),
         }
+        if label_warning:
+            result["label_warning"] = label_warning
+        return result
 
     return mcp

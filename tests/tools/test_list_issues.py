@@ -24,8 +24,8 @@ def test_list_issues_empty(workspace):
 
 
 def test_list_issues_returns_all(workspace):
-    write_issue_file(workspace, "fix-bug", "Fix bug", 1, "http://gh/1",
-                     "body", [], [], date(2026, 3, 15))
+    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug",
+                     body="body", assignees=[], labels=[], created_at=date(2026, 3, 15))
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "list_issues", {})
@@ -35,8 +35,8 @@ def test_list_issues_returns_all(workspace):
 
 def test_list_issues_sorted_desc(workspace):
     for slug, day in [("issue-a", 10), ("issue-b", 15), ("issue-c", 5)]:
-        write_issue_file(workspace, slug, slug, 1, f"http://gh/{slug}",
-                         "body", [], [], date(2026, 3, day))
+        write_issue_file(root=workspace, slug=slug, title=slug,
+                         body="body", assignees=[], labels=[], created_at=date(2026, 3, day))
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "list_issues", {})

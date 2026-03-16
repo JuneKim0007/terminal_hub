@@ -1,0 +1,18 @@
+{
+  "auth_failed":            "GitHub rejected the token. Generate a new one at github.com/settings/tokens with the 'repo' scope.",
+  "permission_denied":      "GitHub denied access. Ensure your token has the 'repo' scope.",
+  "repo_not_found":         "Repository not found. Check GITHUB_REPO is set to owner/repo-name.",
+  "validation_failed":      "GitHub rejected the request: {detail}",
+  "rate_limited":           "GitHub API rate limit exceeded. Wait a few minutes and try again.",
+  "network_error":          "Could not connect to GitHub: {detail}",
+  "timeout":                "GitHub request timed out. Check your network connection.",
+  "github_error":           "GitHub returned status {status_code}: {detail}",
+  "draft_failed":           "Could not save issue draft: {detail}",
+  "submit_failed":          "Could not submit issue to GitHub: {detail}",
+  "label_bootstrap_failed": "Labels not found and could not be created: {detail}",
+  "not_found":              "No issue file found for slug '{detail}'. Use list_issues to see available slugs.",
+  "write_failed":           "Could not write file: {detail}",
+  "read_failed":            "Could not read issue file '{detail}'.",
+  "invalid_json":           "Issue JSON is invalid: {detail}",
+  "missing_field":          "Issue JSON is missing required field: {detail}"
+}

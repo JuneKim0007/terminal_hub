@@ -20,14 +20,14 @@ def test_get_project_context_single(workspace):
     write_doc_file(workspace, "project_description", "# Project\n")
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "get_project_context", {"file": "project_description"})
+        result = call(server, "get_project_context", {"doc_key": "project_description"})
     assert result["content"] == "# Project\n"
 
 
 def test_get_project_context_not_found(workspace):
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "get_project_context", {"file": "project_description"})
+        result = call(server, "get_project_context", {"doc_key": "project_description"})
     assert result["content"] is None
 
 
@@ -35,14 +35,14 @@ def test_get_project_context_all(workspace):
     write_doc_file(workspace, "project_description", "# Project\n")
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "get_project_context", {"file": "all"})
+        result = call(server, "get_project_context", {"doc_key": "all"})
     assert result["project_description"] == "# Project\n"
     assert result["architecture"] is None
 
 
 def test_get_issue_context_found(workspace):
-    write_issue_file(workspace, "fix-bug", "Fix bug", 1, "http://gh", "body", [], [],
-                     date(2026, 3, 15))
+    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug",
+                     body="body", assignees=[], labels=[], created_at=date(2026, 3, 15))
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_issue_context", {"slug": "fix-bug"})

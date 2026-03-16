@@ -59,7 +59,7 @@ hub_agents/
 | `check_auth` | Auth error on any GitHub tool |
 | `verify_auth` | After user runs `gh auth login` |
 | `create_issue` | User wants to log a task or bug on GitHub |
-| `list_issues` | User asks what's tracked / what to work on next — then run `terminal-hub list` via Bash to open the interactive browser |
+| `list_issues` | User asks what's tracked / what to work on next |
 | `get_issue_context` | Reload context for a specific issue by slug |
 | `update_project_description` | User describes the project; save it for future sessions |
 | `update_architecture` | User explains tech stack or design decisions |
@@ -75,4 +75,3 @@ hub_agents/
 - `get_project_context(file="all")` is cheap — call it at session start to reload saved context
 - If a tool returns `{status: "needs_init"}` → follow `_guidance` URI or call `setup_workspace`
 - If a tool returns `{error: "github_unavailable"}` → follow `_guidance` URI or call `check_auth`
-- After calling `list_issues`, always follow up with `Bash: terminal-hub list` so the user gets the interactive keyboard-navigable browser in the terminal

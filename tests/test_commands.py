@@ -51,3 +51,22 @@ def test_all_github_commands_have_method_and_path():
 def test_unknown_command_raises_key_error():
     with pytest.raises(KeyError):
         endpoint("github", "nonexistent_command")
+
+
+def test_load_raises_runtime_error_on_missing_file(monkeypatch):
+    from unittest.mock import patch
+    from terminal_hub import commands
+    with patch("terminal_hub.commands.Path.read_text", side_effect=OSError("no file")):
+        with pytest.raises(RuntimeError, match="Failed to load hub_commands.json"):
+            commands._load()
+
+
+def test_endpoint_raises_value_error_for_malformed_entry():
+    from terminal_hub import commands
+    original = commands._CMDS.copy()
+    commands._CMDS.setdefault("github", {})["_bad"] = "NOSPACEINHERE"
+    try:
+        with pytest.raises(ValueError, match="Malformed command entry"):
+            endpoint("github", "_bad")
+    finally:
+        commands._CMDS["github"].pop("_bad", None)

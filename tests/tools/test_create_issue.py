@@ -18,6 +18,7 @@ def workspace(tmp_path):
 def _mock_gh(number=1, url="https://github.com/o/r/issues/1"):
     mock = MagicMock()
     mock.create_issue.return_value = {"number": number, "html_url": url}
+    mock.ensure_labels.return_value = None  # no label errors by default
     return mock
 
 
@@ -61,6 +62,20 @@ def test_create_issue_collision_resolved(workspace):
         server = create_server()
         call(server, "create_issue", {"title": "Fix auth bug", "body": "body"})
     assert (workspace / "hub_agents" / "issues" / "fix-auth-bug-2.md").exists()
+
+
+def test_create_issue_label_bootstrap_failed_returns_error(workspace):
+    mock_gh = _mock_gh()
+    mock_gh.ensure_labels.return_value = "Labels not found and could not be created: unknown-label"
+    with patch("terminal_hub.server.get_github_client", return_value=(mock_gh, "")), \
+         patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "create_issue", {
+            "title": "x", "body": "y", "labels": ["unknown-label"],
+        })
+    assert result["error"] == "label_bootstrap_failed"
+    assert result["action"] == "user_intervention_required"
+    assert "unknown-label" in result["message"]
 
 
 def test_create_issue_github_error_returns_error(workspace):

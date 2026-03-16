@@ -1,7 +1,7 @@
 import pytest
 import httpx
 from unittest.mock import MagicMock, patch
-from terminal_hub.github_client import GitHubClient, GitHubError, parse_error
+from terminal_hub.github_client import GitHubClient, GitHubError, parse_error, _load_default_labels
 
 
 # ── parse_error ───────────────────────────────────────────────────────────────
@@ -120,3 +120,119 @@ def test_github_error_to_dict():
     assert d["error"] == "auth_failed"
     assert d["suggestion"] == "fix your token"
     assert d["message"] == "something failed"
+
+
+# ── _load_default_labels ──────────────────────────────────────────────────────
+
+def test_load_default_labels_returns_list():
+    labels = _load_default_labels()
+    assert isinstance(labels, list)
+    assert len(labels) > 0
+
+
+def test_load_default_labels_have_required_fields():
+    for label in _load_default_labels():
+        assert "name" in label
+        assert "color" in label
+
+
+def test_load_default_labels_includes_bug_and_feature():
+    names = {l["name"] for l in _load_default_labels()}
+    assert "bug" in names
+    assert "feature" in names
+
+
+# ── get_labels ────────────────────────────────────────────────────────────────
+
+def test_get_labels_returns_names():
+    client = make_client()
+    resp = make_response(200, [{"name": "bug"}, {"name": "feature"}])
+    with patch.object(client._client, "get", return_value=resp):
+        names = client.get_labels()
+    assert names == {"bug", "feature"}
+
+
+def test_get_labels_returns_empty_on_error():
+    client = make_client()
+    resp = make_response(403)
+    with patch.object(client._client, "get", return_value=resp):
+        names = client.get_labels()
+    assert names == set()
+
+
+def test_get_labels_paginates():
+    client = make_client()
+    # First page: 100 items; second page: 1 item
+    page1 = make_response(200, [{"name": f"label-{i}"} for i in range(100)])
+    page2 = make_response(200, [{"name": "extra"}])
+    calls = iter([page1, page2])
+    with patch.object(client._client, "get", side_effect=lambda *a, **kw: next(calls)):
+        names = client.get_labels()
+    assert "label-0" in names
+    assert "extra" in names
+
+
+# ── create_label ──────────────────────────────────────────────────────────────
+
+def test_create_label_success():
+    client = make_client()
+    resp = make_response(201, {"name": "new-label"})
+    with patch.object(client._client, "post", return_value=resp):
+        ok = client.create_label("new-label", "ff0000", "A label")
+    assert ok is True
+
+
+def test_create_label_already_exists():
+    client = make_client()
+    # 422 means already exists — still considered success
+    resp = make_response(422, text="already exists")
+    with patch.object(client._client, "post", return_value=resp):
+        ok = client.create_label("bug", "d73a4a", "Something isn't working")
+    assert ok is True
+
+
+def test_create_label_returns_false_on_http_error():
+    client = make_client()
+    with patch.object(client._client, "post", side_effect=httpx.ConnectError("fail")):
+        ok = client.create_label("bad", "000000", "")
+    assert ok is False
+
+
+# ── ensure_labels ─────────────────────────────────────────────────────────────
+
+def test_ensure_labels_empty_list_returns_none():
+    client = make_client()
+    result = client.ensure_labels([])
+    assert result is None
+
+
+def test_ensure_labels_all_exist_returns_none():
+    client = make_client()
+    with patch.object(client, "get_labels", return_value={"bug", "feature"}):
+        result = client.ensure_labels(["bug", "feature"])
+    assert result is None
+
+
+def test_ensure_labels_creates_missing_known_label():
+    client = make_client()
+    with patch.object(client, "get_labels", return_value=set()):
+        with patch.object(client, "create_label", return_value=True):
+            result = client.ensure_labels(["bug"])
+    assert result is None
+
+
+def test_ensure_labels_returns_error_for_unknown_label():
+    client = make_client()
+    with patch.object(client, "get_labels", return_value=set()):
+        result = client.ensure_labels(["totally-unknown-label-xyz"])
+    assert result is not None
+    assert "totally-unknown-label-xyz" in result
+
+
+def test_ensure_labels_returns_error_when_create_fails():
+    client = make_client()
+    with patch.object(client, "get_labels", return_value=set()):
+        with patch.object(client, "create_label", return_value=False):
+            result = client.ensure_labels(["bug"])
+    assert result is not None
+    assert "bug" in result

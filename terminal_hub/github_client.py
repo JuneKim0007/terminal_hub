@@ -3,7 +3,19 @@
 Errors are always structured with a suggestion so Claude can explain
 exactly what the user needs to do to fix the problem.
 """
+import json
+from pathlib import Path
+
 import httpx
+
+_LABELS_FILE = Path(__file__).parent / "labels.json"
+
+
+def _load_default_labels() -> list[dict]:
+    try:
+        return json.loads(_LABELS_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
 
 
 # ── Error type ────────────────────────────────────────────────────────────────
@@ -140,3 +152,62 @@ class GitHubClient:
             )
 
         return response.json()
+
+    def get_labels(self) -> set[str]:
+        """Return the set of label names that exist in the repo."""
+        url = f"{self.BASE_URL}/repos/{self.repo}/labels"
+        names: set[str] = set()
+        page = 1
+        while True:
+            try:
+                resp = self._client.get(url, params={"per_page": 100, "page": page})
+                resp.raise_for_status()
+            except httpx.HTTPStatusError:
+                return names  # best-effort; caller decides what to do on error
+            data = resp.json()
+            if not data:
+                break
+            names.update(item["name"] for item in data)
+            if len(data) < 100:
+                break
+            page += 1
+        return names
+
+    def create_label(self, name: str, color: str, description: str) -> bool:
+        """Create a label. Returns True on success, False if already exists or on error."""
+        url = f"{self.BASE_URL}/repos/{self.repo}/labels"
+        try:
+            resp = self._client.post(url, json={"name": name, "color": color, "description": description})
+            return resp.status_code in (201, 422)  # 422 = already exists
+        except httpx.HTTPError:
+            return False
+
+    def ensure_labels(self, labels: list[str]) -> str | None:
+        """Ensure all requested labels exist, creating missing ones from labels.json.
+
+        Returns None on success, or a short error string if any label could not
+        be found or created (so Claude can surface it to the user).
+        """
+        if not labels:
+            return None
+
+        existing = self.get_labels()
+        missing = [l for l in labels if l not in existing]
+        if not missing:
+            return None
+
+        default_defs = {d["name"]: d for d in _load_default_labels()}
+        failed: list[str] = []
+
+        for name in missing:
+            defn = default_defs.get(name)
+            if defn:
+                ok = self.create_label(name, defn["color"], defn.get("description", ""))
+                if not ok:
+                    failed.append(name)
+            else:
+                failed.append(name)
+
+        if failed:
+            return f"Labels not found and could not be created: {', '.join(failed)}"
+        return None

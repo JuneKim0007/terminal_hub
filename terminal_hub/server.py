@@ -161,6 +161,15 @@ def create_server() -> FastMCP:
                 "_guidance": _G_AUTH,
             }
 
+        if labels:
+            label_err = gh.ensure_labels(labels)
+            if label_err:
+                return {
+                    "error": "label_bootstrap_failed",
+                    "message": label_err,
+                    "action": "user_intervention_required",
+                }
+
         try:
             data = gh.create_issue(
                 title=title,
@@ -316,7 +325,15 @@ def create_server() -> FastMCP:
         mode = WorkspaceMode.GITHUB if github_repo else WorkspaceMode.LOCAL
         save_config(root, mode, github_repo)
 
-        return {
+        label_warning: str | None = None
+        if github_repo:
+            gh, _ = get_github_client()
+            if gh is not None:
+                from terminal_hub.github_client import _load_default_labels
+                all_names = [d["name"] for d in _load_default_labels()]
+                label_warning = gh.ensure_labels(all_names)
+
+        result: dict = {
             "success": True,
             "github_repo": github_repo,
             "hub_dir": str(root / "hub_agents"),
@@ -325,5 +342,8 @@ def create_server() -> FastMCP:
                 + (f"GitHub repo set to {github_repo}." if github_repo else "Running in local-only mode.")
             ),
         }
+        if label_warning:
+            result["label_warning"] = label_warning
+        return result
 
     return mcp

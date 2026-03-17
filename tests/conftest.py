@@ -4,6 +4,7 @@ import pytest
 from extensions.github_planner import (
     _ANALYSIS_CACHE,
     _FILE_TREE_CACHE,
+    _LABEL_CACHE,
     _PROJECT_DOCS_CACHE,
     _REPO_CACHE,
     _SESSION_HEADER_CACHE,
@@ -19,6 +20,7 @@ def clear_all_caches():
     _PROJECT_DOCS_CACHE.clear()
     _FILE_TREE_CACHE.clear()
     _SESSION_HEADER_CACHE.clear()
+    _LABEL_CACHE.clear()
     _invalidate_repo_cache()
     invalidate_token_cache()
     yield
@@ -26,5 +28,6 @@ def clear_all_caches():
     _PROJECT_DOCS_CACHE.clear()
     _FILE_TREE_CACHE.clear()
     _SESSION_HEADER_CACHE.clear()
+    _LABEL_CACHE.clear()
     _invalidate_repo_cache()
     invalidate_token_cache()

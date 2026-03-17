@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "terminal-hub"
-version = "0.1.0"
+version = "0.2.0"
 description = "GitHub issue tracking and project context management for Claude Code via MCP"
 readme = "README.md"
 license = { text = "MIT" }

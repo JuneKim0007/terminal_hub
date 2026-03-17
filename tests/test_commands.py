@@ -35,7 +35,7 @@ def test_endpoint_path_is_formattable():
 
 
 def test_hub_commands_json_is_valid():
-    path = Path(__file__).parent.parent / "terminal_hub" / "hub_commands.json"
+    path = Path(__file__).parent.parent / "extensions" / "github_planner" / "hub_commands.json"
     data = json.loads(path.read_text())
     assert "github" in data
     assert "gh_cli" in data

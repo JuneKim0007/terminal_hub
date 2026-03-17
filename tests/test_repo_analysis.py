@@ -702,3 +702,165 @@ def test_analyze_repo_full_and_get_session_header_registered(workspace):
     tool_names = {t.name for t in server._tool_manager.list_tools()}
     assert "analyze_repo_full" in tool_names
     assert "get_session_header" in tool_names
+
+
+# ── _parse_h2_sections + _do_lookup_feature_section ─────────────────────────
+
+from plugins.github_planner import _parse_h2_sections, _do_lookup_feature_section
+
+
+def test_parse_h2_sections_basic():
+    text = "## Issue Management\ncontent A\n## Plugin Framework\ncontent B"
+    sections = _parse_h2_sections(text)
+    assert list(sections.keys()) == ["Issue Management", "Plugin Framework"]
+    assert sections["Issue Management"] == "content A"
+    assert sections["Plugin Framework"] == "content B"
+
+
+def test_parse_h2_sections_empty():
+    assert _parse_h2_sections("") == {}
+    assert _parse_h2_sections("# H1 only\nno h2") == {}
+
+
+def test_parse_h2_sections_h3_inside_section():
+    text = "## Auth\n### Existing\nstuff\n### Guidelines\nmore"
+    sections = _parse_h2_sections(text)
+    assert "Auth" in sections
+    assert "### Existing" in sections["Auth"]
+
+
+def test_lookup_feature_section_no_detail_doc(workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_lookup_feature_section("Issue Management")
+    assert result["matched"] is False
+    assert "project_detail.md not found" in result["reason"]
+
+
+def test_lookup_feature_section_exact_match(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_detail.md").write_text(
+        "## Issue Management\nrules A\n## Auth\nrules B"
+    )
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_lookup_feature_section("Issue Management")
+    assert result["matched"] is True
+    assert result["feature"] == "Issue Management"
+    assert "rules A" in result["section"]
+
+
+def test_lookup_feature_section_case_insensitive(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_detail.md").write_text("## Issue Management\nrules A")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_lookup_feature_section("issue management")
+    assert result["matched"] is True
+
+
+def test_lookup_feature_section_substring_match(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_detail.md").write_text("## Issue Management\nrules A")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_lookup_feature_section("issue")
+    assert result["matched"] is True
+    assert result["feature"] == "Issue Management"
+
+
+def test_lookup_feature_section_no_match_returns_available(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_detail.md").write_text("## Auth\nrules")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_lookup_feature_section("Nonexistent Feature")
+    assert result["matched"] is False
+    assert "Auth" in result["available_features"]
+
+
+def test_lookup_feature_section_includes_global_rules(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project\nGlobal rule 1")
+    (docs_dir / "project_detail.md").write_text("## Auth\nrules")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_lookup_feature_section("Auth")
+    assert result["matched"] is True
+    assert "Global rule 1" in result["global_rules"]
+
+
+def test_lookup_feature_section_uses_section_cache(workspace):
+    """Second call should hit _sections cache; _PROJECT_DOCS_CACHE entry is populated."""
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_detail.md").write_text("## Auth\nrules")
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        r1 = _do_lookup_feature_section("Auth")
+        # Delete the file — second call must still succeed via cache
+        (docs_dir / "project_detail.md").unlink()
+        r2 = _do_lookup_feature_section("Auth")
+
+    assert r1["matched"] is True
+    assert r2["matched"] is True
+    assert r1["section"] == r2["section"]
+
+
+def test_save_project_docs_clears_sections_cache(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (workspace / "hub_agents").mkdir(exist_ok=True)
+    (workspace / ".gitignore").write_text("")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        # Populate section cache via lookup
+        (docs_dir / "project_detail.md").write_text("## Auth\nold rules")
+        _do_lookup_feature_section("Auth")
+        # Now save new docs
+        _do_save_project_docs("new summary", "## NewArea\nnew rules")
+        # sections cache should be cleared
+        resolved = pg._resolve_repo(None) or "unknown"
+        entry = pg._PROJECT_DOCS_CACHE.get(resolved, {})
+        assert entry.get("_sections") is None
+
+
+def test_docs_exist_returns_sections(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# P")
+    (docs_dir / "project_detail.md").write_text("## Auth\nrules\n## Session\nmore")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_docs_exist()
+    assert result["sections"] == ["Auth", "Session"]
+
+
+def test_docs_exist_sections_empty_when_no_detail(workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_docs_exist()
+    assert result["sections"] == []
+
+
+def test_get_session_header_includes_sections(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project\ntext")
+    (docs_dir / "project_detail.md").write_text("## Issue Management\nr\n## Auth\nr")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_session_header()
+    assert result["docs"] is True
+    assert result["sections"] == ["Issue Management", "Auth"]
+
+
+def test_get_session_header_no_detail_sections_empty(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project")
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_session_header()
+    assert result["sections"] == []
+
+
+def test_lookup_feature_section_tool_registered(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+    tool_names = {t.name for t in server._tool_manager.list_tools()}
+    assert "lookup_feature_section" in tool_names

@@ -25,7 +25,7 @@ Ask:
 > a) GitHub URL or `owner/repo`  b) Use configured repo  c) Brand-new repo
 
 - **(b)**: read env, skip to Step 3
-- **(c)**: ask name/language/description → skip analysis → Step 5
+- **(c)**: ask name/language/description → skip analysis → Step 5 (no doc lookup)
 - **(a)**: call `setup_workspace(github_repo=...)` if not already set
 
 ---
@@ -41,9 +41,12 @@ If analyzing → run the **analyze sub-command** workflow (`/t-h:github-planner/
 
 ---
 
-## Step 4 — Load project context (silent)
+## Step 4 — Load summary (silent)
 
 Call `load_project_docs(doc="summary")`. Absorb silently — do not show to user.
+Note the `Feature Sections` line in the summary: this is the index of available
+detail sections. Load individual sections via `lookup_feature_section` only when
+the user discusses a topic that matches a section heading.
 
 ---
 
@@ -52,7 +55,12 @@ Call `load_project_docs(doc="summary")`. Absorb silently — do not show to user
 Say: **"Let me know any plans for this!"**
 
 - Use project summary as background context (silent)
-- Load `project_detail.md` only when user references a specific file/module
+- When the user describes a feature or task:
+  - If `session_header.sections` (or `docs_exist.sections`) contains a matching area,
+    call `lookup_feature_section(feature="{area}")` and use the returned
+    `section` to inform issue scope and AC.
+  - Do NOT load `project_detail.md` in full — always use `lookup_feature_section`
+    with a specific feature name.
 - Ask one clarifying question at a time
 - Propose a breakdown when the user describes enough: epics → issues
 - When ready, show a one-line preview list:
@@ -67,10 +75,19 @@ Say: **"Let me know any plans for this!"**
 ## Step 6 — Issue creation
 
 After approval:
-1. Call `draft_issue(title, body, labels, assignees)` for each — **silent**
-2. Show count: "Drafted {N} issues. Push to GitHub? (yes / review first)"
-3. If yes: call `submit_issue(slug)` for each — **silent**
-4. Say: **"Let me know any plans for this!"**
+1. For each planned issue: call `lookup_feature_section(feature="...")` if not already
+   done for that area. Use returned section + global_rules in the issue body.
+2. Call `draft_issue(title, body, labels, assignees)` for each — **silent**
+3. Show count: "Drafted {N} issues. Push to GitHub? (yes / review first)"
+4. If yes: call `submit_issue(slug)` for each — **silent**
+5. **Auto-update project docs** (only for new features, not bug fixes or refactors):
+   - If any drafted issue introduces a new feature area not in `docs_exist.sections`:
+     call `load_project_docs(doc="detail")`, append a new H2 section for that area
+     with what was planned (future-tense guidelines), then call `save_project_docs`.
+   - If an existing section was extended: call `lookup_feature_section`, merge the
+     planned work into Extension Guidelines, save updated docs.
+   - Bug fix / refactor issues → **do not update project docs**.
+6. Say: **"Let me know any plans for this!"**
 
 ---
 

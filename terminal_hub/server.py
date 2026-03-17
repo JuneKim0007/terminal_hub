@@ -30,7 +30,7 @@ from extensions.github_planner.storage import (
 
 _BUILTIN_DIR = Path(__file__).parent.parent / "extensions" / "builtin"
 
-_BUILTIN_COMMANDS = ["help.md", "active.md"]
+_BUILTIN_COMMANDS = ["help.md", "active.md", "conversation.md", "converse.md"]
 
 _PLUGIN_WARNINGS: list[str] = []
 # Populated during plugin load — each entry: {name, tools: [str], manifest_path}
@@ -265,6 +265,132 @@ def create_server() -> FastMCP:
                   caches_block + "\n" + "─" * 50 + "\n" + footer
 
         return {"items": items, "runtime": runtime, "config": cfg, "_display": display}
+
+    # ── Plugin registry tools (#44 / #45) ────────────────────────────────────
+
+    @mcp.tool()
+    def scan_plugins() -> dict:
+        """Scan extensions/ for description.json files and build hub_agents/plugin.config.json (#44).
+
+        Reads each extension's description.json (name, display_name, usage, commands, triggers).
+        Writes a compact registry to hub_agents/plugin.config.json.
+        Returns {plugins: [...], unidentified: N, total: N, _display: ...}.
+        Use load_plugin_registry() to read the result without re-scanning.
+        """
+        import json as _json
+        import time as _time
+
+        root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
+
+        extensions_dir = Path(__file__).parent.parent / "extensions"
+        plugins: list[dict] = []
+        unidentified: list[str] = []
+
+        for desc_path in sorted(extensions_dir.rglob("description.json")):
+            try:
+                raw = _json.loads(desc_path.read_text(encoding="utf-8"))
+            except (OSError, _json.JSONDecodeError):
+                continue
+
+            # Normalize to registry format — tolerate both old and new schema
+            name = raw.get("plugin") or raw.get("name") or desc_path.parent.name
+            display_name = raw.get("display_name") or name.replace("_", " ").title()
+            usage = (
+                raw.get("usage")
+                or raw.get("summary")
+                or (raw.get("entry") or {}).get("use_when")
+                or ""
+            )
+            path = str(desc_path.parent.relative_to(extensions_dir.parent))
+
+            # Commands: new-schema list or old-schema entry + subcommands
+            commands: list[str] = raw.get("commands", [])
+            if not commands:
+                if entry := raw.get("entry"):
+                    if cmd := entry.get("command"):
+                        commands = [cmd]
+                    for sub in raw.get("subcommands", []):
+                        if cmd := sub.get("command"):
+                            commands.append(cmd)
+
+            # Triggers: new-schema list or old-schema entry.triggers
+            triggers: list[str] = raw.get("triggers", [])
+            if not triggers:
+                if entry := raw.get("entry"):
+                    triggers = entry.get("triggers", [])
+
+            if not usage:
+                unidentified.append(name)
+
+            plugins.append({
+                "name": name,
+                "display_name": display_name,
+                "path": path,
+                "usage": usage,
+                "commands": commands,
+                "triggers": triggers,
+                "has_description": bool(usage),
+            })
+
+        registry = {
+            "last_scanned": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+            "plugins": plugins,
+            "unidentified": unidentified,
+        }
+
+        config_path = root / "hub_agents" / "plugin.config.json"
+        tmp = config_path.with_suffix(".tmp")
+        tmp.write_text(_json.dumps(registry, indent=2), encoding="utf-8")
+        import os as _os_scan; _os_scan.replace(tmp, config_path)
+
+        n = len(plugins)
+        n_unid = len(unidentified)
+        return {
+            "plugins": plugins,
+            "total": n,
+            "unidentified": n_unid,
+            "_display": (
+                f"✓ Scanned {n} plugin(s), {n_unid} missing usage description\n"
+                f"  Saved to hub_agents/plugin.config.json"
+            ),
+        }
+
+    @mcp.tool()
+    def load_plugin_registry() -> dict:
+        """Load hub_agents/plugin.config.json for plugin matching (#44 / #45).
+
+        Returns {plugins, unidentified, last_scanned} or suggests calling scan_plugins first.
+        Each plugin entry: {name, display_name, usage, commands, triggers}.
+        """
+        import json as _json
+
+        root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
+
+        config_path = root / "hub_agents" / "plugin.config.json"
+        if not config_path.exists():
+            return {
+                "plugins": [],
+                "last_scanned": None,
+                "_suggest_scan": (
+                    "No plugin registry found. Call scan_plugins() to build it — "
+                    "enables smart plugin suggestions via /t-h:converse."
+                ),
+            }
+
+        try:
+            data = _json.loads(config_path.read_text(encoding="utf-8"))
+        except (_json.JSONDecodeError, OSError):
+            return {"plugins": [], "last_scanned": None, "error": "registry_corrupt"}
+
+        return {
+            "plugins": data.get("plugins", []),
+            "unidentified": len(data.get("unidentified", [])),
+            "last_scanned": data.get("last_scanned"),
+        }
 
     # ── Dynamic plugin loading ────────────────────────────────────────────────
 

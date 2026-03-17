@@ -2,7 +2,7 @@
   "name": "default.analyzer",
   "version": "1.0",
   "description": "GitHub repo intelligence snapshot — label, assignee, and structure analysis",
-  "snapshot_file": "hub_agents/analyzer_snapshot.json",
+  "snapshot_file": "hub_agents/extensions/gh_planner/analyzer_snapshot.json",
   "stale_after_hours": 24,
   "owned_by": "extensions.github_planner.analyzer",
   "fields_cached": [

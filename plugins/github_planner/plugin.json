@@ -1,10 +1,21 @@
 {
   "name": "github_planner",
-  "version": "1.0",
+  "version": "1.1",
   "description": "GitHub issue planning, analysis, and project context management",
   "entry": "plugins.github_planner",
+  "install_namespace": "t-h",
+  "entry_command": "github-planner.md",
   "commands_dir": "commands",
-  "commands": ["gh-plan.md", "start.md", "create.md", "setup.md", "auth.md", "context.md"],
+  "commands": [
+    "github-planner.md",
+    "github-planner/list-issues.md",
+    "github-planner/create-issue.md",
+    "github-planner/analyze.md",
+    "github-planner/setup.md",
+    "github-planner/auth.md",
+    "create.md",
+    "context.md"
+  ],
   "requires_env": ["GITHUB_REPO"],
   "optional_env": ["GITHUB_TOKEN"],
   "conversation_triggers": [

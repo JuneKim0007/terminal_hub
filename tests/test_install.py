@@ -158,3 +158,60 @@ def test_verify_commands_all_missing_when_dir_absent(tmp_path):
     assert len(missing) > 0
     for filename in missing:
         assert filename.endswith(".md")
+
+
+# ── install_plugin_commands ───────────────────────────────────────────────────
+
+from terminal_hub.install import install_plugin_commands  # noqa: E402
+
+
+def _make_plugin_manifest(tmp_path, name="myplugin", namespace=None, commands=("start.md",)):
+    plugin_dir = tmp_path / name
+    cmd_dir = plugin_dir / "commands"
+    cmd_dir.mkdir(parents=True)
+    for cmd in commands:
+        (cmd_dir / cmd).parent.mkdir(parents=True, exist_ok=True)
+        (cmd_dir / cmd).write_text(f"# {cmd}")
+    manifest = {
+        "name": name,
+        "version": "1.0",
+        "entry": f"plugins.{name}",
+        "commands_dir": "commands",
+        "commands": list(commands),
+        "_plugin_dir": str(plugin_dir),
+    }
+    if namespace:
+        manifest["install_namespace"] = namespace
+    return manifest
+
+
+def test_install_plugin_commands_uses_plugin_name_as_namespace(tmp_path):
+    manifest = _make_plugin_manifest(tmp_path, name="myplugin")
+    install_plugin_commands(manifest, tmp_path)
+    assert (tmp_path / "commands" / "myplugin" / "start.md").exists()
+
+
+def test_install_plugin_commands_uses_install_namespace(tmp_path):
+    manifest = _make_plugin_manifest(tmp_path, name="myplugin", namespace="t-h")
+    install_plugin_commands(manifest, tmp_path)
+    assert (tmp_path / "commands" / "t-h" / "start.md").exists()
+    assert not (tmp_path / "commands" / "myplugin").exists()
+
+
+def test_install_plugin_commands_preserves_subdirectory_structure(tmp_path):
+    manifest = _make_plugin_manifest(
+        tmp_path, name="myplugin", namespace="t-h",
+        commands=("entry.md", "sub/list.md", "sub/create.md"),
+    )
+    install_plugin_commands(manifest, tmp_path)
+    assert (tmp_path / "commands" / "t-h" / "entry.md").exists()
+    assert (tmp_path / "commands" / "t-h" / "sub" / "list.md").exists()
+    assert (tmp_path / "commands" / "t-h" / "sub" / "create.md").exists()
+
+
+def test_install_plugin_commands_skips_missing_source_files(tmp_path):
+    manifest = _make_plugin_manifest(tmp_path, name="myplugin", commands=("real.md",))
+    manifest["commands"].append("ghost.md")  # not on disk
+    install_plugin_commands(manifest, tmp_path)
+    assert (tmp_path / "commands" / "myplugin" / "real.md").exists()
+    assert not (tmp_path / "commands" / "myplugin" / "ghost.md").exists()

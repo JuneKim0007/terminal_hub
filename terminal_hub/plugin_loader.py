@@ -22,7 +22,11 @@ def validate_manifest(manifest: dict) -> list[str]:
 
 def discover_plugins(plugins_dir: Path) -> list[dict]:
     """Return validated manifests from plugins/*/plugin.json.
-    Skips invalid manifests with a stderr warning."""
+
+    Also reads description.json from the same directory if present,
+    storing it as manifest['_description'].
+    Skips invalid manifests with a stderr warning.
+    """
     import sys
     manifests = []
     if not plugins_dir.exists():
@@ -38,6 +42,15 @@ def discover_plugins(plugins_dir: Path) -> list[dict]:
             print(f"[terminal-hub] warning: invalid manifest {manifest_path}: {errors}", file=sys.stderr)
             continue
         manifest["_plugin_dir"] = str(manifest_path.parent)
+
+        # Load description.json if present — optional, degrades gracefully
+        desc_path = manifest_path.parent / "description.json"
+        if desc_path.exists():
+            try:
+                manifest["_description"] = json.loads(desc_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+
         manifests.append(manifest)
     return manifests
 
@@ -54,15 +67,50 @@ def load_plugin(manifest: dict, mcp) -> str | None:
 
 
 def build_instructions(plugins: list[dict]) -> str:
-    """Build MCP instructions string with plugin trigger hints."""
-    lines = ["terminal-hub connected. Available plugins:"]
+    """Build MCP instructions string from plugin manifests and description.json catalogs.
+
+    Uses install_namespace + entry_command from each manifest to generate the
+    correct slash command path. Falls back to plugin name if not present.
+    Injects sub-command catalog and triggers from description.json when available.
+    """
+    lines = [
+        "terminal-hub connected.",
+        "",
+        "BEHAVIOUR RULE: If the user describes a bug, feature request, or TODO in",
+        "conversation, proactively offer: \"Want me to draft that as a GitHub issue?\"",
+        "Do not wait for them to type a command.",
+        "",
+        "Available plugins:",
+    ]
+
     for p in plugins:
+        namespace = p.get("install_namespace", p["name"])
+        entry_cmd = p.get("entry_command", p["commands"][0] if p.get("commands") else "")
+        entry_stem = Path(entry_cmd).stem if entry_cmd else p["name"]
+        cmd_path = f"/{namespace}:{entry_stem}"
+
+        desc = p.get("_description", {})
+        plugin_desc = p.get("description", "")
+        lines.append(f"  • {p['name']}: {plugin_desc}")
+        lines.append(f"    Start: {cmd_path}")
+
+        # Sub-command catalog from description.json
+        subcommands = desc.get("subcommands", [])
+        if subcommands:
+            lines.append("    Sub-commands:")
+            for sc in subcommands[:6]:
+                scmd = sc.get("command", "")
+                aliases = sc.get("aliases", [])[:2]
+                alias_str = f' ("{aliases[0]}")' if aliases else ""
+                use_when = sc.get("use_when", "")
+                lines.append(f"      {scmd}{alias_str} — {use_when}")
+
+        # Conversation triggers
         triggers = p.get("conversation_triggers", [])
-        trigger_str = ", ".join(f'"{t}"' for t in triggers[:3])
-        desc = p.get("description", "")
-        lines.append(f"  • {p['name']}: {desc}")
         if triggers:
-            lines.append(f"    Offer to enable if user mentions: {trigger_str}")
+            trigger_str = ", ".join(f'"{t}"' for t in triggers[:3])
+            lines.append(f"    Offer {cmd_path} when user says: {trigger_str}")
+
     lines.append("")
-    lines.append("Type /github_planner:start to begin the GitHub planner.")
+    lines.append("On first use in a project: call get_setup_status to check initialisation.")
     return "\n".join(lines)

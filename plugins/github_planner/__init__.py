@@ -3,6 +3,9 @@
 Registers all GitHub-specific MCP tools and resources.
 Call register(mcp) from create_server() to activate.
 """
+import ast
+import hashlib
+import json
 import os
 import time
 from datetime import date
@@ -240,13 +243,6 @@ def _do_submit_issue(slug: str) -> dict:
         "local_file": f"hub_agents/issues/{slug}.md",
     }
     return {**result_dict, "_display": f"✓ #{result['number']} {fm['title']}"}
-
-
-def _do_list_issues() -> dict:
-    root = get_workspace_root()
-    if err := ensure_initialized(root):
-        return err
-    return {"issues": list_issue_files(root)}
 
 
 def _do_get_issue_context(slug: str) -> dict:
@@ -573,6 +569,222 @@ def _do_docs_exist(repo: str | None = None) -> dict:
     }
 
 
+# ── File index extraction (Python-side, no raw content sent to Claude) ──────────
+
+_MD_SUFFIXES = {".md", ".rst", ".txt"}
+_SESSION_HEADER_CACHE: dict = {}
+
+
+def _extract_file_index(file_path: str, content: str) -> dict:
+    """Extract a compact structural summary from a file's content.
+
+    Returns ~30-50 tokens of metadata instead of the raw file text.
+    Claude receives this instead of the raw content during repo analysis.
+    """
+    suffix = Path(file_path).suffix.lower()
+
+    if suffix == ".py":
+        try:
+            tree = ast.parse(content, filename=file_path)
+        except SyntaxError:
+            return {"path": file_path, "type": "python", "parse_error": True,
+                    "lines": content.count("\n")}
+        exports = [
+            n.name for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and not n.name.startswith("_")
+        ]
+        imports = [
+            node.names[0].name
+            for node in ast.walk(tree) if isinstance(node, ast.Import)
+        ][:5]
+        return {
+            "path": file_path,
+            "type": "python",
+            "exports": exports,
+            "imports": imports,
+            "module_doc": (ast.get_docstring(tree) or "")[:120],
+            "lines": content.count("\n"),
+        }
+
+    if suffix in _MD_SUFFIXES:
+        headings = [
+            ln.lstrip("# ").strip()
+            for ln in content.splitlines() if ln.startswith("#")
+        ]
+        return {
+            "path": file_path,
+            "type": "markdown",
+            "headings": headings[:10],
+            "first_200": content[:200],
+        }
+
+    return {"path": file_path, "type": "other", "lines": content.count("\n")}
+
+
+def _file_hash_path(root: Path) -> Path:
+    return _gh_planner_docs_dir(root) / "file_hashes.json"
+
+
+def _load_file_hashes(root: Path) -> dict[str, str]:
+    p = _file_hash_path(root)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_file_hashes(root: Path, hashes: dict[str, str]) -> None:
+    p = _file_hash_path(root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(hashes, indent=2), encoding="utf-8")
+    os.replace(tmp, p)
+
+
+# ── analyze_repo_full ─────────────────────────────────────────────────────────
+
+def _do_analyze_repo_full(repo: str | None = None) -> dict:
+    """Fetch the full repo tree, extract structured file index, return in one call.
+
+    Python owns the entire fetch-and-extract loop. Claude receives a compact
+    structured index (~30 tokens/file) instead of raw file contents (~150 tokens/file).
+    Uses blob SHA comparison to skip unchanged files on re-analysis.
+    """
+    resolved = _resolve_repo(repo)
+    if not resolved:
+        return {"error": "repo_required",
+                "message": "Pass repo=\'owner/repo\' or configure via setup_workspace.",
+                "_hook": None}
+
+    gh, err = _get_github_client()
+    if gh is None:
+        return {"error": "github_unavailable", "message": err, "_guidance": _G_AUTH}
+
+    root = get_workspace_root()
+    stored_hashes = _load_file_hashes(root)
+
+    # Step 1: fetch tree (1 API call, returns SHAs for free)
+    try:
+        with gh:
+            tree = gh.list_repo_tree()
+    except Exception as exc:
+        return {"error": "github_error", "message": str(exc), "_hook": None}
+
+    tree = tree[:_MAX_ANALYSIS_FILES]
+
+    # Step 2: partition — skip files whose SHA hasn\'t changed
+    new_hashes: dict[str, str] = {}
+    to_fetch = []
+    skipped_unchanged = 0
+
+    for f in tree:
+        path = f["path"]
+        # list_repo_tree returns {path, size}; we\'ll use content hash after fetch
+        # For incremental: check if size matches stored (SHA not available without extra API)
+        # Use SHA from git tree if available (added in updated list_repo_tree)
+        tree_sha = f.get("sha", "")
+        if tree_sha and stored_hashes.get(path) == tree_sha:
+            skipped_unchanged += 1
+            new_hashes[path] = tree_sha
+        else:
+            to_fetch.append(f)
+
+    # Step 3: fetch only changed/new files, extract index inline
+    file_index = []
+    skipped_errors = []
+
+    if to_fetch:
+        with gh:
+            for f in to_fetch:
+                path = f["path"]
+                try:
+                    content = gh.get_file_content(path)
+                    entry = _extract_file_index(path, content)
+                    file_index.append(entry)
+                    # Store SHA if available, else content hash
+                    sha = f.get("sha") or hashlib.sha256(content.encode()).hexdigest()[:16]
+                    new_hashes[path] = sha
+                except Exception as exc:
+                    reason = getattr(exc, "error_code", "unknown")
+                    skipped_errors.append({"path": path, "reason": reason})
+
+    # Persist updated hashes
+    _save_file_hashes(root, new_hashes)
+
+    # Also update analysis cache so get_analysis_status works
+    _ANALYSIS_CACHE[resolved] = {
+        "pending_md": [], "pending_code": [],
+        "analyzed": [{"path": e["path"], "is_markdown": e["type"] == "markdown"}
+                     for e in file_index],
+        "skipped": skipped_errors,
+        "repo": resolved,
+        "started_at": time.time(),
+        "last_fetched": time.time(),
+    }
+
+    return {
+        "repo": resolved,
+        "file_index": file_index,
+        "total_files": len(tree),
+        "fetched": len(file_index),
+        "skipped_unchanged": skipped_unchanged,
+        "skipped_errors": len(skipped_errors),
+        "_display": (
+            f"✓ Repo analyzed — {resolved}\n"
+            f"  Files fetched : {len(file_index)} "
+            f"({skipped_unchanged} unchanged, {len(skipped_errors)} skipped)\n"
+            f"  Index entries : {len(file_index)}"
+        ),
+    }
+
+
+# ── get_session_header ─────────────────────────────────────────────────────────
+
+def _do_get_session_header() -> dict:
+    """Return a ≤80-token context blob for session start. Cached after first call.
+
+    Tells Claude whether project docs exist, how fresh they are, and a one-line
+    summary title. Claude loads the full summary only when planning context is needed.
+    """
+    if _SESSION_HEADER_CACHE:
+        return _SESSION_HEADER_CACHE
+
+    root = get_workspace_root()
+    docs_dir = _gh_planner_docs_dir(root)
+    summary_path = docs_dir / "project_summary.md"
+
+    if not summary_path.exists():
+        _SESSION_HEADER_CACHE.update({"docs": False})
+        return _SESSION_HEADER_CACHE
+
+    age_h = (time.time() - summary_path.stat().st_mtime) / 3600
+    first_line = summary_path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
+
+    _SESSION_HEADER_CACHE.update({
+        "docs": True,
+        "age_hours": round(age_h, 1),
+        "title": first_line,
+        "stale": age_h > 168,
+    })
+    return _SESSION_HEADER_CACHE
+
+
+# ── list_issues with compact mode ─────────────────────────────────────────────
+
+def _do_list_issues(compact: bool = False) -> dict:
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    issues = list_issue_files(root)
+    if compact:
+        issues = [{"slug": i["slug"], "title": i["title"], "status": i["status"]}
+                  for i in issues]
+    return {"issues": issues}
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -645,10 +857,11 @@ def register(mcp) -> None:
         return _do_submit_issue(slug)
 
     @mcp.tool()
-    def list_issues() -> dict:
-        """Return all tracked issues from local hub_agents/issues/ files.
-        Each entry includes a 'status' field: pending | open | closed."""
-        return _do_list_issues()
+    def list_issues(compact: bool = False) -> dict:
+        """Return tracked issues from local hub_agents/issues/ files.
+        compact=True: returns [{slug, title, status}] only (~3× fewer tokens).
+        compact=False (default): returns full issue metadata."""
+        return _do_list_issues(compact)
 
     @mcp.tool()
     def get_issue_context(slug: str) -> dict:
@@ -741,3 +954,25 @@ def register(mcp) -> None:
         Returns {summary_exists, detail_exists, summary_age_hours}.
         """
         return _do_docs_exist(repo)
+
+    # ── Efficient single-call repo analysis ────────────────────────────────────
+
+    @mcp.tool()
+    def analyze_repo_full(repo: str | None = None) -> dict:
+        """Fetch the full repo tree and return a compact structured file index in one call.
+
+        Python fetches files and extracts structural metadata (exports, headings, imports).
+        Claude receives ~30 tokens/file instead of ~150 tokens/file of raw content.
+        Uses blob SHA comparison to skip unchanged files on re-analysis.
+        Returns {repo, file_index, total_files, fetched, skipped_unchanged, skipped_errors}.
+        """
+        return _do_analyze_repo_full(repo)
+
+    @mcp.tool()
+    def get_session_header() -> dict:
+        """Return a ≤80-token context blob for session start. Cached after first call.
+
+        Returns {docs: bool, age_hours?, title?, stale?}.
+        Call at session start to decide whether to load full project docs.
+        """
+        return _do_get_session_header()

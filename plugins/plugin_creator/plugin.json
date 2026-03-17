@@ -1,0 +1,11 @@
+{
+  "name": "plugin_creator",
+  "version": "1.0",
+  "entry": "plugins.plugin_creator",
+  "install_namespace": "t-h",
+  "entry_command": "create-plugin.md",
+  "commands_dir": "commands",
+  "commands": ["create-plugin.md"],
+  "description": "Conversational plugin scaffolding for terminal-hub. Generates plugin.json, __init__.py, description.json, and a test scaffold.",
+  "conversation_triggers": ["create a plugin", "new plugin", "scaffold a plugin", "write a plugin"]
+}

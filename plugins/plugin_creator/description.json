@@ -1,0 +1,9 @@
+{
+  "plugin": "plugin_creator",
+  "install_namespace": "t-h",
+  "entry": {
+    "command": "/t-h:create-plugin",
+    "use_when": "user wants to create a new terminal-hub plugin"
+  },
+  "subcommands": []
+}

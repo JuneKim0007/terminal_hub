@@ -12,13 +12,18 @@ import plugins.github_planner as pg
 from plugins.github_planner import (
     _ANALYSIS_CACHE,
     _PROJECT_DOCS_CACHE,
+    _SESSION_HEADER_CACHE,
+    _do_analyze_repo_full,
     _do_docs_exist,
     _do_draft_issue,
     _do_fetch_analysis_batch,
     _do_get_analysis_status,
+    _do_get_session_header,
+    _do_list_issues,
     _do_load_project_docs,
     _do_save_project_docs,
     _do_start_repo_analysis,
+    _extract_file_index,
     _gh_planner_docs_dir,
     _is_markdown,
 )
@@ -48,9 +53,11 @@ def clear_caches():
     """Ensure caches are clean before and after each test."""
     _ANALYSIS_CACHE.clear()
     _PROJECT_DOCS_CACHE.clear()
+    _SESSION_HEADER_CACHE.clear()
     yield
     _ANALYSIS_CACHE.clear()
     _PROJECT_DOCS_CACHE.clear()
+    _SESSION_HEADER_CACHE.clear()
 
 
 @pytest.fixture
@@ -474,3 +481,224 @@ def test_load_project_docs_all_from_disk(workspace):
         result = _do_load_project_docs("all", "o/r")
     assert result["summary"] == "sum"
     assert result["detail"] == "det"
+
+
+# ── _extract_file_index (#52) ─────────────────────────────────────────────────
+
+def test_extract_file_index_python_exports():
+    content = "def foo(): pass\nclass Bar: pass\ndef _private(): pass"
+    result = _extract_file_index("mod.py", content)
+    assert result["type"] == "python"
+    assert "foo" in result["exports"]
+    assert "Bar" in result["exports"]
+    assert "_private" not in result["exports"]
+
+
+def test_extract_file_index_python_with_docstring():
+    content = '"""My module."""\ndef foo(): pass'
+    result = _extract_file_index("mod.py", content)
+    assert "My module." in result["module_doc"]
+
+
+def test_extract_file_index_python_syntax_error():
+    result = _extract_file_index("bad.py", "def (")
+    assert result["parse_error"] is True
+    assert result["type"] == "python"
+
+
+def test_extract_file_index_markdown_headings():
+    content = "# Title\n## Section\nsome text\n## Another"
+    result = _extract_file_index("README.md", content)
+    assert result["type"] == "markdown"
+    assert "Title" in result["headings"]
+    assert "Section" in result["headings"]
+
+
+def test_extract_file_index_markdown_first_200():
+    content = "x" * 300
+    result = _extract_file_index("README.md", content)
+    assert len(result["first_200"]) == 200
+
+
+def test_extract_file_index_other_file():
+    result = _extract_file_index("image.png", b"bytes".decode("latin-1"))
+    assert result["type"] == "other"
+    assert "lines" in result
+
+
+# ── _do_analyze_repo_full (#52) ───────────────────────────────────────────────
+
+def _make_tree_with_sha(paths_and_shas: list[tuple[str, str]]) -> list[dict]:
+    return [{"path": p, "size": 100, "sha": s} for p, s in paths_and_shas]
+
+
+def test_analyze_repo_full_returns_file_index(workspace):
+    tree = _make_tree_with_sha([("README.md", "abc"), ("auth.py", "def")])
+
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_repo_tree.return_value = tree
+    mock_gh.get_file_content.side_effect = lambda p: f"# {p}\n"
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
+         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        result = _do_analyze_repo_full("o/r")
+
+    assert result["repo"] == "o/r"
+    assert result["fetched"] == 2
+    assert len(result["file_index"]) == 2
+    paths = {e["path"] for e in result["file_index"]}
+    assert paths == {"README.md", "auth.py"}
+
+
+def test_analyze_repo_full_skips_unchanged_by_sha(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    hashes_path = docs_dir / "file_hashes.json"
+    hashes_path.write_text(json.dumps({"unchanged.py": "same-sha"}))
+
+    tree = _make_tree_with_sha([("unchanged.py", "same-sha"), ("new.py", "new-sha")])
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_repo_tree.return_value = tree
+    mock_gh.get_file_content.return_value = "x = 1"
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
+         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        result = _do_analyze_repo_full("o/r")
+
+    assert result["skipped_unchanged"] == 1
+    assert result["fetched"] == 1
+    fetched_paths = {e["path"] for e in result["file_index"]}
+    assert "new.py" in fetched_paths
+    assert "unchanged.py" not in fetched_paths
+
+
+def test_analyze_repo_full_persists_hashes(workspace):
+    tree = _make_tree_with_sha([("src/mod.py", "sha1")])
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_repo_tree.return_value = tree
+    mock_gh.get_file_content.return_value = "def f(): pass"
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
+         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        _do_analyze_repo_full("o/r")
+
+    hashes = json.loads((_gh_planner_docs_dir(workspace) / "file_hashes.json").read_text())
+    assert hashes["src/mod.py"] == "sha1"
+
+
+def test_analyze_repo_full_no_auth_returns_error(workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
+         patch("plugins.github_planner._get_github_client", return_value=(None, "No token")), \
+         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        result = _do_analyze_repo_full("o/r")
+    assert result["error"] == "github_unavailable"
+
+
+def test_analyze_repo_full_no_repo_returns_error(workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
+         patch("plugins.github_planner.read_env", return_value={}):
+        result = _do_analyze_repo_full(None)
+    assert result["error"] == "repo_required"
+
+
+# ── _do_get_session_header (#52) ──────────────────────────────────────────────
+
+def test_get_session_header_no_docs(workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_session_header()
+    assert result == {"docs": False}
+
+
+def test_get_session_header_with_docs(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project\nsome text")
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_session_header()
+
+    assert result["docs"] is True
+    assert result["title"] == "My Project"
+    assert isinstance(result["age_hours"], float)
+    assert result["stale"] is False
+
+
+def test_get_session_header_marks_stale_after_168h(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    summary = docs_dir / "project_summary.md"
+    summary.write_text("# Old Project")
+    # Backdate mtime by 8 days
+    old_time = time.time() - (8 * 24 * 3600)
+    import os
+    os.utime(summary, (old_time, old_time))
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_session_header()
+
+    assert result["stale"] is True
+
+
+def test_get_session_header_is_cached(workspace):
+    call_count = 0
+    original = pg.get_workspace_root
+
+    def counting_root():
+        nonlocal call_count
+        call_count += 1
+        return workspace
+
+    with patch("plugins.github_planner.get_workspace_root", side_effect=counting_root):
+        _do_get_session_header()
+        _do_get_session_header()
+    assert call_count == 1  # second call hits cache, no workspace lookup
+
+
+# ── _do_list_issues compact mode (#52) ────────────────────────────────────────
+
+def test_list_issues_compact_returns_minimal_fields(workspace):
+    from plugins.github_planner.storage import write_issue_file, STATUS_PENDING
+    write_issue_file(root=workspace, slug="foo-bar", title="Foo Bar", body="body",
+                     assignees=[], labels=[], created_at=__import__("datetime").date(2026, 1, 1),
+                     status=STATUS_PENDING)
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_list_issues(compact=True)
+
+    issues = result["issues"]
+    assert len(issues) == 1
+    assert set(issues[0].keys()) == {"slug", "title", "status"}
+
+
+def test_list_issues_full_returns_all_fields(workspace):
+    from plugins.github_planner.storage import write_issue_file, STATUS_PENDING
+    write_issue_file(root=workspace, slug="foo-bar", title="Foo Bar", body="body",
+                     assignees=[], labels=[], created_at=__import__("datetime").date(2026, 1, 1),
+                     status=STATUS_PENDING)
+
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_list_issues(compact=False)
+
+    issues = result["issues"]
+    assert len(issues) == 1
+    assert "slug" in issues[0]
+    assert "title" in issues[0]
+
+
+# ── new tools are registered (#52/#53) ────────────────────────────────────────
+
+def test_analyze_repo_full_and_get_session_header_registered(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+    tool_names = {t.name for t in server._tool_manager.list_tools()}
+    assert "analyze_repo_full" in tool_names
+    assert "get_session_header" in tool_names

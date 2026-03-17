@@ -35,22 +35,22 @@ Issues = "https://github.com/JuneKim0007/terminal_hub/issues"
 terminal-hub = "terminal_hub.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["terminal_hub", "plugins"]
+packages = ["terminal_hub", "extensions"]
 artifacts = [
     "commands/builtin/*.md",
     ".claude-plugin/*.json",
     ".claude/settings.json",
-    "plugins/github_planner/hub_commands.json",
-    "plugins/github_planner/labels.json",
-    "plugins/github_planner/commands/*.md",
+    "extensions/github_planner/hub_commands.json",
+    "extensions/github_planner/labels.json",
+    "extensions/github_planner/commands/*.md",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=terminal_hub --cov=plugins --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=terminal_hub --cov=extensions --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
-source = ["terminal_hub", "plugins"]
+source = ["terminal_hub", "extensions"]
 omit = ["terminal_hub/__main__.py"]
 
 [tool.coverage.report]

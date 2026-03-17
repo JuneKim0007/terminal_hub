@@ -10,24 +10,24 @@ from mcp.server.fastmcp import FastMCP
 
 from terminal_hub.config import WorkspaceMode, load_config, save_config
 from terminal_hub.env_store import read_env, write_env
-from plugins.github_planner.client import load_default_labels
+from extensions.github_planner.client import load_default_labels
 from terminal_hub.workspace import init_workspace, resolve_workspace_root
 from terminal_hub.plugin_loader import discover_plugins, load_plugin, build_instructions
 
 # Re-export plugin helpers so tests can patch at terminal_hub.server.*
-from plugins.github_planner import (
+from extensions.github_planner import (
     get_workspace_root,
     get_github_client,
     ensure_initialized,
     resolve_token,
     verify_gh_cli_auth,
 )
-from plugins.github_planner.storage import (
+from extensions.github_planner.storage import (
     write_issue_file,
     write_doc_file,
 )
 
-_BUILTIN_DIR = Path(__file__).parent.parent / "commands" / "builtin"
+_BUILTIN_DIR = Path(__file__).parent.parent / "extensions" / "builtin"
 
 _BUILTIN_COMMANDS = ["help.md", "inspect.md"]
 
@@ -40,7 +40,7 @@ def _load_agent(name: str) -> str:
 
 
 def _assert_builtins() -> None:
-    base = Path(__file__).parent.parent / "commands" / "builtin"
+    base = Path(__file__).parent.parent / "extensions" / "builtin"
     missing = [f for f in _BUILTIN_COMMANDS if not (base / f).exists()]
     if missing:
         raise RuntimeError(f"Missing builtin command files: {missing}")
@@ -54,7 +54,7 @@ def create_server() -> FastMCP:
     global _PLUGIN_WARNINGS
     _PLUGIN_WARNINGS = []
 
-    plugins_dir = Path(__file__).parent.parent / "plugins"
+    plugins_dir = Path(__file__).parent.parent / "extensions"
     loaded_manifests = discover_plugins(plugins_dir)
 
     instructions = build_instructions(loaded_manifests)
@@ -157,7 +157,7 @@ def create_server() -> FastMCP:
         # Analyzer snapshot
         snap_path = root / "hub_agents" / "analyzer_snapshot.json"
         if snap_path.exists():
-            from plugins.github_planner.analyzer import load_snapshot, snapshot_age_hours, summarize_for_prompt
+            from extensions.github_planner.analyzer import load_snapshot, snapshot_age_hours, summarize_for_prompt
             snap = load_snapshot(root)
             age = snapshot_age_hours(snap) if snap else None
             summary = summarize_for_prompt(snap) if snap else None

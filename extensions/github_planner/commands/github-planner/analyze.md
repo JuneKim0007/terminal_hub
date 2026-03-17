@@ -35,13 +35,10 @@ Repo analysis workflow:
 
 ## Known Pitfalls
 - {Non-obvious constraint or gotcha}
-
-## Feature Sections
-{Comma-separated list matching the H2 headings in project_details.md}
 ```
 
-The **Feature Sections** line is an index. It lets Claude decide whether to call
-`lookup_feature_section` without loading the full detail doc.
+<!-- NOTE: Do NOT add a "Feature Sections" line — it goes stale when project_detail.md is edited.
+     Use get_session_header() which returns the live sections list from project_detail.md. -->
 
 ---
 

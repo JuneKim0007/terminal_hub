@@ -864,3 +864,56 @@ def test_lookup_feature_section_tool_registered(workspace):
         server = create_server()
     tool_names = {t.name for t in server._tool_manager.list_tools()}
     assert "lookup_feature_section" in tool_names
+
+
+# ── mtime cache invalidation (#69) ────────────────────────────────────────────
+
+def test_lookup_feature_section_invalidates_cache_on_file_change(workspace):
+    """Editing project_detail.md on disk should cause the next lookup to re-parse."""
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    detail = docs_dir / "project_detail.md"
+    detail.write_text("## Auth\nrules")
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        r1 = _do_lookup_feature_section("Auth")
+    assert r1["matched"] is True
+
+    # Simulate external edit — write new content and bump mtime
+    import time as _time
+    _time.sleep(0.01)
+    detail.write_text("## NewFeature\nnew rules")
+    # Touch mtime explicitly to ensure it differs
+    detail.touch()
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        r2 = _do_lookup_feature_section("NewFeature")
+    assert r2["matched"] is True
+    assert "Auth" not in r2.get("available_features", [])
+
+
+# ── session_header sections cap (#67) ─────────────────────────────────────────
+
+def test_get_session_header_caps_sections_at_10(workspace):
+    """session_header sections list is capped at 10 entries for large repos."""
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# Big Project")
+    # Write 15 H2 sections
+    sections_md = "\n".join(f"## Section{i}\ncontent" for i in range(15))
+    (docs_dir / "project_detail.md").write_text(sections_md)
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_session_header()
+    assert len(result["sections"]) == 10
+    assert result.get("sections_truncated") is True
+    assert result.get("total_sections") == 15
+
+
+def test_get_session_header_no_truncation_when_few_sections(workspace):
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project")
+    (docs_dir / "project_detail.md").write_text("## Auth\nr\n## Session\nr")
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_session_header()
+    assert len(result["sections"]) == 2
+    assert "sections_truncated" not in result

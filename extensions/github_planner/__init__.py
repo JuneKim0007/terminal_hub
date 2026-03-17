@@ -652,20 +652,23 @@ def _do_lookup_feature_section(feature: str, repo: str | None = None) -> dict:
     resolved = _resolve_repo(repo) or "unknown"
     entry = _PROJECT_DOCS_CACHE.setdefault(resolved, {})
 
-    # --- section cache ---
+    # --- section cache (with mtime-based invalidation) ---
+    root = get_workspace_root()
+    docs_dir = _gh_planner_docs_dir(root)
+    detail_path = docs_dir / "project_detail.md"
+    if not detail_path.exists():
+        return {
+            "matched": False,
+            "available_features": [],
+            "reason": "project_detail.md not found — run analyze or save_project_docs first",
+        }
+    current_mtime = detail_path.stat().st_mtime
+    cached_mtime: float | None = entry.get("_sections_mtime")
     sections: dict[str, str] | None = entry.get("_sections")
-    if sections is None:
-        root = get_workspace_root()
-        docs_dir = _gh_planner_docs_dir(root)
-        detail_path = docs_dir / "project_detail.md"
-        if not detail_path.exists():
-            return {
-                "matched": False,
-                "available_features": [],
-                "reason": "project_detail.md not found — run analyze or save_project_docs first",
-            }
+    if sections is None or cached_mtime != current_mtime:
         sections = _parse_h2_sections(detail_path.read_text(encoding="utf-8"))
         entry["_sections"] = sections
+        entry["_sections_mtime"] = current_mtime
 
     available = list(sections.keys())
     feature_lower = feature.lower()
@@ -1019,17 +1022,26 @@ def _do_get_session_header() -> dict:
     first_line = summary_path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
 
     # Surface section index so Claude knows which feature areas have detail
+    # Capped at 10 entries to stay within the ≤120-token budget (#67)
+    _MAX_SECTIONS_IN_HEADER = 10
     sections: list[str] = []
+    total_sections = 0
     if detail_path.exists():
-        sections = list(_parse_h2_sections(detail_path.read_text(encoding="utf-8")).keys())
+        all_sections = list(_parse_h2_sections(detail_path.read_text(encoding="utf-8")).keys())
+        total_sections = len(all_sections)
+        sections = all_sections[:_MAX_SECTIONS_IN_HEADER]
 
-    _SESSION_HEADER_CACHE.update({
+    result: dict = {
         "docs": True,
         "age_hours": round(age_h, 1),
         "title": first_line,
         "stale": age_h > 168,
         "sections": sections,
-    })
+    }
+    if total_sections > _MAX_SECTIONS_IN_HEADER:
+        result["sections_truncated"] = True
+        result["total_sections"] = total_sections
+    _SESSION_HEADER_CACHE.update(result)
     return _SESSION_HEADER_CACHE
 
 

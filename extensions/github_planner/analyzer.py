@@ -111,9 +111,24 @@ def process_snapshot(
 
 # ── I/O helpers ────────────────────────────────────────────────────────────
 
+def _snapshot_path(root: Path) -> Path:
+    """Return the canonical snapshot path under the gh_planner namespace."""
+    return root / "hub_agents" / "extensions" / "gh_planner" / "analyzer_snapshot.json"
+
+
+def _migrate_snapshot(root: Path) -> None:
+    """Move legacy flat snapshot to namespaced path if it exists and new path doesn't."""
+    old = root / "hub_agents" / "analyzer_snapshot.json"
+    new = _snapshot_path(root)
+    if old.exists() and not new.exists():
+        new.parent.mkdir(parents=True, exist_ok=True)
+        old.replace(new)
+
+
 def load_snapshot(root: Path) -> dict | None:
-    """Read hub_agents/analyzer_snapshot.json. Return None if missing or corrupt."""
-    path = root / "hub_agents" / "analyzer_snapshot.json"
+    """Read analyzer_snapshot.json from namespaced path. Return None if missing or corrupt."""
+    _migrate_snapshot(root)
+    path = _snapshot_path(root)
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -122,7 +137,7 @@ def load_snapshot(root: Path) -> dict | None:
 
 def write_snapshot(root: Path, snapshot: dict) -> Path:
     """Atomically write snapshot via .tmp → rename."""
-    target = root / "hub_agents" / "analyzer_snapshot.json"
+    target = _snapshot_path(root)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")

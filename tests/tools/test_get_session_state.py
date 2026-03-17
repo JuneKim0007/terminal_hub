@@ -34,7 +34,9 @@ def test_get_session_state_snapshot_present(workspace):
                        "body_sections": {}, "total_open": 0, "total_sampled": 0},
             "labels": [], "members": [], "templates": {
                 "most_common_sections": [], "suggested_labels": [], "suggested_assignees": []}}
-    (workspace / "hub_agents" / "analyzer_snapshot.json").write_text(json.dumps(snap))
+    snap_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    (snap_dir / "analyzer_snapshot.json").write_text(json.dumps(snap))
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_session_state")
@@ -64,8 +66,8 @@ def test_get_session_state_items_structure(workspace):
         result = call(server, "get_session_state")
     keys = {i["key"] for i in result["items"]}
     assert "analyzer_snapshot" in keys
-    assert "project_description" in keys
-    assert "architecture" in keys
+    assert "project_summary" in keys
+    assert "project_detail" in keys
     assert "issues" in keys
 
 

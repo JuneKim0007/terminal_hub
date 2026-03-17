@@ -19,7 +19,8 @@ def test_update_project_description_writes_file(workspace):
         server = create_server()
         result = call(server, "update_project_description", {"content": "# My Project\n"})
     assert result["updated"] is True
-    assert (workspace / "hub_agents" / "project_description.md").read_text() == "# My Project\n"
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    assert (docs_dir / "project_summary.md").read_text() == "# My Project\n"
     assert "_display" in result
     assert result["_display"] == "✓ Project description saved"
 
@@ -28,7 +29,7 @@ def test_update_project_description_returns_relative_path(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_description", {"content": "text"})
-    assert "hub_agents/project_description.md" in result["file"]
+    assert "hub_agents/extensions/gh_planner/project_summary.md" in result["file"]
 
 
 def test_update_architecture_writes_file(workspace):
@@ -36,7 +37,8 @@ def test_update_architecture_writes_file(workspace):
         server = create_server()
         result = call(server, "update_architecture", {"content": "# Architecture\n"})
     assert result["updated"] is True
-    assert (workspace / "hub_agents" / "architecture_design.md").read_text() == "# Architecture\n"
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    assert (docs_dir / "project_detail.md").read_text() == "# Architecture\n"
     assert "_display" in result
     assert result["_display"] == "✓ Architecture notes saved"
 
@@ -46,4 +48,18 @@ def test_update_docs_overwrite_preserves_latest(workspace):
         server = create_server()
         call(server, "update_project_description", {"content": "v1"})
         call(server, "update_project_description", {"content": "v2"})
-    assert (workspace / "hub_agents" / "project_description.md").read_text() == "v2"
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    assert (docs_dir / "project_summary.md").read_text() == "v2"
+
+
+def test_read_doc_file_migrates_legacy_flat_path(workspace):
+    """Legacy hub_agents/project_description.md is migrated to namespaced path on read."""
+    from extensions.github_planner.storage import read_doc_file, write_doc_file
+    legacy = workspace / "hub_agents" / "project_description.md"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text("old content")
+
+    content = read_doc_file(workspace, "project_description")
+    assert content == "old content"
+    assert not legacy.exists()
+    assert (workspace / "hub_agents" / "extensions" / "gh_planner" / "project_summary.md").exists()

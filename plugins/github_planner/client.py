@@ -198,7 +198,7 @@ class GitHubClient:
             raise GitHubError(msg("timeout"), error_code="timeout")
 
         return [
-            {"path": item["path"], "size": item.get("size", 0)}
+            {"path": item["path"], "size": item.get("size", 0), "sha": item.get("sha", "")}
             for item in resp.json().get("tree", [])
             if item.get("type") == "blob"
         ]

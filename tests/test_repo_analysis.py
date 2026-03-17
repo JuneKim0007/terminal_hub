@@ -1358,3 +1358,126 @@ def test_load_github_local_config_roundtrip(workspace):
     assert result["labels"] is not None
     assert any(l["name"] == "bug" for l in result["labels"]["active"])
     assert result["fetched_at"] is not None
+
+
+# ── _do_load_github_global_config / _do_save_github_local_config / _do_get_github_config (#80) ──
+
+def test_load_github_global_config_creates_defaults(workspace):
+    from extensions.github_planner import _do_load_github_global_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.resolve_token", return_value=(None, MagicMock(value="none"))), \
+         patch("extensions.github_planner.read_env", return_value={}):
+        result = _do_load_github_global_config()
+
+    assert "auth" in result
+    assert result["auth"]["method"] == "none"
+    assert (workspace / "hub_agents" / "github_global_config.json").exists()
+
+
+def test_load_github_global_config_stores_auth_method(workspace):
+    from extensions.github_planner import _do_load_github_global_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    mock_source = MagicMock()
+    mock_source.value = "gh_cli"
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.resolve_token", return_value=("tok123", mock_source)), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "owner/myrepo"}):
+        result = _do_load_github_global_config()
+
+    assert result["auth"]["method"] == "gh_cli"
+    assert result["default_repo"] == "owner/myrepo"
+
+
+def test_load_github_global_config_reads_existing(workspace):
+    from extensions.github_planner import _do_load_github_global_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    existing = {"auth": {"method": "token", "username": "alice"}, "default_repo": "alice/proj",
+                "rate_limit_remaining": 4500, "last_checked": "2026-01-01T00:00:00Z"}
+    (workspace / "hub_agents" / "github_global_config.json").write_text(
+        json.dumps(existing), encoding="utf-8"
+    )
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_load_github_global_config()
+
+    assert result["auth"]["username"] == "alice"
+    assert result["default_repo"] == "alice/proj"
+    assert result["rate_limit_remaining"] == 4500
+
+
+def test_save_github_local_config_merges_data(workspace):
+    from extensions.github_planner import _do_save_github_local_config, _do_load_github_local_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_save_github_local_config({"default_branch": "main", "repo": "owner/repo"})
+        _do_save_github_local_config({"default_branch": "develop"})  # partial update
+        result = _do_load_github_local_config()
+
+    config_path = workspace / "hub_agents" / "extensions" / "gh_planner" / "github_local_config.json"
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert data["default_branch"] == "develop"  # overwritten
+    assert data["repo"] == "owner/repo"  # preserved
+
+
+def test_get_github_config_global_scope(workspace):
+    from extensions.github_planner import _do_get_github_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.resolve_token", return_value=(None, MagicMock(value="none"))), \
+         patch("extensions.github_planner.read_env", return_value={}):
+        result = _do_get_github_config("global")
+
+    assert result["scope"] == "global"
+    assert "global" in result
+    assert "local" not in result
+
+
+def test_get_github_config_local_scope(workspace):
+    from extensions.github_planner import _do_get_github_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_github_config("local")
+
+    assert result["scope"] == "local"
+    assert "local" in result
+    assert "global" not in result
+
+
+def test_get_github_config_both_scope(workspace):
+    from extensions.github_planner import _do_get_github_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.resolve_token", return_value=(None, MagicMock(value="none"))), \
+         patch("extensions.github_planner.read_env", return_value={}):
+        result = _do_get_github_config("both")
+
+    assert "global" in result
+    assert "local" in result
+
+
+def test_get_github_config_invalid_scope(workspace):
+    from extensions.github_planner import _do_get_github_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_get_github_config("everything")
+
+    assert result["error"] == "invalid_scope"
+
+
+def test_global_config_not_in_volatile_files():
+    from extensions.github_planner import _GH_PLANNER_VOLATILE_FILES
+    assert "github_global_config.json" not in _GH_PLANNER_VOLATILE_FILES
+
+
+def test_local_config_in_volatile_files():
+    from extensions.github_planner import _GH_PLANNER_VOLATILE_FILES
+    assert "github_local_config.json" in _GH_PLANNER_VOLATILE_FILES

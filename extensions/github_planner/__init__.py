@@ -112,7 +112,11 @@ def get_github_client() -> tuple[GitHubClient | None, str]:
         return None, source.suggestion()
 
     root = get_workspace_root()
-    repo = detect_repo(root)
+    root_key = str(root)
+    # Cache detect_repo per root — avoids re-reading hub_agents/.env on every call (#90)
+    if root_key not in _REPO_CACHE:
+        _REPO_CACHE[root_key] = detect_repo(root)
+    repo = _REPO_CACHE[root_key]
     if not repo:
         return None, (
             "No GitHub repo configured for this project. "
@@ -120,6 +124,15 @@ def get_github_client() -> tuple[GitHubClient | None, str]:
         )
 
     return GitHubClient(token=token, repo=repo), ""
+
+
+# Per-root repo string cache — avoids re-reading hub_agents/.env on every call (#90)
+_REPO_CACHE: dict[str, str | None] = {}
+
+
+def _invalidate_repo_cache() -> None:
+    """Clear repo cache. Call after setup_workspace changes the env."""
+    _REPO_CACHE.clear()
 
 
 # ── Internal alias for analyzer ───────────────────────────────────────────────
@@ -152,6 +165,97 @@ def _do_verify_auth() -> dict:
         "message": message,
         "options": get_auth_options(),
         "_guidance": _G_AUTH,
+    }
+
+
+def _do_generate_issue_workflows(slug: str) -> dict:
+    """Append agent + program workflow scaffolding to an existing issue file (#88).
+
+    Reads the issue's title, body, and labels, then writes a structured workflow
+    section that Claude can fill in during implementation.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    fm = read_issue_frontmatter(root, slug)
+    if not fm:
+        return {"error": "issue_not_found", "message": f"No issue found for slug {slug!r}"}
+
+    title = fm.get("title", slug)
+    labels: list[str] = fm.get("labels") or []
+
+    # Infer change type from labels
+    if any("bug" in lbl.lower() for lbl in labels):
+        change_type = "bug fix"
+    elif any(lbl in ("enhancement", "feature") for lbl in labels):
+        change_type = "feature"
+    elif any("refactor" in lbl.lower() for lbl in labels):
+        change_type = "refactor"
+    elif any("test" in lbl.lower() for lbl in labels):
+        change_type = "test"
+    elif any("doc" in lbl.lower() for lbl in labels):
+        change_type = "documentation"
+    else:
+        change_type = "implementation"
+
+    workflow_section = f"""
+---
+
+## Agent Workflow
+
+### 1. Orient
+- Re-read this issue title and body carefully
+- Identify the minimal set of files affected
+- Understand the acceptance criteria before touching any code
+
+### 2. Plan
+- List files to change; prefer editing existing over creating new
+- Confirm the approach fits existing patterns in the codebase
+
+### 3. Implement
+- Make atomic, test-verified changes
+- Run `python -m pytest` after each logical change
+
+### 4. Verify
+- All tests pass
+- Coverage ≥ 80%
+- Acceptance criteria met
+
+---
+
+## Program Workflow
+
+**Change type:** {change_type}
+
+### Affected components
+<!-- Fill in: list files/modules that need to change -->
+
+### Test plan
+- [ ] Unit tests for new/changed logic
+- [ ] Update existing tests if behaviour changed
+- [ ] No regressions (full suite passes)
+"""
+
+    # Append to the issue file body (after existing content)
+    issue_path = root / "hub_agents" / "issues" / f"{slug}.md"
+    if not issue_path.exists():
+        return {"error": "issue_not_found", "message": f"File missing: {issue_path}"}
+
+    existing = issue_path.read_text(encoding="utf-8")
+    if "## Agent Workflow" in existing:
+        return {"slug": slug, "updated": False, "message": "Workflow section already present"}
+
+    tmp = issue_path.with_suffix(".tmp")
+    tmp.write_text(existing.rstrip() + workflow_section, encoding="utf-8")
+    import os as _os
+    _os.replace(tmp, issue_path)
+
+    return {
+        "slug": slug,
+        "updated": True,
+        "file": f"hub_agents/issues/{slug}.md",
+        "_display": f"✓ Workflow scaffold added to {slug}",
     }
 
 
@@ -568,8 +672,8 @@ def _do_save_project_docs(summary_md: str, detail_md: str, repo: str | None = No
     }
     # Analysis data is now superseded by written docs — free the memory
     _ANALYSIS_CACHE.pop(resolved, None)
-    # #61 — invalidate session header so next call reflects fresh docs
-    _SESSION_HEADER_CACHE.clear()
+    # Invalidate session header for this root only (#61, #94)
+    _SESSION_HEADER_CACHE.pop(str(root), None)
 
     return {
         "saved": True,
@@ -756,7 +860,9 @@ def _do_lookup_feature_section(feature: str, repo: str | None = None) -> dict:
 # ── File index extraction (Python-side, no raw content sent to Claude) ──────────
 
 _MD_SUFFIXES = {".md", ".rst", ".txt"}
-_SESSION_HEADER_CACHE: dict = {}
+# Key: str(workspace_root) — separate entries per project root to prevent
+# cross-workspace contamination when PROJECT_ROOT changes between calls (#94)
+_SESSION_HEADER_CACHE: dict[str, dict] = {}
 
 
 def _extract_file_index(file_path: str, content: str) -> dict:
@@ -1046,17 +1152,20 @@ def _do_get_session_header() -> dict:
     summary title, and the list of feature-area sections in project_detail.md.
     Claude loads full summary/section only when planning context is needed.
     """
-    if _SESSION_HEADER_CACHE:
-        return _SESSION_HEADER_CACHE
-
     root = get_workspace_root()
+    root_key = str(root)
+    # Cache keyed by workspace root to prevent cross-project contamination (#94)
+    if root_key in _SESSION_HEADER_CACHE:
+        return _SESSION_HEADER_CACHE[root_key]
+
     docs_dir = _gh_planner_docs_dir(root)
     summary_path = docs_dir / "project_summary.md"
     detail_path = docs_dir / "project_detail.md"
 
     if not summary_path.exists():
-        _SESSION_HEADER_CACHE.update({"docs": False})
-        return _SESSION_HEADER_CACHE
+        result: dict = {"docs": False}
+        _SESSION_HEADER_CACHE[root_key] = result
+        return result
 
     age_h = (time.time() - summary_path.stat().st_mtime) / 3600
     first_line = summary_path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
@@ -1071,7 +1180,7 @@ def _do_get_session_header() -> dict:
         total_sections = len(all_sections)
         sections = all_sections[:_MAX_SECTIONS_IN_HEADER]
 
-    result: dict = {
+    result = {
         "docs": True,
         "age_hours": round(age_h, 1),
         "title": first_line,
@@ -1081,8 +1190,8 @@ def _do_get_session_header() -> dict:
     if total_sections > _MAX_SECTIONS_IN_HEADER:
         result["sections_truncated"] = True
         result["total_sections"] = total_sections
-    _SESSION_HEADER_CACHE.update(result)
-    return _SESSION_HEADER_CACHE
+    _SESSION_HEADER_CACHE[root_key] = result
+    return result
 
 
 # ── list_issues with compact mode ─────────────────────────────────────────────
@@ -1092,10 +1201,30 @@ def _do_list_issues(compact: bool = False) -> dict:
     if err := ensure_initialized(root):
         return err
     issues = list_issue_files(root)
+    # Mark issues that have never been submitted to GitHub (#102)
+    for issue in issues:
+        if not issue.get("issue_number"):
+            issue["local_only"] = True
     if compact:
-        issues = [{"slug": i["slug"], "title": i["title"], "status": i["status"]}
+        issues = [{"slug": i["slug"], "title": i["title"], "status": i["status"],
+                   **({"local_only": True} if i.get("local_only") else {})}
                   for i in issues]
     return {"issues": issues}
+
+
+def _do_list_pending_drafts() -> dict:
+    """Return only local-only (unsubmitted) issues. Used to identify drift risk (#102)."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    issues = list_issue_files(root)
+    pending = [
+        {"slug": i["slug"], "title": i["title"], "status": i["status"],
+         "created_at": i.get("created_at"), "file": i.get("file")}
+        for i in issues
+        if not i.get("issue_number")
+    ]
+    return {"pending_drafts": pending, "count": len(pending)}
 
 
 # ── Plugin unload ─────────────────────────────────────────────────────────────
@@ -1124,7 +1253,7 @@ def _do_list_plugin_state(plugin: str) -> dict:
     if _FILE_TREE_CACHE:
         caches.append({"name": "_FILE_TREE_CACHE", "fetched_at": _FILE_TREE_CACHE.get("fetched_at")})
     if _SESSION_HEADER_CACHE:
-        caches.append({"name": "_SESSION_HEADER_CACHE"})
+        caches.append({"name": "_SESSION_HEADER_CACHE", "entries": len(_SESSION_HEADER_CACHE)})
 
     disk_files = []
     for fname in _GH_PLANNER_VOLATILE_FILES:
@@ -1132,16 +1261,37 @@ def _do_list_plugin_state(plugin: str) -> dict:
         if p.exists():
             disk_files.append({"path": str(p.relative_to(root)), "size_bytes": p.stat().st_size})
 
-    return {
+    # Rough memory estimate: sum string lengths of all cached values / 1024
+    def _dict_size_kb(d: dict) -> int:
+        try:
+            import sys
+            return sys.getsizeof(str(d)) // 1024
+        except Exception:
+            return 0
+
+    estimated_kb = (
+        _dict_size_kb(_ANALYSIS_CACHE)
+        + _dict_size_kb(_PROJECT_DOCS_CACHE)
+        + _dict_size_kb(_FILE_TREE_CACHE)
+        + _dict_size_kb(_SESSION_HEADER_CACHE)
+    )
+    _SUGGEST_UNLOAD_KB = 500
+
+    result = {
         "plugin": plugin,
         "caches": caches,
         "disk_files": disk_files,
         "total_caches": len(caches),
         "total_disk_files": len(disk_files),
+        "estimated_memory_kb": estimated_kb,
         "_display": (
-            f"gh_planner state: {len(caches)} in-memory cache(s), {len(disk_files)} disk file(s)"
+            f"gh_planner state: {len(caches)} in-memory cache(s), "
+            f"{len(disk_files)} disk file(s), ~{estimated_kb}KB memory"
         ),
     }
+    if estimated_kb >= _SUGGEST_UNLOAD_KB:
+        result["suggest_unload"] = True
+    return result
 
 
 def _do_unload_plugin(plugin: str) -> dict:
@@ -1247,6 +1397,15 @@ def register(mcp) -> None:
         return _do_draft_issue(title, body, labels, assignees)
 
     @mcp.tool()
+    def generate_issue_workflows(slug: str) -> dict:
+        """Append agent + program workflow scaffolding to an existing issue file.
+
+        Call after draft_issue (or for any existing issue) to add structured workflow
+        sections: orient → plan → implement → verify, plus a change-type-aware test plan.
+        Idempotent — skips if workflow sections already exist (#88)."""
+        return _do_generate_issue_workflows(slug)
+
+    @mcp.tool()
     def submit_issue(slug: str) -> dict:
         """Submit a pending local issue draft to GitHub.
 
@@ -1262,8 +1421,15 @@ def register(mcp) -> None:
     def list_issues(compact: bool = False) -> dict:
         """Return tracked issues from local hub_agents/issues/ files.
         compact=True: returns [{slug, title, status}] only (~3× fewer tokens).
-        compact=False (default): returns full issue metadata."""
+        compact=False (default): returns full issue metadata.
+        Issues never submitted to GitHub are marked with local_only: true (#102)."""
         return _do_list_issues(compact)
+
+    @mcp.tool()
+    def list_pending_drafts() -> dict:
+        """Return only issues that exist locally but have never been submitted to GitHub.
+        Use to identify status drift risk — local issues may diverge from GitHub state (#102)."""
+        return _do_list_pending_drafts()
 
     @mcp.tool()
     def get_issue_context(slug: str) -> dict:

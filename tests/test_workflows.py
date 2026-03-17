@@ -321,7 +321,8 @@ class TestJourney3_SessionResume:
         full_keys = set(full["issues"][0].keys())
 
         # PERFORMANCE CHECK: compact should have strictly fewer fields
-        assert compact_keys == {"slug", "title", "status"}
+        # local_only is included for unsubmitted issues (#102)
+        assert compact_keys == {"slug", "title", "status", "local_only"}
         assert len(full_keys) > len(compact_keys)
 
     def test_session_start_sequence_token_budget(self, workspace):

@@ -21,6 +21,7 @@ from extensions.github_planner import (
     ensure_initialized,
     resolve_token,
     verify_gh_cli_auth,
+    _invalidate_repo_cache,
 )
 from extensions.github_planner.storage import (
     write_issue_file,
@@ -118,6 +119,7 @@ def create_server() -> FastMCP:
 
         mode = WorkspaceMode.GITHUB if github_repo else WorkspaceMode.LOCAL
         save_config(root, mode, github_repo)
+        _invalidate_repo_cache()  # new repo configured — flush cached detect_repo result
 
         label_warning: str | None = None
         if github_repo:

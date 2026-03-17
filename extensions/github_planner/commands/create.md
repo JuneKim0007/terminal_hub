@@ -18,13 +18,18 @@
      - If `matched: true`: use `section` to inform AC and `global_rules` for constraints
      - If `matched: false`: note the available sections but don't block creation
 
-3. Call `create_issue(title=..., body=..., labels=..., assignees=...)`
+3. Call `draft_issue(title=..., body=..., labels=..., assignees=...)` to save locally.
 
-3. On success, confirm:
+4. Optionally call `generate_issue_workflows(slug=...)` to append agent + program
+   workflow scaffolding to the issue file (recommended for implementation tasks).
+
+5. If the user wants to publish to GitHub, call `submit_issue(slug=...)`.
+
+6. On success, confirm:
    > "Created issue #`{issue_number}`: `{url}`
    > Saved locally at `{local_file}`."
 
-4. On `{error: "github_unavailable"}` → follow `terminal-hub://workflow/auth`.
+7. On `{error: "github_unavailable"}` → follow `terminal-hub://workflow/auth`.
 
 ## List issues
 

@@ -1,0 +1,16 @@
+{
+  "name": "default.analyzer",
+  "version": "1.0",
+  "description": "GitHub repo intelligence snapshot — label, assignee, and structure analysis",
+  "snapshot_file": "hub_agents/analyzer_snapshot.json",
+  "stale_after_hours": 24,
+  "owned_by": "plugins.github_planner.analyzer",
+  "fields_cached": [
+    "issues.label_frequency",
+    "issues.assignee_frequency",
+    "issues.body_sections",
+    "issues.title_prefixes",
+    "templates.suggested_labels",
+    "templates.suggested_assignees"
+  ]
+}

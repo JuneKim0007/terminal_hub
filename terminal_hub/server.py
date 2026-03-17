@@ -1,50 +1,42 @@
 """MCP server for terminal-hub.
 
-Registers all tools and workflow-guide resources. Entry point is create_server(),
-which returns a configured FastMCP instance ready to call server.run().
+Registers core workspace tools and delegates GitHub-specific tools to the
+github_planner plugin. Entry point is create_server(), which returns a
+configured FastMCP instance ready to call server.run().
 """
-import json
-from datetime import date
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from terminal_hub.auth import get_auth_options, resolve_token, verify_gh_cli_auth
 from terminal_hub.config import WorkspaceMode, load_config, save_config
 from terminal_hub.env_store import read_env, write_env
-from terminal_hub.errors import msg
-from terminal_hub.github_client import GitHubClient, GitHubError, load_default_labels
-from terminal_hub.slugify import slugify
+from plugins.github_planner.client import load_default_labels
+from terminal_hub.workspace import init_workspace, resolve_workspace_root
+from terminal_hub.plugin_loader import discover_plugins, load_plugin, build_instructions
 
-from terminal_hub.storage import (
-    IssueStatus,
-    list_issue_files,
-    read_doc_file,
-    read_issue_file,
-    read_issue_frontmatter,
-    resolve_slug,
-    update_issue_status,
-    validate_slug,
-    write_doc_file,
-    write_issue_file,
+# Re-export plugin helpers so tests can patch at terminal_hub.server.*
+from plugins.github_planner import (
+    get_workspace_root,
+    get_github_client,
+    ensure_initialized,
+    resolve_token,
+    verify_gh_cli_auth,
 )
-from terminal_hub.workspace import detect_repo, init_workspace, resolve_workspace_root
+from plugins.github_planner.storage import (
+    write_issue_file,
+    write_doc_file,
+)
 
 _BUILTIN_DIR = Path(__file__).parent.parent / "commands" / "builtin"
 
-# ── Guidance URIs ─────────────────────────────────────────────────────────────
-_G_INIT    = "terminal-hub://workflow/init"
-_G_ISSUE   = "terminal-hub://workflow/issue"
-_G_CONTEXT = "terminal-hub://workflow/context"
-_G_AUTH    = "terminal-hub://workflow/auth"
+_BUILTIN_COMMANDS = ["help.md", "inspect.md"]
+
+_PLUGIN_WARNINGS: list[str] = []
 
 
 def _load_agent(name: str) -> str:
     path = _BUILTIN_DIR / name
     return path.read_text(encoding="utf-8") if path.exists() else ""
-
-
-_BUILTIN_COMMANDS = ["help.md", "create.md", "context.md", "setup.md", "auth.md"]
 
 
 def _assert_builtins() -> None:
@@ -57,313 +49,23 @@ def _assert_builtins() -> None:
 _assert_builtins()
 
 
-def get_workspace_root() -> Path:
-    return resolve_workspace_root()
-
-
-def ensure_initialized(root: Path) -> dict | None:
-    """Return a needs_init response if hub_agents/ is absent, else None."""
-    if not (root / "hub_agents").exists():
-        return {
-            "status": "needs_init",
-            "message": (
-                "This project hasn't been set up with terminal-hub yet. "
-                "Ask the user: would they like GitHub integration? If yes, what is their repo (owner/repo format)? "
-                "Then call setup_workspace to initialise."
-            ),
-            "_guidance": _G_INIT,
-        }
-    return None
-
-
-def get_github_client() -> tuple[GitHubClient | None, str]:
-    """Return (client, error_message). Client is None if auth unavailable."""
-    token, source = resolve_token()
-    if token is None:
-        return None, source.suggestion()
-
-    root = get_workspace_root()
-    repo = detect_repo(root)
-    if not repo:
-        return None, (
-            "No GitHub repo configured for this project. "
-            "Call setup_workspace with github_repo='owner/repo' to set one."
-        )
-
-    return GitHubClient(token=token, repo=repo), ""
-
-
 def create_server() -> FastMCP:
     """Create and return the configured FastMCP instance."""
-    mcp = FastMCP("terminal-hub", instructions="terminal-hub connected. Type /terminal_hub:help to get started.")
+    global _PLUGIN_WARNINGS
+    _PLUGIN_WARNINGS = []
 
-    # ── Resources (workflow guides) ───────────────────────────────────────────
+    plugins_dir = Path(__file__).parent.parent / "plugins"
+    loaded_manifests = discover_plugins(plugins_dir)
+
+    instructions = build_instructions(loaded_manifests)
+    mcp = FastMCP("terminal-hub", instructions=instructions)
+
+    # ── Core resources ────────────────────────────────────────────────────────
 
     @mcp.resource("terminal-hub://instructions")
     def instructions_resource() -> str:
         """Full entry point instructions and tool reference."""
         return _load_agent("help.md")
-
-    @mcp.resource("terminal-hub://workflow/init")
-    def workflow_init() -> str:
-        """Step-by-step guide for initialising a new project workspace."""
-        return _load_agent("setup.md")
-
-    @mcp.resource("terminal-hub://workflow/issue")
-    def workflow_issue() -> str:
-        """Guide for creating, listing, and reloading issue context."""
-        return _load_agent("create.md")
-
-    @mcp.resource("terminal-hub://workflow/context")
-    def workflow_context() -> str:
-        """Guide for loading and saving project description and architecture."""
-        return _load_agent("context.md")
-
-    @mcp.resource("terminal-hub://workflow/auth")
-    def workflow_auth() -> str:
-        """Auth recovery guide — check_auth → gh auth login → verify_auth."""
-        return _load_agent("auth.md")
-
-    # ── Auth tools ────────────────────────────────────────────────────────────
-
-    @mcp.tool()
-    def check_auth() -> dict:
-        """Check GitHub authentication status.
-        If not authenticated, presents login options to show the user.
-        Call this whenever a GitHub tool returns an auth error."""
-        token, source = resolve_token()
-        if token:
-            return {
-                "authenticated": True,
-                "source": source.value,
-                "message": f"Authenticated via {source.value.replace('_', ' ')}.",
-            }
-        return {
-            "authenticated": False,
-            "message": "No GitHub authentication found.",
-            "options": get_auth_options(),
-            "_guidance": _G_AUTH,
-        }
-
-    @mcp.tool()
-    def verify_auth() -> dict:
-        """Verify GitHub CLI authentication after the user runs gh auth login.
-        Call this after the user reports they have completed gh auth login."""
-        success, message = verify_gh_cli_auth()
-        if success:
-            return {"authenticated": True, "source": "gh_cli", "message": message}
-        return {
-            "authenticated": False,
-            "message": message,
-            "options": get_auth_options(),
-            "_guidance": _G_AUTH,
-        }
-
-    # ── Issue tools ───────────────────────────────────────────────────────────
-
-    @mcp.tool()
-    def draft_issue(issue_json: str) -> dict:
-        """Parse a structured JSON issue draft and save it locally as status=pending.
-
-        issue_json must be a JSON string with keys:
-          title (str, required), body (str, required),
-          labels (list[str], optional), assignees (list[str], optional)
-
-        Returns {slug, title, preview_body, status} so Claude can show the user
-        a preview and ask for approval before calling submit_issue.
-        Local-only users can stop here — the draft is cached in hub_agents/issues/.
-        """
-        root = get_workspace_root()
-        if err := ensure_initialized(root):
-            return err
-
-        try:
-            data = json.loads(issue_json)
-        except json.JSONDecodeError as exc:
-            return {"error": "draft_failed", "message": msg("invalid_json", detail=str(exc)), "_hook": None}
-
-        for field in ("title", "body"):
-            if not data.get(field):
-                return {"error": "draft_failed", "message": msg("missing_field", detail=field), "_hook": None}
-
-        title: str = data["title"]
-        body: str = data["body"]
-        labels: list[str] = data.get("labels") or []
-        assignees: list[str] = data.get("assignees") or []
-
-        base_slug = slugify(title)
-        if not base_slug:
-            return {"error": "draft_failed", "message": "Title produced an empty slug — use at least one alphanumeric character.", "_hook": None}
-
-        slug = resolve_slug(root, base_slug)
-
-        try:
-            write_issue_file(
-                root=root,
-                slug=slug,
-                title=title,
-                body=body,
-                assignees=assignees,
-                labels=labels,
-                created_at=date.today(),
-                status=IssueStatus.PENDING,
-            )
-        except OSError as exc:
-            return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
-
-        return {
-            "slug": slug,
-            "title": title,
-            "preview_body": body[:300] + ("…" if len(body) > 300 else ""),
-            "labels": labels,
-            "assignees": assignees,
-            "status": str(IssueStatus.PENDING),
-            "local_file": f"hub_agents/issues/{slug}.md",
-        }
-
-    @mcp.tool()
-    def submit_issue(slug: str) -> dict:
-        """Submit a pending local issue draft to GitHub.
-
-        Reads the local hub_agents/issues/<slug>.md file, bootstraps any missing
-        labels, creates the GitHub issue, then updates the local file to status=open.
-
-        Call this only after the user has approved the draft shown by draft_issue.
-        On any failure Claude handles the error directly — no automatic retry.
-        """
-        root = get_workspace_root()
-        if err := ensure_initialized(root):
-            return err
-
-        try:
-            validate_slug(slug)
-        except ValueError:
-            return {"error": "submit_failed", "message": msg("not_found", detail=slug), "_hook": None}
-
-        fm = read_issue_frontmatter(root, slug)
-        if fm is None:
-            return {"error": "submit_failed", "message": msg("not_found", detail=slug), "_hook": None}
-
-        gh, error_message = get_github_client()
-        if gh is None:
-            return {
-                "error": "github_unavailable",
-                "message": error_message,
-                "_guidance": _G_AUTH,
-                "_hook": None,
-            }
-
-        labels: list[str] = fm.get("labels") or []
-        raw = read_issue_file(root, slug) or ""
-        body = raw.split("---", 2)[-1].strip() if raw.startswith("---") else raw
-
-        with gh:
-            if labels:
-                label_err = gh.ensure_labels(labels)
-                if label_err:
-                    return {"error": "label_bootstrap_failed", "message": label_err, "_hook": None}
-
-            try:
-                result = gh.create_issue(
-                    title=fm["title"],
-                    body=body,
-                    labels=labels,
-                    assignees=fm.get("assignees") or [],
-                )
-            except GitHubError as exc:
-                return {**exc.to_dict(), "_hook": None}
-
-        update_issue_status(
-            root, slug,
-            status=IssueStatus.OPEN,
-            issue_number=result["number"],
-            github_url=result["html_url"],
-        )
-
-        result_dict = {
-            "issue_number": result["number"],
-            "url": result["html_url"],
-            "slug": slug,
-            "local_file": f"hub_agents/issues/{slug}.md",
-        }
-        display = (
-            f"✓ Created #{result_dict['issue_number']} — {fm['title']}\n"
-            f"  URL:   {result_dict['url']}\n"
-            f"  Local: {result_dict['local_file']}"
-        )
-        return {**result_dict, "_display": display}
-
-    @mcp.tool()
-    def list_issues() -> dict:
-        """Return all tracked issues from local hub_agents/issues/ files.
-        Each entry includes a 'status' field: pending | open | closed."""
-        root = get_workspace_root()
-        if err := ensure_initialized(root):
-            return err
-        return {"issues": list_issue_files(root)}
-
-    @mcp.tool()
-    def get_issue_context(slug: str) -> dict:
-        """Read a specific issue file by slug to reload context cheaply."""
-        root = get_workspace_root()
-        if err := ensure_initialized(root):
-            return err
-
-        try:
-            validate_slug(slug)
-        except ValueError:
-            return {"error": "not_found", "message": msg("not_found", detail=slug), "_hook": None}
-
-        content = read_issue_file(root, slug)
-        if content is None:
-            return {"error": "not_found", "message": msg("not_found", detail=slug), "_hook": None}
-        return {"slug": slug, "content": content}
-
-    # ── Project context tools ─────────────────────────────────────────────────
-
-    @mcp.tool()
-    def update_project_description(content: str) -> dict:
-        """Overwrite hub_agents/project_description.md.
-        Call get_project_context first to preserve existing content."""
-        root = get_workspace_root()
-        if err := ensure_initialized(root):
-            return err
-        try:
-            path = write_doc_file(root, "project_description", content)
-            return {"updated": True, "file": str(path.relative_to(root)), "_display": "✓ Project description saved"}
-        except (OSError, ValueError) as exc:
-            return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
-
-    @mcp.tool()
-    def update_architecture(content: str) -> dict:
-        """Overwrite hub_agents/architecture_design.md.
-        Call get_project_context first to preserve existing content."""
-        root = get_workspace_root()
-        if err := ensure_initialized(root):
-            return err
-        try:
-            path = write_doc_file(root, "architecture", content)
-            return {"updated": True, "file": str(path.relative_to(root)), "_display": "✓ Architecture notes saved"}
-        except (OSError, ValueError) as exc:
-            return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
-
-    @mcp.tool()
-    def get_project_context(doc_key: str) -> dict:
-        """Read project_description.md and/or architecture_design.md from hub_agents/.
-        doc_key: 'project_description', 'architecture', or 'all'."""
-        root = get_workspace_root()
-        if err := ensure_initialized(root):
-            return err
-        if doc_key == "all":
-            return {
-                "project_description": read_doc_file(root, "project_description"),
-                "architecture": read_doc_file(root, "architecture"),
-            }
-        try:
-            content = read_doc_file(root, doc_key)
-        except ValueError as exc:
-            return {"error": "not_found", "message": str(exc), "_hook": None}
-        return {"doc_key": doc_key, "content": content}
 
     # ── Workspace setup tools ─────────────────────────────────────────────────
 
@@ -372,6 +74,7 @@ def create_server() -> FastMCP:
         """Check if this project has been initialised. Always call this first."""
         root = get_workspace_root()
         hub_dir = root / "hub_agents"
+        _G_INIT = "terminal-hub://workflow/init"
         if not hub_dir.exists():
             return {
                 "initialised": False,
@@ -383,11 +86,14 @@ def create_server() -> FastMCP:
             }
         cfg = load_config(root)
         env = read_env(root)
-        return {
+        result: dict = {
             "initialised": True,
             "mode": cfg["mode"] if cfg else "unknown",
             "github_repo": env.get("GITHUB_REPO"),
         }
+        if _PLUGIN_WARNINGS:
+            result["plugin_warnings"] = _PLUGIN_WARNINGS
+        return result
 
     @mcp.tool()
     def setup_workspace(github_repo: str | None = None) -> dict:
@@ -435,5 +141,94 @@ def create_server() -> FastMCP:
         if label_warning:
             result["label_warning"] = label_warning
         return result
+
+    # ── Session state tool ────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def get_session_state() -> dict:
+        """Return disk state of all terminal-hub caches and prompts.
+        Used by /terminal_hub:inspect to show what is currently loaded."""
+        root = get_workspace_root()
+        if err := ensure_initialized(root):
+            return err
+
+        items = []
+
+        # Analyzer snapshot
+        snap_path = root / "hub_agents" / "analyzer_snapshot.json"
+        if snap_path.exists():
+            from plugins.github_planner.analyzer import load_snapshot, snapshot_age_hours, summarize_for_prompt
+            snap = load_snapshot(root)
+            age = snapshot_age_hours(snap) if snap else None
+            summary = summarize_for_prompt(snap) if snap else None
+            items.append({
+                "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
+                "status": "present", "path": "hub_agents/analyzer_snapshot.json",
+                "size_bytes": snap_path.stat().st_size,
+                "age_hours": round(age, 1) if age is not None else None,
+                "summary": summary,
+            })
+        else:
+            items.append({
+                "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
+                "status": "absent", "path": "hub_agents/analyzer_snapshot.json",
+                "size_bytes": None, "age_hours": None, "summary": None,
+            })
+
+        # Project description and architecture
+        for key, label, path in [
+            ("project_description", "Project description", "hub_agents/project_description.md"),
+            ("architecture", "Architecture notes", "hub_agents/architecture_design.md"),
+        ]:
+            p = root / path
+            items.append({
+                "key": key, "label": label, "type": "prompt",
+                "status": "present" if p.exists() else "absent",
+                "path": path,
+                "size_bytes": p.stat().st_size if p.exists() else None,
+                "age_hours": None, "summary": None,
+            })
+
+        # Issues summary
+        issues_dir = root / "hub_agents" / "issues"
+        issue_files = list(issues_dir.glob("*.md")) if issues_dir.exists() else []
+        pending = sum(1 for f in issue_files if "pending" in f.read_text(encoding="utf-8", errors="ignore"))
+        open_count = len(issue_files) - pending
+        items.append({
+            "key": "issues", "label": "Tracked issues", "type": "cache",
+            "status": "present" if issue_files else "absent",
+            "path": "hub_agents/issues/",
+            "size_bytes": None, "age_hours": None,
+            "summary": f"{len(issue_files)} total · {pending} pending · {open_count} open" if issue_files else None,
+        })
+
+        # Build _display
+        rows = []
+        for item in items:
+            icon = "✓" if item["status"] == "present" else "✗"
+            detail = ""
+            if item["status"] == "present":
+                if item["age_hours"] is not None:
+                    detail = f"  {item['age_hours']}h old"
+                elif item["size_bytes"] is not None:
+                    detail = f"  {item['size_bytes']} bytes"
+                if item["summary"]:
+                    detail += f"  {item['summary']}"
+            rows.append(f"[{item['type']:<6}] {item['label']:<25} {icon}{detail}")
+
+        cfg = load_config(root) or {}
+        env = read_env(root)
+        header = "terminal-hub session state\n" + "─" * 50
+        footer = f"Repo: {env.get('GITHUB_REPO', 'not set')}  Mode: {cfg.get('mode', 'unknown')}"
+        display = header + "\n" + "\n".join(rows) + "\n" + "─" * 50 + "\n" + footer
+
+        return {"items": items, "config": cfg, "_display": display}
+
+    # ── Dynamic plugin loading ────────────────────────────────────────────────
+
+    for manifest in loaded_manifests:
+        err = load_plugin(manifest, mcp)
+        if err:
+            _PLUGIN_WARNINGS.append(err)
 
     return mcp

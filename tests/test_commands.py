@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 import pytest
-from plugins.github_planner.commands import endpoint, _CMDS
+from extensions.github_planner.commands import endpoint, _CMDS
 
 
 def test_endpoint_returns_method_and_path():

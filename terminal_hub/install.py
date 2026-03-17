@@ -53,7 +53,7 @@ def format_diff(config: dict) -> str:
     return "\n".join(lines)
 
 
-_COMMANDS_SRC = Path(__file__).parent.parent / "commands" / "builtin"
+_COMMANDS_SRC = Path(__file__).parent.parent / "extensions" / "builtin"
 
 
 def install_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
@@ -141,7 +141,7 @@ def run_install(claude_json_path: Path = _CLAUDE_JSON, claude_dir: Path = Path.h
 
     # Install plugin commands
     from terminal_hub.plugin_loader import discover_plugins
-    plugins_dir = Path(__file__).parent.parent / "plugins"
+    plugins_dir = Path(__file__).parent.parent / "extensions"
     manifests = discover_plugins(plugins_dir)
     for manifest in manifests:
         try:

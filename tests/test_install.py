@@ -175,7 +175,7 @@ def _make_plugin_manifest(tmp_path, name="myplugin", namespace=None, commands=("
     manifest = {
         "name": name,
         "version": "1.0",
-        "entry": f"plugins.{name}",
+        "entry": f"extensions.{name}",
         "commands_dir": "commands",
         "commands": list(commands),
         "_plugin_dir": str(plugin_dir),

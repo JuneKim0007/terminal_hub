@@ -1,7 +1,7 @@
 import pytest
 import httpx
 from unittest.mock import MagicMock, patch
-from plugins.github_planner.client import GitHubClient, GitHubError, parse_error, load_default_labels
+from extensions.github_planner.client import GitHubClient, GitHubError, parse_error, load_default_labels
 
 
 # ── parse_error ───────────────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ def test_ensure_labels_returns_error_when_create_fails():
 
 def test_load_default_labels_returns_empty_list_when_file_missing():
     """Lines 24-25: OSError path — file not found → returns []."""
-    with patch("plugins.github_planner.client._LABELS_FILE") as mock_path:
+    with patch("extensions.github_planner.client._LABELS_FILE") as mock_path:
         mock_path.read_text.side_effect = OSError("file not found")
         result = load_default_labels()
     assert result == []
@@ -250,7 +250,7 @@ def test_load_default_labels_returns_empty_list_when_file_missing():
 
 def test_load_default_labels_returns_empty_list_when_corrupt():
     """Lines 24-25: JSONDecodeError path — bad JSON → returns []."""
-    with patch("plugins.github_planner.client._LABELS_FILE") as mock_path:
+    with patch("extensions.github_planner.client._LABELS_FILE") as mock_path:
         mock_path.read_text.return_value = "not valid json {"
         result = load_default_labels()
     assert result == []
@@ -361,7 +361,7 @@ def test_list_collaborators_returns_list_on_success():
 
 def test_url_returns_method_and_full_url():
     """_url() builds method + BASE_URL + formatted path."""
-    from plugins.github_planner.client import BASE_URL
+    from extensions.github_planner.client import BASE_URL
     client = make_client()
     method, url = client._url("github", "list_labels")
     assert isinstance(method, str)

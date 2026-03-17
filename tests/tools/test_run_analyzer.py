@@ -47,7 +47,7 @@ def test_run_analyzer_success_writes_snapshot(workspace):
         result = call(server, "run_analyzer")
 
     assert "_display" in result
-    snapshot_path = workspace / "hub_agents" / "analyzer_snapshot.json"
+    snapshot_path = workspace / "hub_agents" / "extensions" / "gh_planner" / "analyzer_snapshot.json"
     assert snapshot_path.exists()
     snapshot = json.loads(snapshot_path.read_text())
     assert snapshot["repo"] == "owner/repo"
@@ -135,3 +135,36 @@ def test_run_analyzer_tool_is_registered(workspace):
         server = create_server()
     tool_names = [t.name for t in server._tool_manager.list_tools()]
     assert "run_analyzer" in tool_names
+
+
+# ── snapshot migration ────────────────────────────────────────────────────────
+
+def test_load_snapshot_migrates_legacy_flat_path(tmp_path):
+    """load_snapshot reads legacy hub_agents/analyzer_snapshot.json and moves it."""
+    import json as json_mod
+    from extensions.github_planner.analyzer import load_snapshot, _snapshot_path
+    (tmp_path / "hub_agents").mkdir()
+    old_path = tmp_path / "hub_agents" / "analyzer_snapshot.json"
+    snap = {"analyzed_at": "2026-01-01T00:00:00+00:00", "repo": "o/r",
+            "issues": {}, "labels": [], "members": [], "templates": {}}
+    old_path.write_text(json_mod.dumps(snap))
+
+    result = load_snapshot(tmp_path)
+    assert result is not None
+    assert result["repo"] == "o/r"
+    assert not old_path.exists()
+    assert _snapshot_path(tmp_path).exists()
+
+
+def test_load_snapshot_uses_new_path_when_both_exist(tmp_path):
+    """New path takes priority over legacy when both exist."""
+    import json as json_mod
+    from extensions.github_planner.analyzer import load_snapshot, _snapshot_path
+    (tmp_path / "hub_agents").mkdir()
+    new_path = _snapshot_path(tmp_path)
+    new_path.parent.mkdir(parents=True)
+    new_path.write_text(json_mod.dumps({"analyzed_at": "2026-01-01T00:00:00+00:00", "repo": "new"}))
+    (tmp_path / "hub_agents" / "analyzer_snapshot.json").write_text(json_mod.dumps({"repo": "old"}))
+
+    result = load_snapshot(tmp_path)
+    assert result["repo"] == "new"

@@ -9,9 +9,18 @@ from typing import Any
 
 import yaml
 
-_DOC_FILES = {
+_GH_PLANNER_DOCS = "hub_agents/extensions/gh_planner"
+
+# Legacy flat paths — kept only for migration; new writes go to _GH_PLANNER_DOCS
+_DOC_FILES_LEGACY = {
     "project_description": "hub_agents/project_description.md",
     "architecture": "hub_agents/architecture_design.md",
+}
+
+# Namespaced paths for new writes
+_DOC_FILES = {
+    "project_description": f"{_GH_PLANNER_DOCS}/project_summary.md",
+    "architecture": f"{_GH_PLANNER_DOCS}/project_detail.md",
 }
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,59}$")
@@ -206,13 +215,29 @@ def write_doc_file(root: Path, doc_key: str, content: str) -> Path:
 
 
 def read_doc_file(root: Path, doc_key: str) -> str | None:
-    """Return content of a project context doc or None if it doesn't exist."""
+    """Return content of a project context doc or None if it doesn't exist.
+
+    Reads from the namespaced path first; falls back to legacy flat path and
+    migrates the file on first access.
+    """
     if doc_key not in _DOC_FILES:
         raise ValueError(f"Unknown doc_key {doc_key!r}. Valid keys: {list(_DOC_FILES)}")
-    path = root / _DOC_FILES[doc_key]
-    if not path.exists():
-        return None
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return None
+    new_path = root / _DOC_FILES[doc_key]
+    if new_path.exists():
+        try:
+            return new_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+    # Migration: check legacy flat path
+    legacy_path = root / _DOC_FILES_LEGACY[doc_key]
+    if legacy_path.exists():
+        try:
+            content = legacy_path.read_text(encoding="utf-8")
+            # Migrate to new location
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(new_path, content)
+            legacy_path.unlink(missing_ok=True)
+            return content
+        except OSError:
+            pass
+    return None

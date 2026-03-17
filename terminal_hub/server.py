@@ -155,15 +155,15 @@ def create_server() -> FastMCP:
         items = []
 
         # Analyzer snapshot
-        snap_path = root / "hub_agents" / "analyzer_snapshot.json"
+        from extensions.github_planner.analyzer import _snapshot_path, load_snapshot, snapshot_age_hours, summarize_for_prompt
+        snap_path = _snapshot_path(root)
         if snap_path.exists():
-            from extensions.github_planner.analyzer import load_snapshot, snapshot_age_hours, summarize_for_prompt
             snap = load_snapshot(root)
             age = snapshot_age_hours(snap) if snap else None
             summary = summarize_for_prompt(snap) if snap else None
             items.append({
                 "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
-                "status": "present", "path": "hub_agents/analyzer_snapshot.json",
+                "status": "present", "path": str(snap_path.relative_to(root)),
                 "size_bytes": snap_path.stat().st_size,
                 "age_hours": round(age, 1) if age is not None else None,
                 "summary": summary,
@@ -171,14 +171,15 @@ def create_server() -> FastMCP:
         else:
             items.append({
                 "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
-                "status": "absent", "path": "hub_agents/analyzer_snapshot.json",
+                "status": "absent", "path": str(snap_path.relative_to(root)),
                 "size_bytes": None, "age_hours": None, "summary": None,
             })
 
-        # Project description and architecture
+        # Project docs (namespaced under extensions/gh_planner/)
+        gh_docs = root / "hub_agents" / "extensions" / "gh_planner"
         for key, label, path in [
-            ("project_description", "Project description", "hub_agents/project_description.md"),
-            ("architecture", "Architecture notes", "hub_agents/architecture_design.md"),
+            ("project_summary", "Project summary", "hub_agents/extensions/gh_planner/project_summary.md"),
+            ("project_detail", "Project detail", "hub_agents/extensions/gh_planner/project_detail.md"),
         ]:
             p = root / path
             items.append({

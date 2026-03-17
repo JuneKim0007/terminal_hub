@@ -426,6 +426,75 @@ def _do_update_architecture(content: str) -> dict:
         return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
 
+def _do_update_project_detail_section(feature_name: str, content: str) -> dict:
+    """Merge a single H2 section into project_detail.md without rewriting the full file (#65).
+
+    If a section matching `## {feature_name}` already exists, replaces it.
+    Otherwise appends a new section at the end.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    if not feature_name or not feature_name.strip():
+        return {"error": "invalid_input", "message": "feature_name must be non-empty"}
+    if not content or not content.strip():
+        return {"error": "invalid_input", "message": "content must be non-empty"}
+
+    docs_dir = _gh_planner_docs_dir(root)
+    detail_path = docs_dir / "project_detail.md"
+    detail_path.parent.mkdir(parents=True, exist_ok=True)
+
+    section_heading = f"## {feature_name.strip()}"
+    new_section = f"{section_heading}\n\n{content.strip()}\n"
+
+    if not detail_path.exists():
+        tmp = detail_path.with_suffix(".tmp")
+        tmp.write_text(new_section, encoding="utf-8")
+        import os as _os2; _os2.replace(tmp, detail_path)
+        # Invalidate cache so next load_project_docs sees fresh data
+        _PROJECT_DOCS_CACHE.pop(str(root), None)
+        return {"updated": True, "action": "created", "feature": feature_name,
+                "file": str(detail_path.relative_to(root))}
+
+    existing = detail_path.read_text(encoding="utf-8")
+
+    # Find existing section by heading (case-insensitive match)
+    lines = existing.splitlines(keepends=True)
+    heading_lower = section_heading.lower()
+    start_idx: int | None = None
+    end_idx: int | None = None
+    for i, line in enumerate(lines):
+        if line.strip().lower() == heading_lower:
+            start_idx = i
+        elif start_idx is not None and i > start_idx and line.startswith("## "):
+            end_idx = i
+            break
+
+    if start_idx is not None:
+        # Replace existing section
+        before = lines[:start_idx]
+        after = lines[end_idx:] if end_idx is not None else []
+        new_content = "".join(before) + new_section + ("" if not after else "\n" + "".join(after))
+        action = "replaced"
+    else:
+        # Append new section
+        new_content = existing.rstrip() + "\n\n" + new_section
+        action = "appended"
+
+    import os as _os3
+    tmp = detail_path.with_suffix(".tmp")
+    tmp.write_text(new_content, encoding="utf-8")
+    _os3.replace(tmp, detail_path)
+
+    # Invalidate cache
+    _PROJECT_DOCS_CACHE.pop(str(root), None)
+
+    return {"updated": True, "action": action, "feature": feature_name,
+            "file": str(detail_path.relative_to(root)),
+            "_display": f"✓ Section '{feature_name}' {action} in project_detail.md"}
+
+
 def _do_get_project_context(doc_key: str) -> dict:
     root = get_workspace_root()
     if err := ensure_initialized(root):
@@ -1437,6 +1506,21 @@ def register(mcp) -> None:
         return _do_get_issue_context(slug)
 
     # ── Project context tools ─────────────────────────────────────────────────
+
+    @mcp.tool()
+    def update_project_detail_section(feature_name: str, content: str) -> dict:
+        """Merge a single H2 section into project_detail.md without rewriting the full file.
+
+        If '## {feature_name}' already exists, replaces that section only.
+        Otherwise appends a new section. Use instead of save_project_docs when
+        adding/updating a single feature area to avoid accidental truncation (#65).
+
+        Decision rule for when to call:
+        - Issue labels include 'enhancement' or 'feature' → call this
+        - Issue labels include 'architecture' → call this for Design Principles section
+        - Labels are only 'bug', 'chore', 'refactor', 'docs' → do NOT call (no doc update)
+        - No labels → ask user first"""
+        return _do_update_project_detail_section(feature_name, content)
 
     @mcp.tool()
     def update_project_description(content: str) -> dict:

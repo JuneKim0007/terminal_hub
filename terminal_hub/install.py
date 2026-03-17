@@ -28,7 +28,7 @@ def read_claude_json(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
 
@@ -38,7 +38,7 @@ def write_claude_json(path: Path, config: dict) -> None:
     data = read_claude_json(path)
     data.setdefault("mcpServers", {})
     data["mcpServers"]["terminal-hub"] = config
-    path.write_text(json.dumps(data, indent=2))
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def format_diff(config: dict) -> str:

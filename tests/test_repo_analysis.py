@@ -749,6 +749,78 @@ def test_list_issues_submitted_has_no_local_only(workspace):
     assert "local_only" not in result["issues"][0]
 
 
+# ── _do_update_project_detail_section (#65) ───────────────────────────────────
+
+def test_update_project_detail_section_creates_file(workspace):
+    from extensions.github_planner import _do_update_project_detail_section
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_update_project_detail_section("Auth", "JWT tokens with refresh.")
+
+    assert result["updated"] is True
+    assert result["action"] == "created"
+    detail_path = workspace / "hub_agents" / "extensions" / "gh_planner" / "project_detail.md"
+    assert detail_path.exists()
+    content = detail_path.read_text()
+    assert "## Auth" in content
+    assert "JWT tokens with refresh." in content
+
+
+def test_update_project_detail_section_appends_new(workspace):
+    from extensions.github_planner import _do_update_project_detail_section
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_detail.md").write_text("## Existing\n\nStuff here.\n")
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_update_project_detail_section("NewFeature", "New feature details.")
+
+    assert result["action"] == "appended"
+    content = (docs_dir / "project_detail.md").read_text()
+    assert "## Existing" in content
+    assert "## NewFeature" in content
+    assert "New feature details." in content
+
+
+def test_update_project_detail_section_replaces_existing(workspace):
+    from extensions.github_planner import _do_update_project_detail_section
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_detail.md").write_text("## Auth\n\nOld content.\n\n## Other\n\nKeep this.\n")
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_update_project_detail_section("Auth", "New auth content.")
+
+    assert result["action"] == "replaced"
+    content = (docs_dir / "project_detail.md").read_text()
+    assert "Old content." not in content
+    assert "New auth content." in content
+    assert "## Other" in content
+    assert "Keep this." in content
+
+
+def test_update_project_detail_section_empty_feature_name(workspace):
+    from extensions.github_planner import _do_update_project_detail_section
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_update_project_detail_section("", "Some content.")
+
+    assert result["error"] == "invalid_input"
+
+
+def test_update_project_detail_section_invalidates_cache(workspace):
+    from extensions.github_planner import _do_update_project_detail_section, _PROJECT_DOCS_CACHE
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+    _PROJECT_DOCS_CACHE[str(workspace)] = {"summary": "cached"}
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_update_project_detail_section("Feature", "Content.")
+
+    assert str(workspace) not in _PROJECT_DOCS_CACHE
+
+
 # ── _do_generate_issue_workflows (#88) ────────────────────────────────────────
 
 def test_generate_issue_workflows_appends_scaffold(workspace):

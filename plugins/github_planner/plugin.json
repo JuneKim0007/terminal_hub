@@ -4,14 +4,18 @@
   "description": "GitHub issue planning, analysis, and project context management",
   "entry": "plugins.github_planner",
   "commands_dir": "commands",
-  "commands": ["start.md", "create.md", "setup.md", "auth.md", "context.md"],
+  "commands": ["gh-plan.md", "start.md", "create.md", "setup.md", "auth.md", "context.md"],
   "requires_env": ["GITHUB_REPO"],
   "optional_env": ["GITHUB_TOKEN"],
   "conversation_triggers": [
+    "let's plan",
+    "analyze my repo",
     "create a github issue",
     "track this as an issue",
     "push this to github",
     "draft an issue",
-    "what issues do we have"
+    "what issues do we have",
+    "plan some work",
+    "let's break this down into issues"
   ]
 }

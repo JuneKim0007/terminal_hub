@@ -3,6 +3,8 @@
 Registers all GitHub-specific MCP tools and resources.
 Call register(mcp) from create_server() to activate.
 """
+import os
+import time
 from datetime import date
 from pathlib import Path
 
@@ -27,6 +29,23 @@ from terminal_hub.workspace import detect_repo, resolve_workspace_root
 
 _PLUGIN_DIR = Path(__file__).parent
 _COMMANDS_DIR = _PLUGIN_DIR / "commands"
+
+# ── Runtime caches (session-scoped, cleared on server restart) ─────────────────
+# Key: "owner/repo"
+_ANALYSIS_CACHE: dict[str, dict] = {}
+# {
+#   "pending_md":   [{"path": str, "size": int}, ...],
+#   "pending_code": [{"path": str, "size": int}, ...],
+#   "analyzed":     [{"path": str, "is_markdown": bool}],
+#   "skipped":      [{"path": str, "reason": str}],
+#   "repo":         str,
+#   "started_at":   float,
+#   "last_fetched": float | None,
+# }
+
+_PROJECT_DOCS_CACHE: dict[str, dict] = {}
+# Key: "owner/repo"
+# {"summary": str | None, "detail": str | None, "loaded_at": float}
 
 # ── Guidance URIs ─────────────────────────────────────────────────────────────
 _G_INIT    = "terminal-hub://workflow/init"
@@ -150,8 +169,7 @@ def _do_draft_issue(
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
 
-    label_str = f"  Labels: {', '.join(labels)}" if labels else ""
-    display = f"Draft saved: {title}{label_str}"
+    display = f"✓ {title}"
     return {
         "slug": slug,
         "title": title,
@@ -221,12 +239,7 @@ def _do_submit_issue(slug: str) -> dict:
         "slug": slug,
         "local_file": f"hub_agents/issues/{slug}.md",
     }
-    display = (
-        f"✓ Created #{result_dict['issue_number']} — {fm['title']}\n"
-        f"  URL:   {result_dict['url']}\n"
-        f"  Local: {result_dict['local_file']}"
-    )
-    return {**result_dict, "_display": display}
+    return {**result_dict, "_display": f"✓ #{result['number']} {fm['title']}"}
 
 
 def _do_list_issues() -> dict:
@@ -341,6 +354,225 @@ def _do_run_analyzer() -> dict:
     }
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_MD_EXTENSIONS = {".md", ".rst", ".txt"}
+_MAX_ANALYSIS_FILES = 200
+
+
+def _is_markdown(path: str) -> bool:
+    return Path(path).suffix.lower() in _MD_EXTENSIONS
+
+
+def _gh_planner_docs_dir(root: Path) -> Path:
+    return root / "hub_agents" / "extensions" / "gh_planner"
+
+
+def _resolve_repo(repo: str | None) -> str | None:
+    """Return explicit repo or fall back to env / single cached entry."""
+    if repo:
+        return repo
+    if len(_ANALYSIS_CACHE) == 1:
+        return next(iter(_ANALYSIS_CACHE))
+    root = get_workspace_root()
+    env = read_env(root)
+    return env.get("GITHUB_REPO")
+
+
+# ── Repo analysis tools ────────────────────────────────────────────────────────
+
+def _do_start_repo_analysis(repo: str | None = None) -> dict:
+    resolved = _resolve_repo(repo)
+    if not resolved:
+        return {"error": "repo_required", "message": "Pass repo='owner/repo' or configure via setup_workspace.", "_hook": None}
+
+    gh, err = _get_github_client()
+    if gh is None:
+        return {"error": "github_unavailable", "message": err, "_guidance": _G_AUTH}
+
+    try:
+        with gh:
+            tree = gh.list_repo_tree()
+    except Exception as exc:
+        return {"error": "github_error", "message": str(exc), "_hook": None}
+
+    # Cap and partition
+    tree = tree[:_MAX_ANALYSIS_FILES]
+    md_files = [f for f in tree if _is_markdown(f["path"])]
+    code_files = [f for f in tree if not _is_markdown(f["path"])]
+    # Sort code files smallest-first to front-load quick reads
+    code_files.sort(key=lambda f: f["size"])
+
+    _ANALYSIS_CACHE[resolved] = {
+        "pending_md": md_files,
+        "pending_code": code_files,
+        "analyzed": [],
+        "skipped": [],
+        "repo": resolved,
+        "started_at": time.time(),
+        "last_fetched": None,
+    }
+
+    return {
+        "repo": resolved,
+        "total_files": len(tree),
+        "md_count": len(md_files),
+        "code_count": len(code_files),
+        "status": "ready",
+        "_display": f"✓ Analysis started — {resolved} ({len(tree)} files: {len(md_files)} docs, {len(code_files)} code)",
+    }
+
+
+def _do_fetch_analysis_batch(repo: str | None = None, batch_size: int = 5) -> dict:
+    resolved = _resolve_repo(repo)
+    if not resolved or resolved not in _ANALYSIS_CACHE:
+        return {"error": "analysis_not_started", "message": "Call start_repo_analysis first.", "_hook": None}
+
+    state = _ANALYSIS_CACHE[resolved]
+    batch_size = max(1, min(batch_size, 20))
+
+    gh, err = _get_github_client()
+    if gh is None:
+        return {"error": "github_unavailable", "message": err, "_guidance": _G_AUTH}
+
+    # Draw from MD queue first, then code
+    queue = state["pending_md"] if state["pending_md"] else state["pending_code"]
+    to_fetch = queue[:batch_size]
+
+    files_out: list[dict] = []
+    with gh:
+        for file_meta in to_fetch:
+            path = file_meta["path"]
+            is_md = _is_markdown(path)
+            try:
+                content = gh.get_file_content(path)
+                files_out.append({"path": path, "content": content, "is_markdown": is_md})
+                state["analyzed"].append({"path": path, "is_markdown": is_md})
+            except Exception as exc:
+                from plugins.github_planner.client import GitHubError
+                reason = getattr(exc, "error_code", "unknown")
+                state["skipped"].append({"path": path, "reason": reason})
+
+            # Remove from whichever queue it came from
+            if is_md and file_meta in state["pending_md"]:
+                state["pending_md"].remove(file_meta)
+            elif file_meta in state["pending_code"]:
+                state["pending_code"].remove(file_meta)
+
+    state["last_fetched"] = time.time()
+    remaining = len(state["pending_md"]) + len(state["pending_code"])
+    done = remaining == 0
+
+    return {
+        "repo": resolved,
+        "files": files_out,
+        "analyzed_count": len(state["analyzed"]),
+        "remaining_count": remaining,
+        "done": done,
+    }
+
+
+def _do_get_analysis_status(repo: str | None = None) -> dict:
+    resolved = _resolve_repo(repo)
+    if not resolved or resolved not in _ANALYSIS_CACHE:
+        return {"error": "analysis_not_started", "message": "Call start_repo_analysis first.", "_hook": None}
+
+    state = _ANALYSIS_CACHE[resolved]
+    remaining = len(state["pending_md"]) + len(state["pending_code"])
+    return {
+        "repo": resolved,
+        "analyzed_count": len(state["analyzed"]),
+        "remaining_count": remaining,
+        "skipped_count": len(state["skipped"]),
+        "analyzed_paths": [f["path"] for f in state["analyzed"]],
+        "remaining_paths": [f["path"] for f in state["pending_md"] + state["pending_code"]],
+        "done": remaining == 0,
+    }
+
+
+# ── Project docs tools ────────────────────────────────────────────────────────
+
+def _do_save_project_docs(summary_md: str, detail_md: str, repo: str | None = None) -> dict:
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    docs_dir = _gh_planner_docs_dir(root)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    for filename, content in (("project_summary.md", summary_md), ("project_detail.md", detail_md)):
+        dest = docs_dir / filename
+        tmp = dest.with_suffix(".tmp")
+        try:
+            tmp.write_text(content, encoding="utf-8")
+            os.replace(tmp, dest)
+        except OSError as exc:
+            return {"error": "write_failed", "message": str(exc), "_hook": None}
+
+    resolved = _resolve_repo(repo) or "unknown"
+    _PROJECT_DOCS_CACHE[resolved] = {
+        "summary": summary_md,
+        "detail": detail_md,
+        "loaded_at": time.time(),
+    }
+
+    return {
+        "saved": True,
+        "summary_path": str((docs_dir / "project_summary.md").relative_to(root)),
+        "detail_path": str((docs_dir / "project_detail.md").relative_to(root)),
+        "_display": "✓ Project docs saved",
+    }
+
+
+def _do_load_project_docs(doc: str = "summary", repo: str | None = None, force_reload: bool = False) -> dict:
+    resolved = _resolve_repo(repo) or "unknown"
+    cached = _PROJECT_DOCS_CACHE.get(resolved)
+
+    if cached and not force_reload:
+        if doc == "summary":
+            return {"summary": cached.get("summary"), "detail": None}
+        if doc == "detail":
+            return {"summary": None, "detail": cached.get("detail")}
+        return {"summary": cached.get("summary"), "detail": cached.get("detail")}
+
+    root = get_workspace_root()
+    docs_dir = _gh_planner_docs_dir(root)
+
+    def _read(name: str) -> str | None:
+        p = docs_dir / name
+        return p.read_text(encoding="utf-8") if p.exists() else None
+
+    summary = _read("project_summary.md")
+    detail = _read("project_detail.md")
+
+    _PROJECT_DOCS_CACHE[resolved] = {"summary": summary, "detail": detail, "loaded_at": time.time()}
+
+    if doc == "summary":
+        return {"summary": summary, "detail": None}
+    if doc == "detail":
+        return {"summary": None, "detail": detail}
+    return {"summary": summary, "detail": detail}
+
+
+def _do_docs_exist(repo: str | None = None) -> dict:
+    root = get_workspace_root()
+    docs_dir = _gh_planner_docs_dir(root)
+    summary_path = docs_dir / "project_summary.md"
+    detail_path = docs_dir / "project_detail.md"
+
+    summary_exists = summary_path.exists()
+    detail_exists = detail_path.exists()
+    age_hours: float | None = None
+    if summary_exists:
+        age_hours = (time.time() - summary_path.stat().st_mtime) / 3600
+
+    return {
+        "summary_exists": summary_exists,
+        "detail_exists": detail_exists,
+        "summary_age_hours": age_hours,
+    }
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -449,3 +681,63 @@ def register(mcp) -> None:
     def run_analyzer() -> dict:
         """Analyze the GitHub repo and write a snapshot to hub_agents/analyzer_snapshot.json."""
         return _do_run_analyzer()
+
+    # ── Repo analysis tools ────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def start_repo_analysis(repo: str | None = None) -> dict:
+        """Fetch the full file tree for a GitHub repo and queue files for analysis.
+
+        Partitions files: markdown/docs first, code second (smallest first).
+        Caps at 200 files. Stores state in the MCP server runtime cache.
+        repo: 'owner/repo' — omit to use the configured GITHUB_REPO.
+        """
+        return _do_start_repo_analysis(repo)
+
+    @mcp.tool()
+    def fetch_analysis_batch(repo: str | None = None, batch_size: int = 5) -> dict:
+        """Fetch the next batch of files from the analysis queue and return their contents.
+
+        Call start_repo_analysis first. Markdown files are returned before code files.
+        Repeat until done==True. batch_size: 1–20 (default 5).
+        Returns {files: [{path, content, is_markdown}], analyzed_count, remaining_count, done}.
+        """
+        return _do_fetch_analysis_batch(repo, batch_size)
+
+    @mcp.tool()
+    def get_analysis_status(repo: str | None = None) -> dict:
+        """Return the current analysis progress from the runtime cache (no I/O).
+
+        Returns {analyzed_count, remaining_count, analyzed_paths, remaining_paths, done}.
+        """
+        return _do_get_analysis_status(repo)
+
+    # ── Project docs tools ────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def save_project_docs(summary_md: str, detail_md: str, repo: str | None = None) -> dict:
+        """Write project_summary.md and project_detail.md to hub_agents/extensions/gh_planner/.
+
+        summary_md: ≤400-token project overview, tech stack, and pitfalls.
+        detail_md: per-file descriptions, unique behaviours, cross-references.
+        Both files are written atomically.
+        """
+        return _do_save_project_docs(summary_md, detail_md, repo)
+
+    @mcp.tool()
+    def load_project_docs(doc: str = "summary", repo: str | None = None, force_reload: bool = False) -> dict:
+        """Read project docs from cache (fast) or disk.
+
+        doc: 'summary', 'detail', or 'all'.
+        force_reload: bypass cache and re-read from disk.
+        Returns {summary: str|None, detail: str|None}.
+        """
+        return _do_load_project_docs(doc, repo, force_reload)
+
+    @mcp.tool()
+    def docs_exist(repo: str | None = None) -> dict:
+        """Check whether project_summary.md and project_detail.md exist on disk.
+
+        Returns {summary_exists, detail_exists, summary_age_hours}.
+        """
+        return _do_docs_exist(repo)

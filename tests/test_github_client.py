@@ -378,3 +378,105 @@ def test_get_labels_returns_empty_set_on_empty_page():
     with patch.object(client._client, "get", return_value=resp):
         result = client.get_labels()
     assert result == set()
+
+
+# ── list_repo_tree ─────────────────────────────────────────────────────────────
+
+def test_list_repo_tree_returns_blobs_only():
+    client = make_client()
+    tree_data = {
+        "tree": [
+            {"path": "src/auth.py", "type": "blob", "size": 200},
+            {"path": "src/", "type": "tree", "size": 0},
+            {"path": "README.md", "type": "blob", "size": 500},
+        ]
+    }
+    resp = make_response(200, tree_data)
+    with patch.object(client._client, "get", return_value=resp):
+        result = client.list_repo_tree()
+
+    assert len(result) == 2
+    paths = {f["path"] for f in result}
+    assert paths == {"src/auth.py", "README.md"}
+
+
+def test_list_repo_tree_raises_on_auth_error():
+    client = make_client()
+    resp = make_response(401, {})
+    with patch.object(client._client, "get", return_value=resp):
+        with pytest.raises(GitHubError) as exc_info:
+            client.list_repo_tree()
+    assert exc_info.value.error_code == "auth_failed"
+
+
+def test_list_repo_tree_raises_on_network_error():
+    import httpx
+    client = make_client()
+    with patch.object(client._client, "get", side_effect=httpx.ConnectError("refused")):
+        with pytest.raises(GitHubError) as exc_info:
+            client.list_repo_tree()
+    assert exc_info.value.error_code == "network_error"
+
+
+def test_list_repo_tree_empty_repo():
+    client = make_client()
+    resp = make_response(200, {"tree": []})
+    with patch.object(client._client, "get", return_value=resp):
+        result = client.list_repo_tree()
+    assert result == []
+
+
+# ── get_file_content ──────────────────────────────────────────────────────────
+
+def _b64(text: str) -> str:
+    import base64
+    return base64.b64encode(text.encode()).decode()
+
+
+def test_get_file_content_returns_decoded_text():
+    client = make_client()
+    resp = make_response(200, {"encoding": "base64", "content": _b64("hello world")})
+    with patch.object(client._client, "get", return_value=resp):
+        result = client.get_file_content("README.md")
+    assert result == "hello world"
+
+
+def test_get_file_content_raises_on_binary_encoding():
+    client = make_client()
+    resp = make_response(200, {"encoding": "none", "content": ""})
+    with patch.object(client._client, "get", return_value=resp):
+        with pytest.raises(GitHubError) as exc_info:
+            client.get_file_content("image.png")
+    assert exc_info.value.error_code == "binary_file"
+
+
+def test_get_file_content_raises_on_too_large():
+    import base64
+    client = make_client()
+    big = "x" * (101 * 1024)
+    resp = make_response(200, {"encoding": "base64", "content": _b64(big)})
+    with patch.object(client._client, "get", return_value=resp):
+        with pytest.raises(GitHubError) as exc_info:
+            client.get_file_content("big.py")
+    assert exc_info.value.error_code == "file_too_large"
+
+
+def test_get_file_content_raises_on_binary_bytes():
+    import base64
+    client = make_client()
+    raw = bytes([0x80, 0x81, 0x82])
+    content = base64.b64encode(raw).decode()
+    resp = make_response(200, {"encoding": "base64", "content": content})
+    with patch.object(client._client, "get", return_value=resp):
+        with pytest.raises(GitHubError) as exc_info:
+            client.get_file_content("binary.bin")
+    assert exc_info.value.error_code == "binary_file"
+
+
+def test_get_file_content_raises_on_404():
+    client = make_client()
+    resp = make_response(404, {})
+    with patch.object(client._client, "get", return_value=resp):
+        with pytest.raises(GitHubError) as exc_info:
+            client.get_file_content("missing.py")
+    assert exc_info.value.error_code == "repo_not_found"

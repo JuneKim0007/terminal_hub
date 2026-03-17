@@ -761,6 +761,84 @@ def test_list_issues_submitted_has_no_local_only(workspace):
     assert "local_only" not in result["issues"][0]
 
 
+# ── detect_existing_docs + save/load_docs_strategy (#84) ──────────────────────
+
+def test_detect_existing_docs_finds_readme(workspace):
+    from extensions.github_planner import detect_existing_docs
+    file_index = [
+        {"path": "README.md", "size": 1200},
+        {"path": "src/main.py", "size": 500},
+        {"path": "docs/DESIGN.md", "size": 3400},
+        {"path": "src/utils.py", "size": 200},
+    ]
+    result = detect_existing_docs(file_index)
+    paths = [r["path"] for r in result]
+    assert "README.md" in paths
+    assert "docs/DESIGN.md" in paths
+    assert "src/main.py" not in paths
+    assert "src/utils.py" not in paths
+
+
+def test_detect_existing_docs_ignores_code_files(workspace):
+    from extensions.github_planner import detect_existing_docs
+    file_index = [
+        {"path": "src/helper.md", "size": 100},  # not doc-like
+        {"path": "CONTRIBUTING.md", "size": 500},
+    ]
+    result = detect_existing_docs(file_index)
+    paths = [r["path"] for r in result]
+    assert "CONTRIBUTING.md" in paths
+
+
+def test_save_docs_strategy_creates_file(workspace):
+    from extensions.github_planner import _do_save_docs_strategy
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_save_docs_strategy("refer", ["README.md", "docs/DESIGN.md"])
+
+    assert result["saved"] is True
+    assert result["strategy"] == "refer"
+    strategy_path = workspace / "hub_agents" / "extensions" / "gh_planner" / "docs_strategy.json"
+    assert strategy_path.exists()
+    import json
+    data = json.loads(strategy_path.read_text())
+    assert data["strategy"] == "refer"
+    assert "README.md" in data["referred_docs"]
+
+
+def test_load_docs_strategy_returns_none_when_absent(workspace):
+    from extensions.github_planner import _do_load_docs_strategy
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_load_docs_strategy()
+
+    assert result["strategy"] is None
+    assert result["referred_docs"] == []
+
+
+def test_save_docs_strategy_invalid_strategy(workspace):
+    from extensions.github_planner import _do_save_docs_strategy
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_save_docs_strategy("invalid_strategy")
+
+    assert result["error"] == "invalid_strategy"
+
+
+def test_load_docs_strategy_roundtrip(workspace):
+    from extensions.github_planner import _do_save_docs_strategy, _do_load_docs_strategy
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_save_docs_strategy("merge")
+        result = _do_load_docs_strategy()
+
+    assert result["strategy"] == "merge"
+
+
 # ── _do_update_project_detail_section (#65) ───────────────────────────────────
 
 def test_update_project_detail_section_creates_file(workspace):

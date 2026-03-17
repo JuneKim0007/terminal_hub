@@ -145,6 +145,26 @@ class GitHubClient:
         resp.raise_for_status()
         return resp.json()
 
+    def list_issues_all(self, state: str = "open") -> list[dict]:
+        """List all issues with pagination (up to 500)."""
+        _, url = self._url("github", "list_issues")
+        issues: list[dict] = []
+        page = 1
+        while len(issues) < 500:
+            try:
+                resp = self._client.get(url, params={"state": state, "per_page": 100, "page": page})
+                resp.raise_for_status()
+            except Exception:
+                break
+            data = resp.json()
+            if not data:
+                break
+            issues.extend(data)
+            if len(data) < 100:
+                break
+            page += 1
+        return issues
+
     def list_collaborators(self) -> list[dict]:
         """List repo collaborators."""
         url = BASE_URL + f"/repos/{self.repo}/collaborators"

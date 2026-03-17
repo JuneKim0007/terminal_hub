@@ -27,6 +27,17 @@ On no: skip to next item.
 If `runtime.load_warnings` is non-empty, highlight each warning with ⚠ and suggest
 the user check their plugin manifests.
 
+## Unload suggestion
+
+After displaying state, call `list_issues(compact=True)`.
+If the response contains `_suggest_unload`, display it as a prompt:
+
+  "💡 [unload suggestion text]"
+
+Then ask: "Would you like me to unload the GitHub issue manager to free up context?
+  **yes** — call `unload_plugin('gh_planner')` and confirm
+  **no**  — continue working"
+
 ## After all items
 
 Say: "Active state complete. Run /github_planner:analyze to refresh the snapshot,

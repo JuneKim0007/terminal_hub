@@ -200,6 +200,23 @@ def _do_submit_issue(slug: str) -> dict:
     if fm is None:
         return {"error": "submit_failed", "message": msg("not_found", detail=slug), "_hook": None}
 
+    # #59 — idempotency guard: refuse to re-submit already-submitted issues
+    current_status = str(fm.get("status", "")).lower()
+    if current_status == str(IssueStatus.OPEN):
+        return {
+            "error": "already_submitted",
+            "message": f"Issue '{slug}' is already open on GitHub.",
+            "issue_number": fm.get("issue_number"),
+            "url": fm.get("github_url"),
+            "_hook": None,
+        }
+    if current_status == str(IssueStatus.CLOSED):
+        return {
+            "error": "already_closed",
+            "message": f"Issue '{slug}' is closed and cannot be re-submitted.",
+            "_hook": None,
+        }
+
     gh, error_message = get_github_client()
     if gh is None:
         return {
@@ -511,6 +528,8 @@ def _do_save_project_docs(summary_md: str, detail_md: str, repo: str | None = No
         "detail": detail_md,
         "loaded_at": time.time(),
     }
+    # #61 — invalidate session header so next call reflects fresh docs
+    _SESSION_HEADER_CACHE.clear()
 
     return {
         "saved": True,
@@ -673,7 +692,9 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
     except Exception as exc:
         return {"error": "github_error", "message": str(exc), "_hook": None}
 
+    raw_tree_len = len(tree)
     tree = tree[:_MAX_ANALYSIS_FILES]
+    omitted_files = max(0, raw_tree_len - len(tree))
 
     # Step 2: partition — skip files whose SHA hasn\'t changed
     new_hashes: dict[str, str] = {}
@@ -725,6 +746,10 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
         "last_fetched": time.time(),
     }
 
+    cap_warning = (
+        f"\n  ⚠ {omitted_files} files omitted (repo exceeds {_MAX_ANALYSIS_FILES}-file cap)"
+        if omitted_files > 0 else ""
+    )
     return {
         "repo": resolved,
         "file_index": file_index,
@@ -732,11 +757,12 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
         "fetched": len(file_index),
         "skipped_unchanged": skipped_unchanged,
         "skipped_errors": len(skipped_errors),
+        "omitted_files": omitted_files,
         "_display": (
             f"✓ Repo analyzed — {resolved}\n"
             f"  Files fetched : {len(file_index)} "
-            f"({skipped_unchanged} unchanged, {len(skipped_errors)} skipped)\n"
-            f"  Index entries : {len(file_index)}"
+            f"({skipped_unchanged} unchanged, {len(skipped_errors)} skipped)"
+            f"{cap_warning}"
         ),
     }
 

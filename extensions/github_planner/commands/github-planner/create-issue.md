@@ -42,7 +42,15 @@ Guided single-issue workflow:
 
 7. On yes: call `draft_issue(title, body, labels, assignees)`.
 
-8. Ask: "Push to GitHub now? (yes / save locally for now)"
+8. Before pushing to GitHub, show confirmation block (#82):
+   ```
+   About to: Create GitHub issue
+     Title: "{title}"
+     Labels: {labels}
+     Repo: {repo}
+   Proceed? (yes / save locally only)
+   ```
+   Wait for explicit "yes" before calling `submit_issue`.
 
 9. If yes: call `submit_issue(slug)`.
 

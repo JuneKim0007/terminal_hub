@@ -30,9 +30,11 @@ from extensions.github_planner.storage import (
 
 _BUILTIN_DIR = Path(__file__).parent.parent / "extensions" / "builtin"
 
-_BUILTIN_COMMANDS = ["help.md", "inspect.md"]
+_BUILTIN_COMMANDS = ["help.md", "active.md"]
 
 _PLUGIN_WARNINGS: list[str] = []
+# Populated during plugin load — each entry: {name, tools: [str], manifest_path}
+_LOADED_EXTENSIONS: list[dict] = []
 
 
 def _load_agent(name: str) -> str:
@@ -144,12 +146,12 @@ def create_server() -> FastMCP:
             result["label_warning"] = label_warning
         return result
 
-    # ── Session state tool ────────────────────────────────────────────────────
+    # ── Session state / runtime state tools ──────────────────────────────────
 
     @mcp.tool()
-    def get_session_state() -> dict:
-        """Return disk state of all terminal-hub caches and prompts.
-        Used by /terminal_hub:inspect to show what is currently loaded."""
+    def get_runtime_state() -> dict:
+        """Return runtime state (loaded extensions + registered tools) and disk cache state.
+        Used by /terminal_hub:active to show what is currently active (#46)."""
         root = get_workspace_root()
         if err := ensure_initialized(root):
             return err
@@ -221,17 +223,67 @@ def create_server() -> FastMCP:
 
         cfg = load_config(root) or {}
         env = read_env(root)
-        header = "terminal-hub session state\n" + "─" * 50
-        footer = f"Repo: {env.get('GITHUB_REPO', 'not set')}  Mode: {cfg.get('mode', 'unknown')}"
-        display = header + "\n" + "\n".join(rows) + "\n" + "─" * 50 + "\n" + footer
 
-        return {"items": items, "config": cfg, "_display": display}
+        # Build runtime section
+        try:
+            registered_tools = [t.name for t in mcp._tool_manager.list_tools()]
+        except Exception:
+            registered_tools = []
+
+        runtime = {
+            "loaded_extensions": _LOADED_EXTENSIONS,
+            "registered_tools": registered_tools,
+            "load_warnings": _PLUGIN_WARNINGS,
+        }
+
+        # Build _display
+        rows = []
+        for item in items:
+            icon = "✓" if item["status"] == "present" else "✗"
+            detail = ""
+            if item["status"] == "present":
+                if item["age_hours"] is not None:
+                    detail = f"  {item['age_hours']}h old"
+                elif item["size_bytes"] is not None:
+                    detail = f"  {item['size_bytes']} bytes"
+                if item["summary"]:
+                    detail += f"  {item['summary']}"
+            rows.append(f"[{item['type']:<6}] {item['label']:<25} {icon}{detail}")
+
+        ext_lines = [f"  • {e['name']} ({len(e.get('tools', []))} tools)" for e in _LOADED_EXTENSIONS]
+        tool_count = len(registered_tools)
+        warn_lines = [f"  ⚠ {w}" for w in _PLUGIN_WARNINGS]
+
+        header = "terminal-hub active state\n" + "─" * 50
+        runtime_block = "RUNTIME\n" + ("\n".join(ext_lines) or "  (no extensions loaded)") + \
+                        f"\n  {tool_count} tools registered" + \
+                        ("\n" + "\n".join(warn_lines) if warn_lines else "")
+        caches_block = "CACHES\n" + "\n".join(rows)
+        footer = f"Repo: {env.get('GITHUB_REPO', 'not set')}  Mode: {cfg.get('mode', 'unknown')}" + \
+                 "\nRuntime reflects server startup state."
+        display = header + "\n" + runtime_block + "\n" + "─" * 50 + "\n" + \
+                  caches_block + "\n" + "─" * 50 + "\n" + footer
+
+        return {"items": items, "runtime": runtime, "config": cfg, "_display": display}
 
     # ── Dynamic plugin loading ────────────────────────────────────────────────
+
+    global _LOADED_EXTENSIONS
+    _LOADED_EXTENSIONS = []
+    tools_before = {t.name for t in mcp._tool_manager.list_tools()} if hasattr(mcp, "_tool_manager") else set()
 
     for manifest in loaded_manifests:
         err = load_plugin(manifest, mcp)
         if err:
             _PLUGIN_WARNINGS.append(err)
+        else:
+            tools_after = {t.name for t in mcp._tool_manager.list_tools()} if hasattr(mcp, "_tool_manager") else set()
+            new_tools = sorted(tools_after - tools_before)
+            _LOADED_EXTENSIONS.append({
+                "name": manifest.get("name", "unknown"),
+                "tools": new_tools,
+                "manifest_path": str(manifest.get("_path", "")),
+            })
+            tools_before = tools_after
 
     return mcp

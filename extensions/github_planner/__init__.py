@@ -78,7 +78,7 @@ _G_ISSUE   = "terminal-hub://workflow/issue"
 _G_CONTEXT = "terminal-hub://workflow/context"
 _G_AUTH    = "terminal-hub://workflow/auth"
 
-_BUILTIN_COMMANDS = ["create.md", "setup.md", "auth.md", "context.md"]
+_BUILTIN_COMMANDS = ["create.md", "github-planner/setup.md", "github-planner/auth.md", "context.md"]
 
 
 def _load_agent(name: str) -> str:
@@ -326,15 +326,21 @@ def _do_get_project_context(doc_key: str) -> dict:
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
+    # Route through _do_load_project_docs to benefit from _PROJECT_DOCS_CACHE
     if doc_key == "all":
+        loaded = _do_load_project_docs(doc="all")
         return {
-            "project_description": read_doc_file(root, "project_description"),
-            "architecture": read_doc_file(root, "architecture"),
+            "project_description": loaded.get("summary"),
+            "architecture": loaded.get("detail"),
         }
-    try:
-        content = read_doc_file(root, doc_key)
-    except ValueError as exc:
-        return {"error": "not_found", "message": str(exc), "_hook": None}
+    # Legacy single-key access: map old keys to new doc names
+    _KEY_MAP = {"project_description": "summary", "architecture": "detail",
+                "summary": "summary", "detail": "detail"}
+    mapped = _KEY_MAP.get(doc_key)
+    if mapped is None:
+        return {"error": "not_found", "message": f"Unknown doc key: {doc_key!r}", "_hook": None}
+    loaded = _do_load_project_docs(doc=mapped)
+    content = loaded.get(mapped)
     return {"doc_key": doc_key, "content": content}
 
 
@@ -393,6 +399,14 @@ def _do_run_analyzer() -> dict:
 
 _MD_EXTENSIONS = {".md", ".rst", ".txt"}
 _MAX_ANALYSIS_FILES = 200
+_BINARY_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp",
+    ".pdf", ".pyc", ".pyo", ".pyd", ".so", ".dll", ".exe", ".bin",
+    ".pkl", ".npy", ".npz", ".db", ".sqlite", ".sqlite3",
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".whl", ".egg",
+    ".ttf", ".otf", ".woff", ".woff2",
+    ".mp3", ".mp4", ".wav", ".ogg", ".mov", ".avi",
+})
 
 
 def _is_markdown(path: str) -> bool:
@@ -545,13 +559,15 @@ def _do_save_project_docs(summary_md: str, detail_md: str, repo: str | None = No
             return {"error": "write_failed", "message": str(exc), "_hook": None}
 
     resolved = _resolve_repo(repo) or "unknown"
-    # Reset cache fully (sections may have changed)
+    # Reset docs cache with fresh content (sections re-parsed on next lookup call)
     _PROJECT_DOCS_CACHE[resolved] = {
         "summary": summary_md,
         "detail": detail_md,
-        "_sections": None,  # will be re-parsed on next lookup_feature_section call
+        "_sections": None,
         "loaded_at": time.time(),
     }
+    # Analysis data is now superseded by written docs — free the memory
+    _ANALYSIS_CACHE.pop(resolved, None)
     # #61 — invalidate session header so next call reflects fresh docs
     _SESSION_HEADER_CACHE.clear()
 
@@ -605,11 +621,23 @@ def _do_docs_exist(repo: str | None = None) -> dict:
     if summary_exists:
         age_hours = (time.time() - summary_path.stat().st_mtime) / 3600
 
-    # Surface section headings so callers can decide which section to load
+    # Parse sections and populate _PROJECT_DOCS_CACHE so the immediately-following
+    # lookup_feature_section() call gets a cache hit (zero extra disk reads).
     sections: list[str] = []
     if detail_exists:
-        text = detail_path.read_text(encoding="utf-8")
-        sections = list(_parse_h2_sections(text).keys())
+        resolved = _resolve_repo(repo) or "unknown"
+        entry = _PROJECT_DOCS_CACHE.setdefault(resolved, {})
+        current_mtime = detail_path.stat().st_mtime
+        cached_mtime: float | None = entry.get("_sections_mtime")
+        cached_sections: dict[str, str] | None = entry.get("_sections")
+        if cached_sections is None or cached_mtime != current_mtime:
+            cached_sections = _parse_h2_sections(detail_path.read_text(encoding="utf-8"))
+            entry["_sections"] = cached_sections
+            entry["_sections_mtime"] = current_mtime
+        sections = list(cached_sections.keys())
+        # Also cache summary text if not already present
+        if entry.get("summary") is None and summary_exists:
+            entry["summary"] = summary_path.read_text(encoding="utf-8")
 
     return {
         "summary_exists": summary_exists,
@@ -656,19 +684,26 @@ def _do_lookup_feature_section(feature: str, repo: str | None = None) -> dict:
     root = get_workspace_root()
     docs_dir = _gh_planner_docs_dir(root)
     detail_path = docs_dir / "project_detail.md"
+    cached_sections: dict[str, str] | None = entry.get("_sections")
+
     if not detail_path.exists():
-        return {
-            "matched": False,
-            "available_features": [],
-            "reason": "project_detail.md not found — run analyze or save_project_docs first",
-        }
-    current_mtime = detail_path.stat().st_mtime
-    cached_mtime: float | None = entry.get("_sections_mtime")
-    sections: dict[str, str] | None = entry.get("_sections")
-    if sections is None or cached_mtime != current_mtime:
-        sections = _parse_h2_sections(detail_path.read_text(encoding="utf-8"))
-        entry["_sections"] = sections
-        entry["_sections_mtime"] = current_mtime
+        # Serve stale cache if available rather than returning nothing
+        if cached_sections is not None:
+            sections = cached_sections
+        else:
+            return {
+                "matched": False,
+                "available_features": [],
+                "reason": "project_detail.md not found — run analyze or save_project_docs first",
+            }
+    else:
+        current_mtime = detail_path.stat().st_mtime
+        cached_mtime: float | None = entry.get("_sections_mtime")
+        if cached_sections is None or cached_mtime != current_mtime:
+            cached_sections = _parse_h2_sections(detail_path.read_text(encoding="utf-8"))
+            entry["_sections"] = cached_sections
+            entry["_sections_mtime"] = current_mtime
+        sections = cached_sections
 
     available = list(sections.keys())
     feature_lower = feature.lower()
@@ -735,7 +770,7 @@ def _extract_file_index(file_path: str, content: str) -> dict:
     if suffix == ".py":
         try:
             tree = ast.parse(content, filename=file_path)
-        except SyntaxError:
+        except (SyntaxError, ValueError):
             return {"path": file_path, "type": "python", "parse_error": True,
                     "lines": content.count("\n")}
         exports = [
@@ -933,9 +968,11 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
 
     for f in tree:
         path = f["path"]
-        # list_repo_tree returns {path, size}; we\'ll use content hash after fetch
-        # For incremental: check if size matches stored (SHA not available without extra API)
-        # Use SHA from git tree if available (added in updated list_repo_tree)
+        # Skip binary files — fetching them produces no usable index data
+        if Path(path).suffix.lower() in _BINARY_EXTENSIONS:
+            skipped_unchanged += 1
+            continue
+        # Use SHA from git tree for incremental skip (unchanged files)
         tree_sha = f.get("sha", "")
         if tree_sha and stored_hashes.get(path) == tree_sha:
             skipped_unchanged += 1
@@ -956,7 +993,7 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
                     entry = _extract_file_index(path, content)
                     file_index.append(entry)
                     # Store SHA if available, else content hash
-                    sha = f.get("sha") or hashlib.sha256(content.encode()).hexdigest()[:16]
+                    sha = f.get("sha") or hashlib.sha256(content.encode()).hexdigest()[:32]
                     new_hashes[path] = sha
                 except Exception as exc:
                     reason = getattr(exc, "error_code", "unknown")
@@ -964,6 +1001,9 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
 
     # Persist updated hashes
     _save_file_hashes(root, new_hashes)
+
+    # Invalidate file-tree cache — the tree may have new files after analysis
+    _FILE_TREE_CACHE.clear()
 
     # Also update analysis cache so get_analysis_status works
     _ANALYSIS_CACHE[resolved] = {
@@ -1157,7 +1197,7 @@ def register(mcp) -> None:
     @mcp.resource("terminal-hub://workflow/init")
     def workflow_init() -> str:
         """Step-by-step guide for initialising a new project workspace."""
-        return _load_agent("setup.md")
+        return _load_agent("github-planner/setup.md")
 
     @mcp.resource("terminal-hub://workflow/issue")
     def workflow_issue() -> str:
@@ -1172,7 +1212,7 @@ def register(mcp) -> None:
     @mcp.resource("terminal-hub://workflow/auth")
     def workflow_auth() -> str:
         """Auth recovery guide — check_auth → gh auth login → verify_auth."""
-        return _load_agent("auth.md")
+        return _load_agent("github-planner/auth.md")
 
     # ── Auth tools ────────────────────────────────────────────────────────────
 

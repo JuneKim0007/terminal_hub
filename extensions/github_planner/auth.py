@@ -9,6 +9,10 @@ import os
 import subprocess
 from enum import Enum
 
+# Module-level token cache — resolved once per process, invalidated by verify_gh_cli_auth
+_TOKEN_CACHE: dict[str, tuple[str | None, "TokenSource"]] = {}
+_TOKEN_CACHE_KEY = "resolved"
+
 
 class TokenSource(Enum):
     ENV = "env"
@@ -24,8 +28,22 @@ class TokenSource(Enum):
         return ""
 
 
-def resolve_token() -> tuple[str | None, TokenSource]:
-    """Return (token, source). Token is None if no auth is available."""
+def resolve_token() -> tuple[str | None, "TokenSource"]:
+    """Return (token, source). Token is None if no auth is available.
+
+    Result is cached for the process lifetime. Call invalidate_token_cache()
+    after successful auth to force re-resolution.
+    """
+    if _TOKEN_CACHE_KEY in _TOKEN_CACHE:
+        return _TOKEN_CACHE[_TOKEN_CACHE_KEY]
+
+    result = _resolve_token_uncached()
+    _TOKEN_CACHE[_TOKEN_CACHE_KEY] = result
+    return result
+
+
+def _resolve_token_uncached() -> tuple[str | None, "TokenSource"]:
+    """Resolve token without cache."""
     # 1. Explicit env var
     if token := os.environ.get("GITHUB_TOKEN"):
         return token, TokenSource.ENV
@@ -35,13 +53,24 @@ def resolve_token() -> tuple[str | None, TokenSource]:
         token = subprocess.check_output(
             ["gh", "auth", "token"],
             stderr=subprocess.DEVNULL,
-        ).decode().strip()
+            encoding="utf-8",
+        ).strip()
         if token:
             return token, TokenSource.GH_CLI
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
+    except FileNotFoundError:
+        pass  # gh not installed — not an error, just unavailable
+    except subprocess.CalledProcessError:
+        pass  # gh installed but not authenticated
 
     return None, TokenSource.NONE
+
+
+def invalidate_token_cache() -> None:
+    """Force next resolve_token() call to re-run subprocess.
+
+    Call after verify_gh_cli_auth() succeeds or GITHUB_TOKEN changes.
+    """
+    _TOKEN_CACHE.clear()
 
 
 def get_auth_options() -> list[dict]:
@@ -75,13 +104,19 @@ def get_auth_options() -> list[dict]:
 
 
 def verify_gh_cli_auth() -> tuple[bool, str]:
-    """Check if gh CLI is currently authenticated. Returns (success, message)."""
+    """Check if gh CLI is currently authenticated. Returns (success, message).
+
+    Invalidates the token cache on success so the next tool call picks up the
+    fresh token.
+    """
     try:
         token = subprocess.check_output(
             ["gh", "auth", "token"],
             stderr=subprocess.DEVNULL,
-        ).decode().strip()
+            encoding="utf-8",
+        ).strip()
         if token:
+            invalidate_token_cache()
             return True, "GitHub CLI authentication verified successfully."
         return False, "gh CLI is installed but not authenticated. Run: gh auth login"
     except FileNotFoundError:

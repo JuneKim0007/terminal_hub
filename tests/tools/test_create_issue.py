@@ -183,3 +183,65 @@ def test_submit_issue_github_error_returns_error(workspace):
         result = call(server, "submit_issue", {"slug": "my-issue"})
     assert result["error"] == "auth_failed"
     assert result["_hook"] is None
+
+
+# ── draft_issue: empty slug from title (line 134-135 in __init__.py) ──────────
+
+def test_draft_issue_empty_slug_from_special_char_title(workspace):
+    """Line 134-135: slugify('---') → '' → returns draft_failed error."""
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "draft_issue", {"title": "---", "body": "some body"})
+    assert result["error"] == "draft_failed"
+    assert "slug" in result["message"].lower() or "alphanumeric" in result["message"].lower()
+
+
+def test_draft_issue_empty_slug_from_only_spaces(workspace):
+    """Line 134-135: title of only whitespace slugifies to '' → draft_failed."""
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "draft_issue", {"title": "   ", "body": "body"})
+    assert result["error"] == "draft_failed"
+
+
+# ── draft_issue: OSError on write (lines 175-176 in __init__.py) ──────────────
+
+def test_draft_issue_oserror_on_write_returns_error(workspace):
+    """Lines 175-176: OSError from write_issue_file → draft_failed error."""
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
+         patch("plugins.github_planner.write_issue_file", side_effect=OSError("disk full")):
+        server = create_server()
+        result = call(server, "draft_issue", {"title": "Valid Title", "body": "body"})
+    assert result["error"] == "draft_failed"
+    assert result["_hook"] is None
+
+
+# ── submit_issue: invalid slug format (lines 246-247 in __init__.py) ──────────
+
+def test_submit_issue_invalid_slug_format_returns_error(workspace):
+    """Lines 246-247: slug fails validate_slug → submit_failed error."""
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "submit_issue", {"slug": "INVALID SLUG!!"})
+    assert result["error"] == "submit_failed"
+    assert result["_hook"] is None
+
+
+# ── submit_issue: not initialized (line 242 in __init__.py) ───────────────────
+
+def test_submit_issue_not_initialized_returns_needs_init(tmp_path):
+    """Line 242: hub_agents/ absent → needs_init."""
+    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path):
+        server = create_server()
+        result = call(server, "submit_issue", {"slug": "some-slug"})
+    assert result["status"] == "needs_init"
+
+
+# ── draft_issue: not initialized (line 123 in __init__.py) ───────────────────
+
+def test_draft_issue_not_initialized_returns_needs_init(tmp_path):
+    """Line 123: hub_agents/ absent → needs_init response from ensure_initialized."""
+    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path):
+        server = create_server()
+        result = call(server, "draft_issue", {"title": "My Title", "body": "body"})
+    assert result["status"] == "needs_init"

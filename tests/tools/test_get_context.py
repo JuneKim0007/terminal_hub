@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch
 import pytest
 from terminal_hub.server import create_server
-from terminal_hub.storage import write_doc_file, write_issue_file
+from plugins.github_planner.storage import write_doc_file, write_issue_file
 
 
 def call(server, tool_name, args):
@@ -18,14 +18,14 @@ def workspace(tmp_path):
 
 def test_get_project_context_single(workspace):
     write_doc_file(workspace, "project_description", "# Project\n")
-    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_project_context", {"doc_key": "project_description"})
     assert result["content"] == "# Project\n"
 
 
 def test_get_project_context_not_found(workspace):
-    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_project_context", {"doc_key": "project_description"})
     assert result["content"] is None
@@ -33,7 +33,7 @@ def test_get_project_context_not_found(workspace):
 
 def test_get_project_context_all(workspace):
     write_doc_file(workspace, "project_description", "# Project\n")
-    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_project_context", {"doc_key": "all"})
     assert result["project_description"] == "# Project\n"
@@ -43,7 +43,7 @@ def test_get_project_context_all(workspace):
 def test_get_issue_context_found(workspace):
     write_issue_file(root=workspace, slug="fix-bug", title="Fix bug",
                      body="body", assignees=[], labels=[], created_at=date(2026, 3, 15))
-    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_issue_context", {"slug": "fix-bug"})
     assert result["slug"] == "fix-bug"
@@ -51,7 +51,7 @@ def test_get_issue_context_found(workspace):
 
 
 def test_get_issue_context_not_found(workspace):
-    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "get_issue_context", {"slug": "no-such-issue"})
     assert result["error"] == "not_found"

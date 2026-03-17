@@ -1,0 +1,14 @@
+{
+  "name": "prompt_debugger",
+  "version": "1.0",
+  "description": "Inspect terminal-hub prompts and caches currently held in the session",
+  "slash_command": "inspect",
+  "tool": "get_session_state",
+  "expandable": true,
+  "items_tracked": [
+    {"key": "analyzer_snapshot", "label": "Analyzer snapshot", "path": "hub_agents/analyzer_snapshot.json", "type": "cache"},
+    {"key": "project_description", "label": "Project description", "path": "hub_agents/project_description.md", "type": "prompt"},
+    {"key": "architecture", "label": "Architecture notes", "path": "hub_agents/architecture_design.md", "type": "prompt"},
+    {"key": "issues", "label": "Tracked issues", "path": "hub_agents/issues/", "type": "cache"}
+  ]
+}

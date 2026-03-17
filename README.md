@@ -1,183 +1,144 @@
-# terminal_hub
+# terminal-hub
 
-A Python MCP server that integrates with Claude Code to automate GitHub issue creation and maintain living project context documents — so you can focus on building instead of bookkeeping.
+An extensible plugin framework for Claude Code — pair MCP tools with Claude slash commands to build and share workflow plugins.
+
+Ships with **github_planner**, a full GitHub issue management plugin, as the reference implementation.
 
 ---
 
 ## How it works
 
-You have a planning conversation with Claude. As features and tasks come up, Claude calls `create_issue` directly (with your confirmation via the MCP approval prompt). Issues are created on GitHub and a local `.md` file is written inside your project for future context reloading.
+terminal-hub runs as an MCP server connected to Claude Code. Plugins register two things:
 
-No separate terminal UI. No manual copy-pasting. The conversation *is* the workflow.
+- **MCP tools** — Python functions Claude can call (fetch data, write files, call APIs)
+- **Slash commands** — `.md` prompt files that load the conversational workflow
+
+Both halves are required. The MCP server handles data; the slash commands handle conversation. Together they form a complete, self-contained workflow.
 
 ---
 
 ## Quick start
 
-### 1. Install
-
 ```bash
-pip install -e /path/to/terminal_hub
+pip install terminal-hub
+terminal-hub install    # registers MCP server + copies slash commands
+# restart Claude Code
 ```
 
-Or from GitHub:
+Then in Claude Code:
 
-```bash
-pip install git+https://github.com/JuneKim0007/terminal_hub.git
+```
+/github_planner:start
 ```
 
-### 2. Auth
+Claude runs the full GitHub planner — workspace setup, auth check, issue drafting, and repo analysis — all in one conversation.
 
-You need one of these — terminal_hub checks in this order:
+---
 
-| Method | How |
-|---|---|
-| **GitHub CLI** (recommended) | `gh auth login` — zero config after that |
-| **Personal Access Token** | Set `GITHUB_TOKEN=your_token` in your MCP env config |
+## Bundled plugin: github_planner
 
-If neither is found, Claude will present both options and walk you through login interactively.
+The default plugin covers the full GitHub issue lifecycle:
 
-### 3. Add to Claude Code MCP config
+| Command | What it does |
+|---------|-------------|
+| `/github_planner:start` | Guided session — setup → auth → menu loop |
+| `/github_planner:create` | Draft and push a single GitHub issue |
+| `/github_planner:analyze` | Snapshot label, assignee, and structure patterns |
+| `/github_planner:inspect` | Show what terminal-hub context Claude is holding |
+| `/github_planner:setup` | Configure workspace and GitHub repo |
 
-Open your Claude Code MCP settings and add:
+---
+
+## Conversation mode
+
+You don't have to type a slash command. The MCP server is always running. When Claude detects GitHub planning intent in conversation, it offers to enable the plugin:
+
+```
+User: I want to track this bug as a GitHub issue.
+
+Claude: It looks like you want to use GitHub issue planning.
+        Would you like to enable github_planner? (yes / no)
+```
+
+---
+
+## Writing a plugin
+
+1. Create `plugins/<name>/` with `plugin.json` and `__init__.py`
+2. In `__init__.py`, define `register(mcp)` and decorate tools with `@mcp.tool()`
+3. Add slash command `.md` files to `plugins/<name>/commands/`
+4. Run `terminal-hub install` to copy commands to Claude Code
+
+```python
+# plugins/my_plugin/__init__.py
+def register(mcp) -> None:
+    @mcp.tool()
+    def my_tool(input: str) -> dict:
+        """Does something useful."""
+        return {"result": input.upper(), "_display": f"Done: {input.upper()}"}
+```
 
 ```json
+// plugins/my_plugin/plugin.json
 {
-  "mcpServers": {
-    "terminal-hub": {
-      "command": "python",
-      "args": ["-m", "terminal_hub"],
-      "env": {
-        "GITHUB_REPO": "owner/your-repo"
-      }
-    }
-  }
+  "name": "my_plugin",
+  "version": "0.1.0",
+  "description": "My custom workflow plugin",
+  "entry": "plugins.my_plugin",
+  "commands_dir": "commands",
+  "commands": ["start.md"]
 }
 ```
 
-`GITHUB_REPO` is optional — if omitted, terminal_hub auto-detects the repo from your `git remote` origin.
-
-### 4. Start a session
-
-Open Claude Code in your project directory. Claude will:
-1. Auto-initialize `.terminal_hub/` on first run
-2. Call `get_setup_status` to check if the workspace is configured
-3. If not configured, present options and call `setup_workspace` with your choice
+See `plugins/github_planner/` for a complete example.
 
 ---
 
-## Workspace modes
+## Plugin management commands
 
-| Mode | What it does |
-|---|---|
-| `local` | Track plans and issues on this machine only — no GitHub needed |
-| `github` | Create a new GitHub repository and start tracking |
-| `connect` | Link to an existing GitHub repository |
-
----
-
-## MCP Tools reference
-
-### Auth
-
-| Tool | When Claude calls it |
-|---|---|
-| `check_auth` | Whenever a GitHub call returns an auth error |
-| `verify_auth` | After you run `gh auth login` to confirm it worked |
-
-### Issues
-
-| Tool | What it does |
-|---|---|
-| `create_issue` | Creates a GitHub issue and writes a local `.md` file |
-| `list_issues` | Returns all tracked issues from `.terminal_hub/issues/` |
-| `get_issue_context` | Reads a single issue file by slug — cheap context reload |
-
-### Project context
-
-| Tool | What it does |
-|---|---|
-| `update_project_description` | Overwrites `.terminal_hub/project_description.md` |
-| `update_architecture` | Overwrites `.terminal_hub/architecture_design.md` |
-| `get_project_context` | Reads one or both context docs |
-
-### Workspace setup
-
-| Tool | What it does |
-|---|---|
-| `get_setup_status` | Returns config status + options if not configured |
-| `setup_workspace` | Saves workspace mode and optional repo to config |
+| Command | What it does |
+|---------|-------------|
+| `/tmh:create_plugin` | Conversational plugin builder — generates code + docs |
+| `/tmh:read_<name>` | Analyze a plugin and generate `for_claude.md` docs |
+| `/tmh:modify_<name>` | Conversational plugin modifier with context loading |
 
 ---
 
-## Local file layout
+## Local state
+
+All terminal-hub state lives in `hub_agents/` inside your project (gitignored):
 
 ```
-your-project/
-└── .terminal_hub/
-    ├── config.yaml               # workspace mode + repo
-    ├── project_description.md    # living project description
-    ├── architecture_design.md    # living architecture doc
-    └── issues/
-        ├── fix-auth-bug.md       # one file per issue
-        └── add-dark-mode.md
+hub_agents/
+├── .env                      # GITHUB_REPO, optional GITHUB_TOKEN
+├── config.yaml               # mode: local|github
+├── issues/
+│   └── <slug>.md             # one file per tracked issue
+├── project_description.md
+├── architecture_design.md
+└── analyzer_snapshot.json    # repo intelligence cache
 ```
 
-Each issue file uses YAML front matter:
-
-```markdown
----
-title: Fix auth bug
-issue_number: 42
-github_url: https://github.com/owner/repo/issues/42
-created_at: "2026-03-16"
-assignees: []
-labels: [bug]
----
-
-## Overview
-Fix the login flow...
-```
+No database. No cloud sync. Everything is plain text on your machine.
 
 ---
 
-## Running tests
+## Configuration
 
 ```bash
-pip install pytest pytest-cov
-pytest
+# Set GitHub repo (required for GitHub mode)
+echo "GITHUB_REPO=owner/repo" > hub_agents/.env
+
+# Or pass during setup
+/github_planner:setup
 ```
 
-Coverage gate is set at 80%. Current coverage: **100%** across all modules.
+Authentication uses the GitHub CLI (`gh auth login`) or a `GITHUB_TOKEN` environment variable.
 
 ---
 
-## Project structure
+## Requirements
 
-```
-terminal_hub/
-├── server.py          # FastMCP server — all 10 tools registered here
-├── auth.py            # Token resolution: env → gh CLI → present options
-├── github_client.py   # GitHub REST API via httpx, AI-friendly errors
-├── storage.py         # Read/write issue .md files and context docs
-├── workspace.py       # Auto-init .terminal_hub/, detect git remote
-├── config.py          # Read/write .terminal_hub/config.yaml
-├── slugify.py         # Issue title → kebab-case filename
-└── prompts.py         # System prompt delivered to Claude via MCP prompt
-```
-
----
-
-## Error handling
-
-Every error returned by a tool is a structured dict Claude can act on:
-
-```json
-{
-  "error": "auth_failed",
-  "message": "GitHub rejected the token.",
-  "suggestion": "Your GITHUB_TOKEN is invalid or expired. Generate a new one at https://github.com/settings/tokens with the 'repo' scope."
-}
-```
-
-Claude reads the `suggestion` and tells you exactly what to do — no manual debugging.
+- Python 3.10+
+- Claude Code (any recent version)
+- GitHub CLI (`gh`) for GitHub features — optional, `GITHUB_TOKEN` works too

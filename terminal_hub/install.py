@@ -76,6 +76,18 @@ def install_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
     return copied
 
 
+def install_plugin_commands(manifest: dict, claude_dir: Path) -> None:
+    """Copy plugin commands/*.md to <claude_dir>/commands/<plugin_name>/."""
+    plugin_dir = Path(manifest["_plugin_dir"])
+    commands_src = plugin_dir / manifest["commands_dir"]
+    dest = claude_dir / "commands" / manifest["name"]
+    dest.mkdir(parents=True, exist_ok=True)
+    for cmd_file in manifest["commands"]:
+        src = commands_src / cmd_file
+        if src.exists():
+            shutil.copy2(src, dest / cmd_file)
+
+
 def verify_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
     """Return list of missing builtin .md filenames in <claude_dir>/commands/terminal_hub/.
 
@@ -119,6 +131,17 @@ def run_install(claude_json_path: Path = _CLAUDE_JSON, claude_dir: Path = Path.h
         print(f"✓ Installed {len(copied)} slash command(s) to {claude_dir / 'commands' / 'terminal_hub'}")
     except PermissionError as exc:
         print(f"⚠ Could not install slash commands: {exc}")
+
+    # Install plugin commands
+    from terminal_hub.plugin_loader import discover_plugins
+    plugins_dir = Path(__file__).parent.parent / "plugins"
+    manifests = discover_plugins(plugins_dir)
+    for manifest in manifests:
+        try:
+            install_plugin_commands(manifest, claude_dir)
+            print(f"✓ Installed plugin commands for {manifest['name']}")
+        except (OSError, PermissionError) as exc:
+            print(f"⚠ Could not install plugin commands for {manifest['name']}: {exc}")
 
     print("\n✓ Restart Claude Code to apply changes.")
     print("  On first use in any project, terminal-hub will ask you to run setup_workspace.")

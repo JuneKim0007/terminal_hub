@@ -1,0 +1,17 @@
+{
+  "name": "github_planner",
+  "version": "1.0",
+  "description": "GitHub issue planning, analysis, and project context management",
+  "entry": "plugins.github_planner",
+  "commands_dir": "commands",
+  "commands": ["start.md", "create.md", "setup.md", "auth.md", "context.md"],
+  "requires_env": ["GITHUB_REPO"],
+  "optional_env": ["GITHUB_TOKEN"],
+  "conversation_triggers": [
+    "create a github issue",
+    "track this as an issue",
+    "push this to github",
+    "draft an issue",
+    "what issues do we have"
+  ]
+}

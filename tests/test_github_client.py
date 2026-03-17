@@ -1,7 +1,7 @@
 import pytest
 import httpx
 from unittest.mock import MagicMock, patch
-from terminal_hub.github_client import GitHubClient, GitHubError, parse_error, load_default_labels
+from plugins.github_planner.client import GitHubClient, GitHubError, parse_error, load_default_labels
 
 
 # ── parse_error ───────────────────────────────────────────────────────────────

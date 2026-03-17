@@ -135,6 +135,18 @@ def _invalidate_repo_cache() -> None:
     _REPO_CACHE.clear()
 
 
+# Per-root label analysis cache — avoids re-fetching on every call (#81)
+# Key: str(root), Value: {active_labels, closed_labels, fetched_at}
+_LABEL_CACHE: dict[str, dict] = {}
+
+_GITHUB_DEFAULT_LABEL_NAMES = frozenset({
+    "bug", "documentation", "duplicate", "enhancement", "good first issue",
+    "help wanted", "invalid", "question", "wontfix",
+})
+
+_LABEL_ACTIVE_DAYS = 30  # labels created within this many days are considered "active"
+
+
 # ── Internal alias for analyzer ───────────────────────────────────────────────
 _get_github_client = get_github_client
 
@@ -1382,6 +1394,153 @@ def _do_load_docs_strategy() -> dict:
         return {"strategy": None, "referred_docs": []}
 
 
+# ── Label analysis (#81) ──────────────────────────────────────────────────────
+
+def _do_analyze_github_labels(refresh: bool = False) -> dict:
+    """Fetch labels from GitHub, classify active vs closed, save to github_local_config.json (#81).
+
+    active_labels: labels with open issues or created < 30 days ago.
+    closed_labels: labels with no open issues and created > 30 days ago.
+
+    On first call for a new repo with only GitHub defaults, suggests project-specific labels.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    root_key = str(root)
+    if not refresh and root_key in _LABEL_CACHE:
+        cached = _LABEL_CACHE[root_key]
+        return {**cached, "cached": True}
+
+    gh, error_message = get_github_client()
+    if gh is None:
+        return {"error": "github_unavailable", "message": error_message, "_guidance": _G_AUTH}
+
+    with gh:
+        try:
+            raw_labels = gh.list_labels()
+            open_issues = gh.list_issues(state="open", per_page=100)
+        except Exception as exc:
+            return {"error": "github_error", "message": str(exc)}
+
+    # Build set of label names that have open issues
+    labels_with_open_issues: set[str] = set()
+    for issue in open_issues:
+        for lbl in issue.get("labels", []):
+            labels_with_open_issues.add(lbl.get("name", ""))
+
+    now_ts = time.time()
+    active_labels: list[dict] = []
+    closed_labels: list[dict] = []
+
+    for lbl in raw_labels:
+        name = lbl.get("name", "")
+        created_at_str = lbl.get("created_at", "")
+        has_open = name in labels_with_open_issues
+
+        # Parse created_at to determine age
+        age_days: float | None = None
+        if created_at_str:
+            try:
+                import datetime as _dt
+                created_ts = _dt.datetime.fromisoformat(
+                    created_at_str.replace("Z", "+00:00")
+                ).timestamp()
+                age_days = (now_ts - created_ts) / 86400
+            except (ValueError, OSError):
+                age_days = None
+
+        is_recent = age_days is not None and age_days < _LABEL_ACTIVE_DAYS
+
+        entry = {
+            "name": name,
+            "color": lbl.get("color", ""),
+            "description": lbl.get("description", ""),
+        }
+        if has_open or is_recent:
+            active_labels.append(entry)
+        else:
+            closed_labels.append(entry)
+
+    # Check if only GitHub default labels exist (new repo path)
+    all_names = {lbl.get("name", "") for lbl in raw_labels}
+    only_defaults = bool(raw_labels) and all_names.issubset(_GITHUB_DEFAULT_LABEL_NAMES)
+
+    result: dict = {
+        "active_labels": active_labels,
+        "closed_labels": closed_labels,
+        "total": len(raw_labels),
+        "only_defaults": only_defaults,
+    }
+
+    # Save to disk
+    docs_dir = _gh_planner_docs_dir(root)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    config_path = docs_dir / "github_local_config.json"
+
+    existing: dict = {}
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+
+    existing["labels"] = {
+        "active": active_labels,
+        "closed": closed_labels,
+        "fetched_at": now_ts,
+    }
+    tmp = config_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    import os as _os5; _os5.replace(tmp, config_path)
+
+    # Update in-memory cache
+    _LABEL_CACHE[root_key] = {
+        "active_labels": active_labels,
+        "closed_labels": closed_labels,
+        "total": len(raw_labels),
+        "only_defaults": only_defaults,
+    }
+
+    n_active = len(active_labels)
+    n_closed = len(closed_labels)
+    result["_display"] = (
+        f"✓ Labels analyzed: {n_active} active, {n_closed} inactive\n"
+        f"  Saved to hub_agents/extensions/gh_planner/github_local_config.json"
+    )
+    if only_defaults:
+        result["suggestion"] = (
+            "Only GitHub default labels found. Consider adding project-specific labels "
+            "based on your feature areas. Call analyze_github_labels again after creating them."
+        )
+    return result
+
+
+def _do_load_github_local_config() -> dict:
+    """Load github_local_config.json from disk, or return empty config (#81)."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    config_path = _gh_planner_docs_dir(root) / "github_local_config.json"
+    if not config_path.exists():
+        return {"labels": None, "fetched_at": None}
+
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        labels_section = data.get("labels", {})
+        return {
+            "labels": {
+                "active": labels_section.get("active", []),
+                "closed": labels_section.get("closed", []),
+            },
+            "fetched_at": labels_section.get("fetched_at"),
+        }
+    except (json.JSONDecodeError, OSError):
+        return {"labels": None, "fetched_at": None}
+
+
 # ── Plugin unload ─────────────────────────────────────────────────────────────
 
 # All volatile cache files owned by gh_planner (project docs and issues are NOT included)
@@ -1389,6 +1548,7 @@ _GH_PLANNER_VOLATILE_FILES = [
     "analyzer_snapshot.json",
     "file_hashes.json",
     "file_tree.json",
+    "github_local_config.json",
 ]
 
 
@@ -1409,6 +1569,8 @@ def _do_list_plugin_state(plugin: str) -> dict:
         caches.append({"name": "_FILE_TREE_CACHE", "fetched_at": _FILE_TREE_CACHE.get("fetched_at")})
     if _SESSION_HEADER_CACHE:
         caches.append({"name": "_SESSION_HEADER_CACHE", "entries": len(_SESSION_HEADER_CACHE)})
+    if _LABEL_CACHE:
+        caches.append({"name": "_LABEL_CACHE", "entries": len(_LABEL_CACHE)})
 
     disk_files = []
     for fname in _GH_PLANNER_VOLATILE_FILES:
@@ -1429,6 +1591,7 @@ def _do_list_plugin_state(plugin: str) -> dict:
         + _dict_size_kb(_PROJECT_DOCS_CACHE)
         + _dict_size_kb(_FILE_TREE_CACHE)
         + _dict_size_kb(_SESSION_HEADER_CACHE)
+        + _dict_size_kb(_LABEL_CACHE)
     )
     _SUGGEST_UNLOAD_KB = 500
 
@@ -1468,6 +1631,7 @@ def _do_unload_plugin(plugin: str) -> dict:
         (_PROJECT_DOCS_CACHE, "_PROJECT_DOCS_CACHE"),
         (_FILE_TREE_CACHE, "_FILE_TREE_CACHE"),
         (_SESSION_HEADER_CACHE, "_SESSION_HEADER_CACHE"),
+        (_LABEL_CACHE, "_LABEL_CACHE"),
     ]:
         if cache:
             cache.clear()
@@ -1779,3 +1943,28 @@ def register(mcp) -> None:
         On error returns {success: false, errors: [...]} — analyze errors and retry.
         """
         return _do_unload_plugin(plugin)
+
+    @mcp.tool()
+    def analyze_github_labels(refresh: bool = False) -> dict:
+        """Fetch and classify GitHub labels for the configured repo (#81).
+
+        Classifies labels as:
+          active_labels  — labels with open issues OR created < 30 days ago
+          closed_labels  — labels with no open issues AND created > 30 days ago
+
+        Results saved to hub_agents/extensions/gh_planner/github_local_config.json.
+        Use active_labels when suggesting labels for new issues via draft_issue.
+
+        If only GitHub default labels exist, returns suggestion for project-specific labels.
+        Set refresh=True to bypass the in-memory cache and re-fetch from GitHub.
+        """
+        return _do_analyze_github_labels(refresh)
+
+    @mcp.tool()
+    def load_github_local_config() -> dict:
+        """Read the saved github_local_config.json from disk (#81).
+
+        Returns {labels: {active: [...], closed: [...]}, fetched_at: float | null}.
+        Call analyze_github_labels first to populate this file.
+        """
+        return _do_load_github_local_config()

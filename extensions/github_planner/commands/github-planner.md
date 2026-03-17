@@ -78,7 +78,15 @@ After approval:
 1. For each planned issue: call `lookup_feature_section(feature="...")` if not already
    done for that area. Use returned section + global_rules in the issue body.
 2. Call `draft_issue(title, body, labels, assignees)` for each — **silent**
-3. Show count: "Drafted {N} issues. Push to GitHub? (yes / review first)"
+3. Show confirmation block before any GitHub call (#82):
+   ```
+   About to: Create {N} GitHub issues on {repo}
+     {issue-1-title} [{labels}]
+     {issue-2-title} [{labels}]
+     ...
+   Proceed? (yes / review first / cancel)
+   ```
+   Wait for explicit "yes" before continuing.
 4. If yes: call `submit_issue(slug)` for each — **silent**
 5. **Auto-update project docs** — use the label-based decision table below.
    Do **not** use LLM inference on title text; only labels are authoritative.

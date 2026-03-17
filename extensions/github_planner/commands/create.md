@@ -10,7 +10,15 @@
    - **labels** — optional (e.g. `["bug", "priority-high"]`)
    - **assignees** — optional GitHub usernames
 
-2. Call `create_issue(title=..., body=..., labels=..., assignees=...)`
+2. Call `docs_exist()` to check for project context:
+   - If `summary_exists: false` → skip doc lookup, proceed with user-provided info
+   - If `summary_exists: true` and sections list is non-empty:
+     - Infer the relevant feature area from the issue title
+     - Call `lookup_feature_section(feature="...")` to get design constraints
+     - If `matched: true`: use `section` to inform AC and `global_rules` for constraints
+     - If `matched: false`: note the available sections but don't block creation
+
+3. Call `create_issue(title=..., body=..., labels=..., assignees=...)`
 
 3. On success, confirm:
    > "Created issue #`{issue_number}`: `{url}`

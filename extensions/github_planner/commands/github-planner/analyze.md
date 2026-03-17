@@ -8,10 +8,27 @@ Repo analysis workflow:
 2. Call `docs_exist`. If summary < 7 days old, ask: "Project notes exist ({N:.0f}h old). Re-analyze? (yes / use existing)"
 3. If analyzing:
    a. Call `analyze_repo_full()` → announce: "Found {total_files} files, fetched {fetched} ({skipped_unchanged} unchanged)."
-   b. From the returned `file_index`, generate two documents using the formats below.
+   b. **Existing docs detection** (#84): from `file_index`, identify doc-like .md files
+      (paths matching: README*, docs/*, DESIGN*, ARCHITECTURE*, SPEC*, CONTRIBUTING*, CHANGELOG*).
+      If any found, present them:
+      ```
+      Found existing documentation:
+        - README.md (1.2KB)
+        - docs/DESIGN.md (3.4KB)
+      How should I handle these?
+      a) Refer to them — read and incorporate their content
+      b) Overwrite — replace with TH-generated project_summary + project_detail
+      c) Merge — combine existing + analysis into new TH docs
+      d) Ignore — create TH docs independently
+      ```
+      Save the strategy to `hub_agents/extensions/gh_planner/docs_strategy.json`:
+      `{"strategy": "refer|overwrite|merge|ignore", "referred_docs": [...]}`
+      If strategy is **refer**: note the paths; Claude reads them before generating TH docs.
+      If strategy is **ignore** or no docs found: proceed directly to step (c).
+   c. From the returned `file_index`, generate two documents using the formats below.
       Use `file_index[].exports`, `file_index[].headings`, `file_index[].module_doc` to derive
       content — never request raw file contents. Group files by feature area.
-   c. Call `save_project_docs(summary_md, detail_md)`.
+   d. Call `save_project_docs(summary_md, detail_md)`.
 4. Say: "Analysis complete. Let me know any plans for this!"
 
 ---

@@ -25,8 +25,20 @@ Ask:
 > a) GitHub URL or `owner/repo`  b) Use configured repo  c) Brand-new repo
 
 - **(b)**: read env, skip to Step 3
-- **(c)**: ask name/language/description → skip analysis → Step 5 (no doc lookup)
+- **(c)**: brand-new repo → follow **New-repo path** below
 - **(a)**: call `setup_workspace(github_repo=...)` if not already set
+
+### New-repo path (#83)
+
+When the user selects (c) or `get_session_header` returns `{docs: false}` and GitHub history is empty:
+
+1. Engage conversationally: "Tell me about your project — what is it, what's the main tech stack, and what are you building first?"
+2. From conversation: draft a minimal `project_summary.md` stub (no code analysis needed).
+   Show it: "I'll save this as your project description. Confirm? (yes / edit / cancel)"
+3. On confirm: call `update_project_description(content=...)`.
+4. Ask: "Want me to break your first features into issues? (yes / describe features first)"
+5. On yes: continue to Step 5 (planning conversation) — skip analysis entirely.
+6. Issue creation uses standard Step 6 flow with confirmation hook (#82).
 
 ---
 

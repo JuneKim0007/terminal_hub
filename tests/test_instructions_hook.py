@@ -84,10 +84,10 @@ _PLUGIN_COMMANDS_DIR = Path(__file__).parent.parent / "extensions" / "github_pla
 
 
 @pytest.mark.parametrize("filename", [
-    "setup.md",
+    "github-planner/setup.md",
     "create.md",
     "context.md",
-    "auth.md",
+    "github-planner/auth.md",
 ])
 def test_plugin_workflow_file_exists(filename):
     assert (_PLUGIN_COMMANDS_DIR / filename).exists(), f"Missing: extensions/github_planner/commands/{filename}"

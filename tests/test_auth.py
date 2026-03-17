@@ -1,7 +1,14 @@
 import subprocess
 from unittest.mock import patch
 import pytest
-from extensions.github_planner.auth import resolve_token, TokenSource, get_auth_options
+from extensions.github_planner.auth import resolve_token, TokenSource, get_auth_options, invalidate_token_cache
+
+
+@pytest.fixture(autouse=True)
+def clear_token_cache():
+    invalidate_token_cache()
+    yield
+    invalidate_token_cache()
 
 
 def test_returns_env_token_first():
@@ -13,7 +20,7 @@ def test_returns_env_token_first():
 
 def test_falls_back_to_gh_cli():
     with patch.dict("os.environ", {}, clear=True), \
-         patch("subprocess.check_output", return_value=b"gh-token-abc\n"):
+         patch("subprocess.check_output", return_value="gh-token-abc\n"):
         token, source = resolve_token()
     assert token == "gh-token-abc"
     assert source == TokenSource.GH_CLI
@@ -70,14 +77,14 @@ from extensions.github_planner.auth import verify_gh_cli_auth
 
 
 def test_verify_gh_cli_auth_success():
-    with patch("subprocess.check_output", return_value=b"some-token\n"):
+    with patch("subprocess.check_output", return_value="some-token\n"):
         success, message = verify_gh_cli_auth()
     assert success is True
     assert "verified" in message.lower()
 
 
 def test_verify_gh_cli_auth_empty_token():
-    with patch("subprocess.check_output", return_value=b""):
+    with patch("subprocess.check_output", return_value=""):
         success, message = verify_gh_cli_auth()
     assert success is False
     assert "gh auth login" in message

@@ -15,28 +15,34 @@ The **github_planner** plugin ships as the reference implementation — a full G
 ## Architecture
 
 ```
-terminal_hub/          ← core framework
-├── server.py          ← FastMCP setup, plugin loader loop, core tools
-├── plugin_loader.py   ← discovers plugins/*/plugin.json, calls register(mcp)
-├── workspace.py       ← resolves PROJECT_ROOT or cwd
-├── config.py          ← hub_agents/config.yaml (mode, repo)
-├── env_store.py       ← hub_agents/.env (GITHUB_REPO, GITHUB_TOKEN)
-├── install.py         ← CLI: copies commands to ~/.claude/commands/<plugin>/
-├── errors.py          ← centralised error messages (error_msg.json)
-├── slugify.py         ← URL-safe slug generation
-└── platform_runner.py ← OS detection + subprocess runner for extensions
+terminal_hub/            ← core framework
+├── server.py            ← FastMCP setup, plugin loader loop, core tools
+├── plugin_loader.py     ← discovers extensions/*/plugin.json, calls register(mcp)
+├── extension_loader.py  ← extension registry helpers
+├── workspace.py         ← resolves PROJECT_ROOT or cwd
+├── config.py            ← hub_agents/config.yaml (mode, repo)
+├── env_store.py         ← hub_agents/.env (GITHUB_REPO, GITHUB_TOKEN)
+├── install.py           ← CLI: copies commands to ~/.claude/commands/<plugin>/
+├── errors.py            ← centralised error messages (error_msg.json)
+├── slugify.py           ← URL-safe slug generation
+└── platform_runner.py   ← OS detection + subprocess runner for extensions
 
-plugins/               ← bundled plugins (shipped with package)
-└── github_planner/    ← reference implementation
-    ├── __init__.py    ← register(mcp) entry point + tool implementations
-    ├── client.py      ← GitHub REST API client
-    ├── storage.py     ← issue file I/O (hub_agents/issues/<slug>.md)
-    ← auth.py          ← token resolution (env → gh CLI → none)
-    ├── analyzer.py    ← repo intelligence: pure extraction functions + snapshot I/O
-    └── commands/      ← slash command prompts for this plugin
+extensions/              ← bundled extensions (shipped with package)
+├── github_planner/      ← reference implementation
+│   ├── __init__.py      ← register(mcp) entry point + all tool implementations
+│   ├── client.py        ← GitHub REST API client (httpx)
+│   ├── storage.py       ← issue file I/O (hub_agents/issues/<slug>.md)
+│   ├── auth.py          ← token resolution (env → gh CLI → none)
+│   ├── analyzer.py      ← repo intelligence: snapshot I/O + summarize_for_prompt
+│   ├── default.analyzer.json  ← analyzer descriptor (owned paths, TTL)
+│   ├── prompt_debugger.json   ← inspect tool descriptor (tracked item paths)
+│   └── commands/        ← slash command prompts for this extension
+│       └── github-planner/  ← sub-commands (analyze, create-issue, unload, …)
+├── plugin_creator/      ← conversational plugin scaffolding extension
+└── command_config.json          ← global extension runner registry (framework-level)
 
-extensions/            ← runtime extension descriptors (JSON)
-commands/builtin/      ← framework-level slash commands (help.md, inspect.md)
+extensions/builtin/      ← framework-level slash commands (help.md, inspect.md)
+AGENT_WORKFLOW.md        ← agent execution guide for cleanup/refactor tasks
 ```
 
 Both layers are required for a complete workflow:
@@ -91,9 +97,11 @@ No database. All state is plain files in `hub_agents/`:
 | `config.yaml` | Workspace mode (local/github) and repo |
 | `.env` | GITHUB_REPO, optional GITHUB_TOKEN |
 | `issues/<slug>.md` | Issue drafts with YAML front matter + Markdown body |
-| `project_description.md` | Project context document |
-| `architecture_design.md` | Architecture notes |
-| `analyzer_snapshot.json` | Repo intelligence cache (label/assignee/structure patterns) |
+| `extensions/gh_planner/project_summary.md` | Global rules: tech stack, design principles, pitfalls (≤500 tokens) |
+| `extensions/gh_planner/project_detail.md` | Feature-area design dictionary (H2 sections, loaded per-section) |
+| `extensions/gh_planner/analyzer_snapshot.json` | GitHub metadata cache (labels, assignees, issue patterns) |
+| `extensions/gh_planner/file_hashes.json` | Git blob SHAs for incremental `analyze_repo_full` |
+| `extensions/gh_planner/file_tree.json` | Local filesystem tree cache (TTL: 1h) |
 
 **Why plain files:**
 - Zero setup — no database or migration

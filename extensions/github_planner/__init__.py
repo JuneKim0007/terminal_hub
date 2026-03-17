@@ -1046,6 +1046,95 @@ def _do_list_issues(compact: bool = False) -> dict:
     return {"issues": issues}
 
 
+# ── Plugin unload ─────────────────────────────────────────────────────────────
+
+# All volatile cache files owned by gh_planner (project docs and issues are NOT included)
+_GH_PLANNER_VOLATILE_FILES = [
+    "analyzer_snapshot.json",
+    "file_hashes.json",
+    "file_tree.json",
+]
+
+
+def _do_list_plugin_state(plugin: str) -> dict:
+    """Inventory all gh_planner-managed resources: in-memory caches + disk files."""
+    if plugin != "gh_planner":
+        return {"error": "unknown_plugin", "message": f"Unknown plugin {plugin!r}. Available: gh_planner"}
+
+    root = get_workspace_root()
+    docs_dir = _gh_planner_docs_dir(root)
+
+    caches = []
+    if _ANALYSIS_CACHE:
+        caches.append({"name": "_ANALYSIS_CACHE", "entries": len(_ANALYSIS_CACHE)})
+    if _PROJECT_DOCS_CACHE:
+        caches.append({"name": "_PROJECT_DOCS_CACHE", "entries": len(_PROJECT_DOCS_CACHE)})
+    if _FILE_TREE_CACHE:
+        caches.append({"name": "_FILE_TREE_CACHE", "fetched_at": _FILE_TREE_CACHE.get("fetched_at")})
+    if _SESSION_HEADER_CACHE:
+        caches.append({"name": "_SESSION_HEADER_CACHE"})
+
+    disk_files = []
+    for fname in _GH_PLANNER_VOLATILE_FILES:
+        p = docs_dir / fname
+        if p.exists():
+            disk_files.append({"path": str(p.relative_to(root)), "size_bytes": p.stat().st_size})
+
+    return {
+        "plugin": plugin,
+        "caches": caches,
+        "disk_files": disk_files,
+        "total_caches": len(caches),
+        "total_disk_files": len(disk_files),
+        "_display": (
+            f"gh_planner state: {len(caches)} in-memory cache(s), {len(disk_files)} disk file(s)"
+        ),
+    }
+
+
+def _do_unload_plugin(plugin: str) -> dict:
+    """Clear all gh_planner in-memory caches and volatile disk files.
+
+    Does NOT remove project docs (project_summary.md, project_detail.md) or issues.
+    """
+    if plugin != "gh_planner":
+        return {"error": "unknown_plugin", "message": f"Unknown plugin {plugin!r}. Available: gh_planner"}
+
+    root = get_workspace_root()
+    docs_dir = _gh_planner_docs_dir(root)
+    cleared: list[str] = []
+    errors: list[str] = []
+
+    # Clear in-memory caches
+    for cache, name in [
+        (_ANALYSIS_CACHE, "_ANALYSIS_CACHE"),
+        (_PROJECT_DOCS_CACHE, "_PROJECT_DOCS_CACHE"),
+        (_FILE_TREE_CACHE, "_FILE_TREE_CACHE"),
+        (_SESSION_HEADER_CACHE, "_SESSION_HEADER_CACHE"),
+    ]:
+        if cache:
+            cache.clear()
+            cleared.append(name)
+
+    # Remove volatile disk files
+    for fname in _GH_PLANNER_VOLATILE_FILES:
+        p = docs_dir / fname
+        if p.exists():
+            try:
+                p.unlink()
+                cleared.append(str(p.relative_to(root)))
+            except OSError as exc:
+                errors.append(f"{p.name}: {exc}")
+
+    success = len(errors) == 0
+    return {
+        "success": success,
+        "cleared": cleared,
+        "errors": errors,
+        "_display": "Unloading successful!" if success else f"Unload completed with {len(errors)} error(s): {errors}",
+    }
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -1268,3 +1357,22 @@ def register(mcp) -> None:
         Use flat_index for quick path lookups; tree for navigating structure.
         """
         return _do_get_file_tree(refresh)
+
+    @mcp.tool()
+    def list_plugin_state(plugin: str = "gh_planner") -> dict:
+        """Inventory all resources loaded by a plugin: in-memory caches and disk files.
+
+        Use before unload_plugin to see what will be cleared.
+        Returns {caches: [...], disk_files: [...], total_caches, total_disk_files}.
+        """
+        return _do_list_plugin_state(plugin)
+
+    @mcp.tool()
+    def unload_plugin(plugin: str = "gh_planner") -> dict:
+        """Clear all in-memory caches and volatile disk files for a plugin.
+
+        Does NOT remove project docs (project_summary.md, project_detail.md) or issues.
+        On success returns {success: true, cleared: [...], _display: "Unloading successful!"}.
+        On error returns {success: false, errors: [...]} — analyze errors and retry.
+        """
+        return _do_unload_plugin(plugin)

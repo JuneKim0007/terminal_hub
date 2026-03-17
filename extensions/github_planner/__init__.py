@@ -1304,6 +1304,84 @@ def _do_list_pending_drafts() -> dict:
     return {"pending_drafts": pending, "count": len(pending)}
 
 
+# ── Existing docs detection (#84) ─────────────────────────────────────────────
+
+_DOC_LIKE_PATTERNS = frozenset([
+    "readme", "design", "architecture", "spec", "contributing",
+    "changelog", "changes", "history", "docs/", "documentation/",
+])
+
+
+def detect_existing_docs(file_index: list[dict]) -> list[dict]:
+    """From analyze_repo_full file_index, return doc-like .md files.
+
+    Matches top-level README/DESIGN/ARCHITECTURE or files under docs/ directory.
+    Returns list of {path, size} dicts for Claude to present to the user.
+    """
+    results = []
+    for f in file_index:
+        path: str = f.get("path", "").lower()
+        if not path.endswith(".md"):
+            continue
+        base = path.rsplit("/", 1)[-1].rstrip(".md").lower() if "/" in path else path.rstrip(".md").lower()
+        if any(pat in path or base.startswith(pat.rstrip("/")) for pat in _DOC_LIKE_PATTERNS):
+            results.append({"path": f["path"], "size": f.get("size", 0)})
+    return results
+
+
+def _do_save_docs_strategy(
+    strategy: str,
+    referred_docs: list[str] | None = None,
+) -> dict:
+    """Persist existing-docs strategy to hub_agents/extensions/gh_planner/docs_strategy.json (#84).
+
+    strategy: one of 'refer', 'overwrite', 'merge', 'ignore'
+    referred_docs: list of file paths (only meaningful for strategy='refer')
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    valid = {"refer", "overwrite", "merge", "ignore"}
+    if strategy not in valid:
+        return {"error": "invalid_strategy", "message": f"strategy must be one of {sorted(valid)}"}
+
+    docs_dir = _gh_planner_docs_dir(root)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    strategy_path = docs_dir / "docs_strategy.json"
+
+    data: dict = {"strategy": strategy}
+    if strategy == "refer" and referred_docs:
+        data["referred_docs"] = referred_docs
+
+    tmp = strategy_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    import os as _os4; _os4.replace(tmp, strategy_path)
+
+    return {
+        "saved": True,
+        "strategy": strategy,
+        "file": str(strategy_path.relative_to(root)),
+        "_display": f"✓ Docs strategy saved: {strategy}",
+    }
+
+
+def _do_load_docs_strategy() -> dict:
+    """Load existing-docs strategy from disk, or return default (#84)."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    strategy_path = _gh_planner_docs_dir(root) / "docs_strategy.json"
+    if not strategy_path.exists():
+        return {"strategy": None, "referred_docs": []}
+    try:
+        data = json.loads(strategy_path.read_text(encoding="utf-8"))
+        return {"strategy": data.get("strategy"), "referred_docs": data.get("referred_docs", [])}
+    except (json.JSONDecodeError, OSError):
+        return {"strategy": None, "referred_docs": []}
+
+
 # ── Plugin unload ─────────────────────────────────────────────────────────────
 
 # All volatile cache files owned by gh_planner (project docs and issues are NOT included)
@@ -1547,6 +1625,21 @@ def register(mcp) -> None:
         """Read project_description.md and/or architecture_design.md from hub_agents/.
         doc_key: 'project_description', 'architecture', or 'all'."""
         return _do_get_project_context(doc_key)
+
+    @mcp.tool()
+    def save_docs_strategy(strategy: str, referred_docs: list[str] | None = None) -> dict:
+        """Persist how to handle existing .md docs found during repo analysis (#84).
+
+        strategy: 'refer' | 'overwrite' | 'merge' | 'ignore'
+        referred_docs: paths of docs to use as context (only for strategy='refer').
+        Saved to hub_agents/extensions/gh_planner/docs_strategy.json."""
+        return _do_save_docs_strategy(strategy, referred_docs)
+
+    @mcp.tool()
+    def load_docs_strategy() -> dict:
+        """Load the saved existing-docs strategy for this project (#84).
+        Returns {strategy, referred_docs} or {strategy: null} if not set."""
+        return _do_load_docs_strategy()
 
     # ── Analyzer tool ─────────────────────────────────────────────────────────
 

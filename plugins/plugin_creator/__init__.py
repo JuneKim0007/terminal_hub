@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
+import sys
 from pathlib import Path
 
 from terminal_hub.plugin_loader import validate_manifest
@@ -94,13 +95,27 @@ def _do_validate_plugin(plugin_name: str) -> dict:
     errors.extend(manifest_errors)
 
     # 2. entry module importable
+    # #62 — inject project root so newly-written plugins can be imported
     entry = manifest.get("entry", "")
     if entry:
+        project_root = str(_PLUGINS_ROOT.parent)
+        injected = project_root not in sys.path
+        if injected:
+            sys.path.insert(0, project_root)
         try:
             mod = importlib.import_module(entry)
+        except SyntaxError as exc:
+            errors.append(
+                f"entry module {entry!r} has a syntax error: {exc} "
+                f"(hint: check for syntax errors in __init__.py)"
+            )
+            mod = None
         except Exception as exc:
             errors.append(f"entry module {entry!r} is not importable: {exc}")
             mod = None
+        finally:
+            if injected and project_root in sys.path:
+                sys.path.remove(project_root)
 
         # 3. register(mcp) present and callable
         if mod is not None:

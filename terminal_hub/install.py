@@ -77,15 +77,22 @@ def install_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
 
 
 def install_plugin_commands(manifest: dict, claude_dir: Path) -> None:
-    """Copy plugin commands/*.md to <claude_dir>/commands/<plugin_name>/."""
+    """Copy plugin commands to <claude_dir>/commands/<namespace>/.
+
+    Uses install_namespace from manifest if present, falls back to plugin name.
+    Preserves subdirectory structure so nested commands install correctly.
+    """
+    namespace = manifest.get("install_namespace", manifest["name"])
     plugin_dir = Path(manifest["_plugin_dir"])
     commands_src = plugin_dir / manifest["commands_dir"]
-    dest = claude_dir / "commands" / manifest["name"]
-    dest.mkdir(parents=True, exist_ok=True)
+    dest_root = claude_dir / "commands" / namespace
+    dest_root.mkdir(parents=True, exist_ok=True)
     for cmd_file in manifest["commands"]:
         src = commands_src / cmd_file
+        dest = dest_root / cmd_file
+        dest.parent.mkdir(parents=True, exist_ok=True)
         if src.exists():
-            shutil.copy2(src, dest / cmd_file)
+            shutil.copy2(src, dest)
 
 
 def verify_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:

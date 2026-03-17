@@ -8,7 +8,7 @@ def read_env(root: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     result = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -27,7 +27,7 @@ def write_env(root: Path, values: dict[str, str]) -> None:
     existing.update({k: v for k, v in values.items() if v})
 
     lines = [f"{k}={v}" for k, v in existing.items()]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     _ensure_gitignored(root)
 
@@ -37,9 +37,9 @@ def _ensure_gitignored(root: Path) -> None:
     entry = "hub_agents/"
     gitignore = root / ".gitignore"
     if gitignore.exists():
-        content = gitignore.read_text()
+        content = gitignore.read_text(encoding="utf-8")
         if entry in content:
             return
-        gitignore.write_text(content.rstrip() + f"\n{entry}\n")
+        gitignore.write_text(content.rstrip() + f"\n{entry}\n", encoding="utf-8")
     else:
-        gitignore.write_text(f"{entry}\n")
+        gitignore.write_text(f"{entry}\n", encoding="utf-8")

@@ -80,13 +80,18 @@ After approval:
 2. Call `draft_issue(title, body, labels, assignees)` for each — **silent**
 3. Show count: "Drafted {N} issues. Push to GitHub? (yes / review first)"
 4. If yes: call `submit_issue(slug)` for each — **silent**
-5. **Auto-update project docs** (only for new features, not bug fixes or refactors):
-   - If any drafted issue introduces a new feature area not in `docs_exist.sections`:
-     call `load_project_docs(doc="detail")`, append a new H2 section for that area
-     with what was planned (future-tense guidelines), then call `save_project_docs`.
-   - If an existing section was extended: call `lookup_feature_section`, merge the
-     planned work into Extension Guidelines, save updated docs.
-   - Bug fix / refactor issues → **do not update project docs**.
+5. **Auto-update project docs** — use the label-based decision table below.
+   Do **not** use LLM inference on title text; only labels are authoritative.
+
+   | Labels on the batch | Action |
+   |---------------------|--------|
+   | Any issue has `enhancement` or `feature` | Call `update_project_detail_section(feature_name, content)` to merge a new or updated section. Do **not** rewrite the full file. |
+   | Any issue has `architecture` | Update `project_summary.md` Design Principles section via `update_project_detail_section`. |
+   | All labels are `bug`, `chore`, `refactor`, or `docs` | **No doc update** — zero extra API calls. |
+   | No labels set | Ask user: "This looks like a new feature — should I add it to the design dictionary? (yes/no)" — then follow appropriate row above. |
+
+   `update_project_detail_section(feature_name, content)` merges a single H2 section
+   into `project_detail.md` without rewriting the rest of the file.
 6. Say: **"Let me know any plans for this!"**
 
 ---

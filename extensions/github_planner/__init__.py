@@ -56,6 +56,22 @@ _PROJECT_DOCS_CACHE: dict[str, dict] = {}
 #   "loaded_at":  float,
 # }
 
+_FILE_TREE_CACHE: dict = {}
+# {
+#   "tree":       dict,     # nested dir structure
+#   "flat_index": list[str],
+#   "fetched_at": str,      # ISO timestamp
+#   "root":       str,
+# }
+
+_FILE_TREE_TTL = 3600  # seconds
+
+_FILE_TREE_IGNORE = frozenset({
+    ".git", "__pycache__", "venv", ".venv", "node_modules",
+    ".worktrees", "worktrees", ".mypy_cache", ".pytest_cache",
+    "dist", "build", "*.egg-info",
+})
+
 # ── Guidance URIs ─────────────────────────────────────────────────────────────
 _G_INIT    = "terminal-hub://workflow/init"
 _G_ISSUE   = "terminal-hub://workflow/issue"
@@ -774,6 +790,106 @@ def _save_file_hashes(root: Path, hashes: dict[str, str]) -> None:
     os.replace(tmp, p)
 
 
+# ── get_file_tree ─────────────────────────────────────────────────────────────
+
+def _file_tree_cache_path(root: Path) -> Path:
+    return _gh_planner_docs_dir(root) / "file_tree.json"
+
+
+def _should_ignore(name: str) -> bool:
+    """Return True if directory/file name matches an ignore pattern."""
+    if name in _FILE_TREE_IGNORE:
+        return True
+    for pat in _FILE_TREE_IGNORE:
+        if pat.startswith("*") and name.endswith(pat[1:]):
+            return True
+    return False
+
+
+def _build_file_tree(root: Path) -> tuple[dict, list[str]]:
+    """Walk root directory, return (nested_tree, flat_index) excluding ignored paths."""
+    flat: list[str] = []
+
+    def _walk(directory: Path, rel_prefix: str) -> dict:
+        node: dict = {}
+        try:
+            entries = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except PermissionError:
+            return node
+        for entry in entries:
+            if _should_ignore(entry.name):
+                continue
+            rel = f"{rel_prefix}{entry.name}"
+            if entry.is_dir():
+                children = _walk(entry, rel + "/")
+                node[entry.name + "/"] = children
+            else:
+                node[entry.name] = {"size": entry.stat().st_size, "ext": entry.suffix.lower()}
+                flat.append(rel)
+        return node
+
+    tree = _walk(root, "")
+    return tree, flat
+
+
+def _do_get_file_tree(refresh: bool = False) -> dict:
+    """Return a cached file-tree index of the workspace root.
+
+    Cached in memory and on disk under hub_agents/extensions/gh_planner/file_tree.json.
+    TTL: 1 hour. Pass refresh=True to force re-fetch.
+    """
+    from datetime import datetime, timezone
+
+    root = get_workspace_root()
+    cache_path = _file_tree_cache_path(root)
+
+    # In-memory cache check
+    if not refresh and _FILE_TREE_CACHE:
+        fetched_at_str = _FILE_TREE_CACHE.get("fetched_at", "")
+        try:
+            fetched_at = datetime.fromisoformat(fetched_at_str)
+            age = (datetime.now(timezone.utc) - fetched_at).total_seconds()
+            if age < _FILE_TREE_TTL:
+                return dict(_FILE_TREE_CACHE)
+        except (ValueError, TypeError):
+            pass
+
+    # Disk cache check
+    if not refresh and cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            fetched_at = datetime.fromisoformat(cached["fetched_at"])
+            age = (datetime.now(timezone.utc) - fetched_at).total_seconds()
+            if age < _FILE_TREE_TTL:
+                _FILE_TREE_CACHE.clear()
+                _FILE_TREE_CACHE.update(cached)
+                return dict(cached)
+        except (OSError, json.JSONDecodeError, KeyError, ValueError):
+            pass
+
+    # Build fresh tree
+    tree, flat_index = _build_file_tree(root)
+    now = datetime.now(timezone.utc).isoformat()
+    result = {
+        "fetched_at": now,
+        "root": str(root),
+        "tree": tree,
+        "flat_index": flat_index,
+        "total_files": len(flat_index),
+        "_display": f"✓ File tree built — {len(flat_index)} files in {root.name}",
+    }
+
+    # Write disk cache
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    os.replace(tmp, cache_path)
+
+    _FILE_TREE_CACHE.clear()
+    _FILE_TREE_CACHE.update(result)
+    return result
+
+
 # ── analyze_repo_full ─────────────────────────────────────────────────────────
 
 def _do_analyze_repo_full(repo: str | None = None) -> dict:
@@ -1140,3 +1256,15 @@ def register(mcp) -> None:
         Call at session start to decide whether to load full project docs.
         """
         return _do_get_session_header()
+
+    @mcp.tool()
+    def get_file_tree(refresh: bool = False) -> dict:
+        """Return an organized file-tree index of the workspace root.
+
+        Cached in memory and on disk (TTL 1 hour). Use refresh=True to force
+        a re-walk of the filesystem. Excludes .git, __pycache__, venv, etc.
+
+        Returns {tree, flat_index, total_files, fetched_at, root}.
+        Use flat_index for quick path lookups; tree for navigating structure.
+        """
+        return _do_get_file_tree(refresh)

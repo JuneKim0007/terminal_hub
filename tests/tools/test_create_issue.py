@@ -129,6 +129,17 @@ def test_submit_issue_success_returns_number_and_url(workspace):
         result = call(server, "submit_issue", {"slug": "my-issue"})
     assert result["issue_number"] == 99
     assert "gh/99" in result["url"]
+    assert "_display" in result
+    assert "99" in result["_display"]
+
+
+def test_submit_issue_success_display_absent_in_errors(workspace):
+    with patch("terminal_hub.server.get_github_client", return_value=(_mock_gh(), "")), \
+         patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "submit_issue", {"slug": "no-such-slug"})
+    assert result.get("error") == "submit_failed"
+    assert "_display" not in result
 
 
 def test_submit_issue_updates_local_file_to_open(workspace):

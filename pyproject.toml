@@ -37,7 +37,7 @@ terminal-hub = "terminal_hub.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["terminal_hub"]
 artifacts = [
-    "agents/*.md",
+    "commands/builtin/*.md",
     ".claude-plugin/*.json",
     ".claude/settings.json",
 ]

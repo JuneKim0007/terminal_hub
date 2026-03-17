@@ -5,6 +5,7 @@ Writes the MCP server entry into ~/.claude.json at the global level
 hub_agents/ at runtime — no per-project install step needed.
 """
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -52,6 +53,44 @@ def format_diff(config: dict) -> str:
     return "\n".join(lines)
 
 
+_COMMANDS_SRC = Path(__file__).parent.parent / "commands" / "builtin"
+
+
+def install_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
+    """Copy builtin .md command files into <claude_dir>/commands/terminal_hub/.
+
+    Returns list of copied filenames.
+    Raises PermissionError if claude_dir is not writable.
+    """
+    if not os.access(claude_dir, os.W_OK):
+        raise PermissionError(
+            f"Cannot write to {claude_dir} — check directory permissions. "
+            f"Run: chmod u+w {claude_dir}"
+        )
+    commands_dst = claude_dir / "commands" / "terminal_hub"
+    commands_dst.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    for src_file in sorted(_COMMANDS_SRC.glob("*.md")):
+        shutil.copy2(src_file, commands_dst / src_file.name)
+        copied.append(src_file.name)
+    return copied
+
+
+def verify_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
+    """Return list of missing builtin .md filenames in <claude_dir>/commands/terminal_hub/.
+
+    Empty list means all builtin commands are present.
+    """
+    commands_dst = claude_dir / "commands" / "terminal_hub"
+    if not commands_dst.exists():
+        return [f.name for f in sorted(_COMMANDS_SRC.glob("*.md"))]
+    missing: list[str] = []
+    for src_file in sorted(_COMMANDS_SRC.glob("*.md")):
+        if not (commands_dst / src_file.name).exists():
+            missing.append(src_file.name)
+    return missing
+
+
 # ── Interactive helpers ───────────────────────────────────────────────────────
 
 def _confirm(prompt: str) -> bool:
@@ -60,7 +99,7 @@ def _confirm(prompt: str) -> bool:
 
 # ── Install ───────────────────────────────────────────────────────────────────
 
-def run_install(claude_json_path: Path = _CLAUDE_JSON) -> None:
+def run_install(claude_json_path: Path = _CLAUDE_JSON, claude_dir: Path = Path.home() / ".claude") -> None:
     """Install terminal-hub globally into ~/.claude.json."""
     print("terminal-hub installer\n")
 
@@ -74,13 +113,20 @@ def run_install(claude_json_path: Path = _CLAUDE_JSON) -> None:
 
     write_claude_json(claude_json_path, config)
     print(f"✓ Written to {claude_json_path}")
+
+    try:
+        copied = install_commands(claude_dir)
+        print(f"✓ Installed {len(copied)} slash command(s) to {claude_dir / 'commands' / 'terminal_hub'}")
+    except PermissionError as exc:
+        print(f"⚠ Could not install slash commands: {exc}")
+
     print("\n✓ Restart Claude Code to apply changes.")
     print("  On first use in any project, terminal-hub will ask you to run setup_workspace.")
 
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 
-def run_verify(claude_json_path: Path = _CLAUDE_JSON) -> None:
+def run_verify(claude_json_path: Path = _CLAUDE_JSON, claude_dir: Path = Path.home() / ".claude") -> None:
     """Check whether terminal-hub is configured globally."""
     data = read_claude_json(claude_json_path)
     entry = data.get("mcpServers", {}).get("terminal-hub")
@@ -92,3 +138,10 @@ def run_verify(claude_json_path: Path = _CLAUDE_JSON) -> None:
 
     print("✓ terminal-hub is configured globally.")
     print(json.dumps(entry, indent=2))
+
+    missing = verify_commands(claude_dir)
+    if missing:
+        print(f"\n⚠ Missing slash command(s): {', '.join(missing)}")
+        print("  Run `terminal-hub install` to reinstall.")
+    else:
+        print("\n✓ All slash commands installed.")

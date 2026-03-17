@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from terminal_hub.server import _AGENTS_DIR, _load_agent, create_server
+from terminal_hub.server import _BUILTIN_DIR, _load_agent, create_server
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ def read_resource(server, uri: str) -> str:
 # ── _load_agent ───────────────────────────────────────────────────────────────
 
 def test_load_agent_returns_string_for_existing_file():
-    content = _load_agent("entry_point.md")
+    content = _load_agent("help.md")
     assert isinstance(content, str)
     assert len(content) > 0
 
@@ -58,7 +58,7 @@ def test_workflow_resources_are_registered(server):
 
 def test_instructions_resource_returns_entry_point_content(server):
     result = read_resource(server, "terminal-hub://instructions")
-    expected = _load_agent("entry_point.md")
+    expected = _load_agent("help.md")
     assert result == expected
 
 
@@ -69,21 +69,21 @@ def test_instructions_resource_content_non_empty(server):
 
 def test_instructions_matches_file_on_disk(server):
     result = read_resource(server, "terminal-hub://instructions")
-    on_disk = (_AGENTS_DIR / "entry_point.md").read_text()
+    on_disk = (_BUILTIN_DIR / "help.md").read_text()
     assert result == on_disk
 
 
 # ── workflow files exist on disk ──────────────────────────────────────────────
 
 @pytest.mark.parametrize("filename", [
-    "entry_point.md",
-    "workflow_init.md",
-    "workflow_issue.md",
-    "workflow_context.md",
-    "workflow_auth.md",
+    "help.md",
+    "setup.md",
+    "create.md",
+    "context.md",
+    "auth.md",
 ])
 def test_workflow_file_exists(filename):
-    assert (_AGENTS_DIR / filename).exists(), f"Missing: agents/{filename}"
+    assert (_BUILTIN_DIR / filename).exists(), f"Missing: commands/builtin/{filename}"
 
 
 def test_workflow_init_resource_has_content(server):

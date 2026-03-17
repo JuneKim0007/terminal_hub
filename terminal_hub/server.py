@@ -30,7 +30,7 @@ from terminal_hub.storage import (
 )
 from terminal_hub.workspace import detect_repo, init_workspace, resolve_workspace_root
 
-_AGENTS_DIR = Path(__file__).parent.parent / "agents"
+_BUILTIN_DIR = Path(__file__).parent.parent / "commands" / "builtin"
 
 # ── Guidance URIs ─────────────────────────────────────────────────────────────
 _G_INIT    = "terminal-hub://workflow/init"
@@ -40,8 +40,21 @@ _G_AUTH    = "terminal-hub://workflow/auth"
 
 
 def _load_agent(name: str) -> str:
-    path = _AGENTS_DIR / name
+    path = _BUILTIN_DIR / name
     return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+_BUILTIN_COMMANDS = ["help.md", "create.md", "context.md", "setup.md", "auth.md"]
+
+
+def _assert_builtins() -> None:
+    base = Path(__file__).parent.parent / "commands" / "builtin"
+    missing = [f for f in _BUILTIN_COMMANDS if not (base / f).exists()]
+    if missing:
+        raise RuntimeError(f"Missing builtin command files: {missing}")
+
+
+_assert_builtins()
 
 
 def get_workspace_root() -> Path:
@@ -82,34 +95,34 @@ def get_github_client() -> tuple[GitHubClient | None, str]:
 
 def create_server() -> FastMCP:
     """Create and return the configured FastMCP instance."""
-    mcp = FastMCP("terminal-hub", instructions=_load_agent("entry_point.md"))
+    mcp = FastMCP("terminal-hub", instructions="terminal-hub connected. Type /terminal_hub:help to get started.")
 
     # ── Resources (workflow guides) ───────────────────────────────────────────
 
     @mcp.resource("terminal-hub://instructions")
     def instructions_resource() -> str:
         """Full entry point instructions and tool reference."""
-        return _load_agent("entry_point.md")
+        return _load_agent("help.md")
 
     @mcp.resource("terminal-hub://workflow/init")
     def workflow_init() -> str:
         """Step-by-step guide for initialising a new project workspace."""
-        return _load_agent("workflow_init.md")
+        return _load_agent("setup.md")
 
     @mcp.resource("terminal-hub://workflow/issue")
     def workflow_issue() -> str:
         """Guide for creating, listing, and reloading issue context."""
-        return _load_agent("workflow_issue.md")
+        return _load_agent("create.md")
 
     @mcp.resource("terminal-hub://workflow/context")
     def workflow_context() -> str:
         """Guide for loading and saving project description and architecture."""
-        return _load_agent("workflow_context.md")
+        return _load_agent("context.md")
 
     @mcp.resource("terminal-hub://workflow/auth")
     def workflow_auth() -> str:
         """Auth recovery guide — check_auth → gh auth login → verify_auth."""
-        return _load_agent("workflow_auth.md")
+        return _load_agent("auth.md")
 
     # ── Auth tools ────────────────────────────────────────────────────────────
 
@@ -267,12 +280,18 @@ def create_server() -> FastMCP:
             github_url=result["html_url"],
         )
 
-        return {
+        result_dict = {
             "issue_number": result["number"],
             "url": result["html_url"],
             "slug": slug,
             "local_file": f"hub_agents/issues/{slug}.md",
         }
+        display = (
+            f"✓ Created #{result_dict['issue_number']} — {fm['title']}\n"
+            f"  URL:   {result_dict['url']}\n"
+            f"  Local: {result_dict['local_file']}"
+        )
+        return {**result_dict, "_display": display}
 
     @mcp.tool()
     def list_issues() -> dict:
@@ -311,7 +330,7 @@ def create_server() -> FastMCP:
             return err
         try:
             path = write_doc_file(root, "project_description", content)
-            return {"updated": True, "file": str(path.relative_to(root))}
+            return {"updated": True, "file": str(path.relative_to(root)), "_display": "✓ Project description saved"}
         except (OSError, ValueError) as exc:
             return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
@@ -324,7 +343,7 @@ def create_server() -> FastMCP:
             return err
         try:
             path = write_doc_file(root, "architecture", content)
-            return {"updated": True, "file": str(path.relative_to(root))}
+            return {"updated": True, "file": str(path.relative_to(root)), "_display": "✓ Architecture notes saved"}
         except (OSError, ValueError) as exc:
             return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
@@ -402,6 +421,7 @@ def create_server() -> FastMCP:
                 with gh:
                     label_warning = gh.ensure_labels(all_names)
 
+        repo = github_repo or "none"
         result: dict = {
             "success": True,
             "github_repo": github_repo,
@@ -410,6 +430,7 @@ def create_server() -> FastMCP:
                 f"Initialised hub_agents/ in {root}. "
                 + (f"GitHub repo set to {github_repo}." if github_repo else "Running in local-only mode.")
             ),
+            "_display": f"✓ Workspace initialised (mode: {mode.value}, repo: {repo})",
         }
         if label_warning:
             result["label_warning"] = label_warning

@@ -20,6 +20,8 @@ def test_update_project_description_writes_file(workspace):
         result = call(server, "update_project_description", {"content": "# My Project\n"})
     assert result["updated"] is True
     assert (workspace / "hub_agents" / "project_description.md").read_text() == "# My Project\n"
+    assert "_display" in result
+    assert result["_display"] == "✓ Project description saved"
 
 
 def test_update_project_description_returns_relative_path(workspace):
@@ -35,6 +37,8 @@ def test_update_architecture_writes_file(workspace):
         result = call(server, "update_architecture", {"content": "# Architecture\n"})
     assert result["updated"] is True
     assert (workspace / "hub_agents" / "architecture_design.md").read_text() == "# Architecture\n"
+    assert "_display" in result
+    assert result["_display"] == "✓ Architecture notes saved"
 
 
 def test_update_docs_overwrite_preserves_latest(workspace):

@@ -1180,3 +1180,181 @@ def test_get_session_header_no_truncation_when_few_sections(workspace):
         result = _do_get_session_header()
     assert len(result["sections"]) == 2
     assert "sections_truncated" not in result
+
+
+# ── _do_analyze_github_labels / _do_load_github_local_config (#81) ────────────
+
+def _make_mock_gh(labels=None, open_issues=None):
+    """Helper to build a mock GitHubClient for label tests."""
+    mock = MagicMock()
+    mock.__enter__ = lambda s: s
+    mock.__exit__ = MagicMock(return_value=False)
+    mock.list_labels.return_value = labels or []
+    mock.list_issues.return_value = open_issues or []
+    return mock
+
+
+def test_analyze_github_labels_active_if_has_open_issues(workspace):
+    from extensions.github_planner import _do_analyze_github_labels
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    # Label "bug" has an open issue
+    labels = [{"name": "bug", "color": "ee0701", "description": "A bug", "created_at": "2020-01-01T00:00:00Z"}]
+    open_issues = [{"labels": [{"name": "bug"}]}]
+    mock_gh = _make_mock_gh(labels=labels, open_issues=open_issues)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        result = _do_analyze_github_labels()
+
+    assert result.get("error") is None
+    assert any(l["name"] == "bug" for l in result["active_labels"])
+    assert result["closed_labels"] == []
+
+
+def test_analyze_github_labels_closed_if_old_and_no_open_issues(workspace):
+    from extensions.github_planner import _do_analyze_github_labels
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    # Label created 60 days ago, no open issues
+    old_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 60 * 86400))
+    labels = [{"name": "stale", "color": "aaaaaa", "description": "", "created_at": old_ts}]
+
+    mock_gh = _make_mock_gh(labels=labels, open_issues=[])
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        result = _do_analyze_github_labels()
+
+    assert result.get("error") is None
+    assert result["active_labels"] == []
+    assert any(l["name"] == "stale" for l in result["closed_labels"])
+
+
+def test_analyze_github_labels_active_if_recently_created(workspace):
+    from extensions.github_planner import _do_analyze_github_labels
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    # Label created 5 days ago (recent), no open issues
+    recent_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5 * 86400))
+    labels = [{"name": "new-feature", "color": "0075ca", "description": "", "created_at": recent_ts}]
+
+    mock_gh = _make_mock_gh(labels=labels, open_issues=[])
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        result = _do_analyze_github_labels()
+
+    assert result.get("error") is None
+    assert any(l["name"] == "new-feature" for l in result["active_labels"])
+    assert result["closed_labels"] == []
+
+
+def test_analyze_github_labels_saves_to_disk(workspace):
+    from extensions.github_planner import _do_analyze_github_labels
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    labels = [{"name": "enhancement", "color": "a2eeef", "description": "", "created_at": "2020-01-01T00:00:00Z"}]
+    open_issues = [{"labels": [{"name": "enhancement"}]}]
+    mock_gh = _make_mock_gh(labels=labels, open_issues=open_issues)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        _do_analyze_github_labels()
+
+    config_path = workspace / "hub_agents" / "extensions" / "gh_planner" / "github_local_config.json"
+    assert config_path.exists()
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert "labels" in data
+    assert any(l["name"] == "enhancement" for l in data["labels"]["active"])
+
+
+def test_analyze_github_labels_only_defaults_flag(workspace):
+    from extensions.github_planner import _do_analyze_github_labels
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    # Only GitHub default labels
+    labels = [
+        {"name": "bug", "color": "ee0701", "description": "", "created_at": "2020-01-01T00:00:00Z"},
+        {"name": "enhancement", "color": "a2eeef", "description": "", "created_at": "2020-01-01T00:00:00Z"},
+    ]
+    mock_gh = _make_mock_gh(labels=labels, open_issues=[])
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        result = _do_analyze_github_labels()
+
+    assert result["only_defaults"] is True
+    assert "suggestion" in result
+
+
+def test_analyze_github_labels_no_auth(workspace):
+    from extensions.github_planner import _do_analyze_github_labels
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(None, "No token")):
+        result = _do_analyze_github_labels()
+
+    assert result["error"] == "github_unavailable"
+
+
+def test_analyze_github_labels_cache_hit(workspace):
+    from extensions.github_planner import _do_analyze_github_labels, _LABEL_CACHE
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    labels = [{"name": "bug", "color": "ee0701", "description": "", "created_at": "2020-01-01T00:00:00Z"}]
+    mock_gh = _make_mock_gh(labels=labels, open_issues=[{"labels": [{"name": "bug"}]}])
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")) as mock_client:
+        _do_analyze_github_labels()
+        result2 = _do_analyze_github_labels()
+
+    # Second call should use cache — get_github_client called only once
+    assert result2.get("cached") is True
+    assert mock_client.call_count == 1
+
+
+def test_analyze_github_labels_refresh_bypasses_cache(workspace):
+    from extensions.github_planner import _do_analyze_github_labels
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    labels = [{"name": "bug", "color": "ee0701", "description": "", "created_at": "2020-01-01T00:00:00Z"}]
+    mock_gh = _make_mock_gh(labels=labels, open_issues=[{"labels": [{"name": "bug"}]}])
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")) as mock_client:
+        _do_analyze_github_labels()
+        _do_analyze_github_labels(refresh=True)
+
+    # refresh=True should call GitHub again
+    assert mock_client.call_count == 2
+
+
+def test_load_github_local_config_absent(workspace):
+    from extensions.github_planner import _do_load_github_local_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_load_github_local_config()
+
+    assert result["labels"] is None
+    assert result["fetched_at"] is None
+
+
+def test_load_github_local_config_roundtrip(workspace):
+    from extensions.github_planner import _do_analyze_github_labels, _do_load_github_local_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    labels = [{"name": "bug", "color": "ee0701", "description": "", "created_at": "2020-01-01T00:00:00Z"}]
+    mock_gh = _make_mock_gh(labels=labels, open_issues=[{"labels": [{"name": "bug"}]}])
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        _do_analyze_github_labels()
+        result = _do_load_github_local_config()
+
+    assert result["labels"] is not None
+    assert any(l["name"] == "bug" for l in result["labels"]["active"])
+    assert result["fetched_at"] is not None

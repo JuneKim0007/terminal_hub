@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import plugins.github_planner as pg
-from plugins.github_planner import (
+import extensions.github_planner as pg
+from extensions.github_planner import (
     _ANALYSIS_CACHE,
     _PROJECT_DOCS_CACHE,
     _SESSION_HEADER_CACHE,
@@ -89,9 +89,9 @@ def test_is_markdown_case_insensitive():
 def test_start_repo_analysis_partitions_md_first(workspace):
     tree = _make_tree(["src/auth.py", "README.md", "src/client.py", "TECH_STACK.md"])
     mock_gh = _mock_gh_with_tree(tree)
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_start_repo_analysis("o/r")
 
     assert result["status"] == "ready"
@@ -105,26 +105,26 @@ def test_start_repo_analysis_partitions_md_first(workspace):
 def test_start_repo_analysis_caps_at_200(workspace):
     tree = _make_tree([f"file{i}.py" for i in range(300)])
     mock_gh = _mock_gh_with_tree(tree)
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_start_repo_analysis("o/r")
 
     assert result["total_files"] == 200
 
 
 def test_start_repo_analysis_no_auth_returns_error(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(None, "No token.")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(None, "No token.")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_start_repo_analysis("o/r")
 
     assert result["error"] == "github_unavailable"
 
 
 def test_start_repo_analysis_no_repo_returns_error(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={}):
         result = _do_start_repo_analysis(None)
 
     assert result["error"] == "repo_required"
@@ -136,9 +136,9 @@ def test_start_repo_analysis_overwrites_existing_cache(workspace):
                                "started_at": 0.0, "last_fetched": None}
     tree = _make_tree(["new.py"])
     mock_gh = _mock_gh_with_tree(tree)
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         _do_start_repo_analysis("o/r")
 
     assert _ANALYSIS_CACHE["o/r"]["pending_code"][0]["path"] == "new.py"
@@ -167,9 +167,9 @@ def test_fetch_batch_returns_md_files_first(workspace):
     mock_gh.__exit__ = MagicMock(return_value=False)
     mock_gh.get_file_content.side_effect = _fake_content
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_fetch_analysis_batch("o/r", batch_size=2)
 
     paths = [f["path"] for f in result["files"]]
@@ -186,9 +186,9 @@ def test_fetch_batch_done_when_queues_empty(workspace):
     mock_gh.__exit__ = MagicMock(return_value=False)
     mock_gh.get_file_content.return_value = "text"
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_fetch_analysis_batch("o/r", batch_size=5)
 
     assert result["done"] is True
@@ -196,16 +196,16 @@ def test_fetch_batch_done_when_queues_empty(workspace):
 
 
 def test_fetch_batch_skips_binary_files(workspace):
-    from plugins.github_planner.client import GitHubError
+    from extensions.github_planner.client import GitHubError
     _seed_cache("o/r", ["image.png"])
     mock_gh = MagicMock()
     mock_gh.__enter__ = lambda s: s
     mock_gh.__exit__ = MagicMock(return_value=False)
     mock_gh.get_file_content.side_effect = GitHubError("binary", error_code="binary_file")
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_fetch_analysis_batch("o/r", batch_size=5)
 
     assert result["files"] == []
@@ -214,8 +214,8 @@ def test_fetch_batch_skips_binary_files(workspace):
 
 
 def test_fetch_batch_not_started_returns_error(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_fetch_analysis_batch("o/r")
 
     assert result["error"] == "analysis_not_started"
@@ -228,9 +228,9 @@ def test_fetch_batch_caps_batch_size_at_20(workspace):
     mock_gh.__exit__ = MagicMock(return_value=False)
     mock_gh.get_file_content.return_value = "x"
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_fetch_analysis_batch("o/r", batch_size=99)
 
     assert len(result["files"]) == 20
@@ -240,8 +240,8 @@ def test_fetch_batch_caps_batch_size_at_20(workspace):
 
 def test_get_analysis_status_reflects_cache(workspace):
     _seed_cache("o/r", ["README.md", "auth.py"])
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_get_analysis_status("o/r")
 
     assert result["analyzed_count"] == 0
@@ -250,8 +250,8 @@ def test_get_analysis_status_reflects_cache(workspace):
 
 
 def test_get_analysis_status_not_started(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_get_analysis_status("o/r")
 
     assert result["error"] == "analysis_not_started"
@@ -260,8 +260,8 @@ def test_get_analysis_status_not_started(workspace):
 # ── save_project_docs ─────────────────────────────────────────────────────────
 
 def test_save_project_docs_writes_both_files(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_save_project_docs("summary text", "detail text", "o/r")
 
     assert result["saved"] is True
@@ -271,8 +271,8 @@ def test_save_project_docs_writes_both_files(workspace):
 
 
 def test_save_project_docs_populates_cache(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         _do_save_project_docs("sum", "det", "o/r")
 
     assert _PROJECT_DOCS_CACHE["o/r"]["summary"] == "sum"
@@ -281,8 +281,8 @@ def test_save_project_docs_populates_cache(workspace):
 
 def test_save_project_docs_creates_parent_dirs(workspace):
     # docs_dir does not exist yet
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_save_project_docs("s", "d", "o/r")
 
     assert result["saved"] is True
@@ -293,8 +293,8 @@ def test_save_project_docs_creates_parent_dirs(workspace):
 
 def test_load_project_docs_returns_from_cache(workspace):
     _PROJECT_DOCS_CACHE["o/r"] = {"summary": "cached_sum", "detail": "cached_det", "loaded_at": time.time()}
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_load_project_docs("summary", "o/r")
 
     assert result["summary"] == "cached_sum"
@@ -305,8 +305,8 @@ def test_load_project_docs_reads_disk_on_cache_miss(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("disk_sum")
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_load_project_docs("summary", "o/r")
 
     assert result["summary"] == "disk_sum"
@@ -314,8 +314,8 @@ def test_load_project_docs_reads_disk_on_cache_miss(workspace):
 
 
 def test_load_project_docs_returns_none_when_missing(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_load_project_docs("summary", "o/r")
 
     assert result["summary"] is None
@@ -327,8 +327,8 @@ def test_load_project_docs_force_reload_bypasses_cache(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("fresh")
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_load_project_docs("summary", "o/r", force_reload=True)
 
     assert result["summary"] == "fresh"
@@ -337,7 +337,7 @@ def test_load_project_docs_force_reload_bypasses_cache(workspace):
 # ── docs_exist ────────────────────────────────────────────────────────────────
 
 def test_docs_exist_returns_false_when_missing(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_docs_exist()
 
     assert result["summary_exists"] is False
@@ -350,7 +350,7 @@ def test_docs_exist_returns_true_with_age(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("x")
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_docs_exist()
 
     assert result["summary_exists"] is True
@@ -373,14 +373,14 @@ def test_new_tools_registered(workspace):
 
 def test_draft_issue_display_is_just_title(workspace):
     (workspace / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_draft_issue("My feature", "do it")
     assert result["_display"] == "✓ My feature"
 
 
 def test_submit_issue_display_is_number_and_title(workspace):
-    from plugins.github_planner import _do_submit_issue
-    from plugins.github_planner.storage import write_issue_file, STATUS_PENDING
+    from extensions.github_planner import _do_submit_issue
+    from extensions.github_planner.storage import write_issue_file, STATUS_PENDING
     from datetime import date
     write_issue_file(root=workspace, slug="my-feature", title="My feature", body="body",
                      assignees=[], labels=[], created_at=date(2026, 3, 17), status=STATUS_PENDING)
@@ -390,8 +390,8 @@ def test_submit_issue_display_is_number_and_title(workspace):
     mock_gh.create_issue.return_value = {"number": 7, "html_url": "https://gh/7"}
     mock_gh.ensure_labels.return_value = None
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.get_github_client", return_value=(mock_gh, "")):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
         result = _do_submit_issue("my-feature")
 
     assert result["_display"] == "✓ #7 My feature"
@@ -402,8 +402,8 @@ def test_submit_issue_display_is_number_and_title(workspace):
 def test_resolve_repo_uses_single_cache_entry(workspace):
     """Line 376: when exactly one repo is cached, _resolve_repo returns it."""
     _seed_cache("solo/repo", ["README.md"])
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={}):
         result = _do_get_analysis_status(None)
     # It found the solo entry and returned a proper status response (not repo_required)
     assert result.get("error") != "repo_required"
@@ -412,21 +412,21 @@ def test_resolve_repo_uses_single_cache_entry(workspace):
 
 def test_start_repo_analysis_github_error_returns_error(workspace):
     """Lines 396-397: exception from list_repo_tree is caught."""
-    from plugins.github_planner.client import GitHubError
+    from extensions.github_planner.client import GitHubError
     mock_gh = MagicMock()
     mock_gh.__enter__ = lambda s: s
     mock_gh.__exit__ = MagicMock(return_value=False)
     mock_gh.list_repo_tree.side_effect = GitHubError("boom")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_start_repo_analysis("o/r")
     assert result["error"] == "github_error"
 
 
 def test_save_project_docs_returns_needs_init_when_not_set_up(tmp_path):
     """Line 498: ensure_initialized guard fires when hub_agents is missing."""
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         result = _do_save_project_docs("s", "d", "o/r")
     assert result["status"] == "needs_init"
 
@@ -441,8 +441,8 @@ def test_save_project_docs_write_error_returns_error(workspace):
             raise OSError("disk full")
         return original_write(self, *args, **kwargs)
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}), \
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}), \
          patch.object(Path, "write_text", _fail_on_tmp):
         result = _do_save_project_docs("s", "d", "o/r")
     assert result["error"] == "write_failed"
@@ -451,8 +451,8 @@ def test_save_project_docs_write_error_returns_error(workspace):
 def test_load_project_docs_detail_from_cache(workspace):
     """Lines 534-536: cached detail path."""
     _PROJECT_DOCS_CACHE["o/r"] = {"summary": "s", "detail": "d", "loaded_at": time.time()}
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_load_project_docs("detail", "o/r")
     assert result["detail"] == "d"
     assert result["summary"] is None
@@ -463,8 +463,8 @@ def test_load_project_docs_detail_from_disk(workspace):
     docs_dir = _gh_planner_docs_dir(workspace)
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_detail.md").write_text("disk_detail")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_load_project_docs("detail", "o/r")
     assert result["detail"] == "disk_detail"
     assert result["summary"] is None
@@ -476,8 +476,8 @@ def test_load_project_docs_all_from_disk(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("sum")
     (docs_dir / "project_detail.md").write_text("det")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_load_project_docs("all", "o/r")
     assert result["summary"] == "sum"
     assert result["detail"] == "det"
@@ -541,9 +541,9 @@ def test_analyze_repo_full_returns_file_index(workspace):
     mock_gh.list_repo_tree.return_value = tree
     mock_gh.get_file_content.side_effect = lambda p: f"# {p}\n"
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_analyze_repo_full("o/r")
 
     assert result["repo"] == "o/r"
@@ -566,9 +566,9 @@ def test_analyze_repo_full_skips_unchanged_by_sha(workspace):
     mock_gh.list_repo_tree.return_value = tree
     mock_gh.get_file_content.return_value = "x = 1"
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_analyze_repo_full("o/r")
 
     assert result["skipped_unchanged"] == 1
@@ -586,9 +586,9 @@ def test_analyze_repo_full_persists_hashes(workspace):
     mock_gh.list_repo_tree.return_value = tree
     mock_gh.get_file_content.return_value = "def f(): pass"
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         _do_analyze_repo_full("o/r")
 
     hashes = json.loads((_gh_planner_docs_dir(workspace) / "file_hashes.json").read_text())
@@ -596,16 +596,16 @@ def test_analyze_repo_full_persists_hashes(workspace):
 
 
 def test_analyze_repo_full_no_auth_returns_error(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner._get_github_client", return_value=(None, "No token")), \
-         patch("plugins.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner._get_github_client", return_value=(None, "No token")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_analyze_repo_full("o/r")
     assert result["error"] == "github_unavailable"
 
 
 def test_analyze_repo_full_no_repo_returns_error(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace), \
-         patch("plugins.github_planner.read_env", return_value={}):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={}):
         result = _do_analyze_repo_full(None)
     assert result["error"] == "repo_required"
 
@@ -613,7 +613,7 @@ def test_analyze_repo_full_no_repo_returns_error(workspace):
 # ── _do_get_session_header (#52) ──────────────────────────────────────────────
 
 def test_get_session_header_no_docs(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_get_session_header()
     assert result == {"docs": False}
 
@@ -623,7 +623,7 @@ def test_get_session_header_with_docs(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("# My Project\nsome text")
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_get_session_header()
 
     assert result["docs"] is True
@@ -642,7 +642,7 @@ def test_get_session_header_marks_stale_after_168h(workspace):
     import os
     os.utime(summary, (old_time, old_time))
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_get_session_header()
 
     assert result["stale"] is True
@@ -657,7 +657,7 @@ def test_get_session_header_is_cached(workspace):
         call_count += 1
         return workspace
 
-    with patch("plugins.github_planner.get_workspace_root", side_effect=counting_root):
+    with patch("extensions.github_planner.get_workspace_root", side_effect=counting_root):
         _do_get_session_header()
         _do_get_session_header()
     assert call_count == 1  # second call hits cache, no workspace lookup
@@ -666,12 +666,12 @@ def test_get_session_header_is_cached(workspace):
 # ── _do_list_issues compact mode (#52) ────────────────────────────────────────
 
 def test_list_issues_compact_returns_minimal_fields(workspace):
-    from plugins.github_planner.storage import write_issue_file, STATUS_PENDING
+    from extensions.github_planner.storage import write_issue_file, STATUS_PENDING
     write_issue_file(root=workspace, slug="foo-bar", title="Foo Bar", body="body",
                      assignees=[], labels=[], created_at=__import__("datetime").date(2026, 1, 1),
                      status=STATUS_PENDING)
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_list_issues(compact=True)
 
     issues = result["issues"]
@@ -680,12 +680,12 @@ def test_list_issues_compact_returns_minimal_fields(workspace):
 
 
 def test_list_issues_full_returns_all_fields(workspace):
-    from plugins.github_planner.storage import write_issue_file, STATUS_PENDING
+    from extensions.github_planner.storage import write_issue_file, STATUS_PENDING
     write_issue_file(root=workspace, slug="foo-bar", title="Foo Bar", body="body",
                      assignees=[], labels=[], created_at=__import__("datetime").date(2026, 1, 1),
                      status=STATUS_PENDING)
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_list_issues(compact=False)
 
     issues = result["issues"]
@@ -706,7 +706,7 @@ def test_analyze_repo_full_and_get_session_header_registered(workspace):
 
 # ── _parse_h2_sections + _do_lookup_feature_section ─────────────────────────
 
-from plugins.github_planner import _parse_h2_sections, _do_lookup_feature_section
+from extensions.github_planner import _parse_h2_sections, _do_lookup_feature_section
 
 
 def test_parse_h2_sections_basic():
@@ -730,7 +730,7 @@ def test_parse_h2_sections_h3_inside_section():
 
 
 def test_lookup_feature_section_no_detail_doc(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_lookup_feature_section("Issue Management")
     assert result["matched"] is False
     assert "project_detail.md not found" in result["reason"]
@@ -742,7 +742,7 @@ def test_lookup_feature_section_exact_match(workspace):
     (docs_dir / "project_detail.md").write_text(
         "## Issue Management\nrules A\n## Auth\nrules B"
     )
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_lookup_feature_section("Issue Management")
     assert result["matched"] is True
     assert result["feature"] == "Issue Management"
@@ -753,7 +753,7 @@ def test_lookup_feature_section_case_insensitive(workspace):
     docs_dir = _gh_planner_docs_dir(workspace)
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_detail.md").write_text("## Issue Management\nrules A")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_lookup_feature_section("issue management")
     assert result["matched"] is True
 
@@ -762,7 +762,7 @@ def test_lookup_feature_section_substring_match(workspace):
     docs_dir = _gh_planner_docs_dir(workspace)
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_detail.md").write_text("## Issue Management\nrules A")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_lookup_feature_section("issue")
     assert result["matched"] is True
     assert result["feature"] == "Issue Management"
@@ -772,7 +772,7 @@ def test_lookup_feature_section_no_match_returns_available(workspace):
     docs_dir = _gh_planner_docs_dir(workspace)
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_detail.md").write_text("## Auth\nrules")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_lookup_feature_section("Nonexistent Feature")
     assert result["matched"] is False
     assert "Auth" in result["available_features"]
@@ -783,7 +783,7 @@ def test_lookup_feature_section_includes_global_rules(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("# My Project\nGlobal rule 1")
     (docs_dir / "project_detail.md").write_text("## Auth\nrules")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_lookup_feature_section("Auth")
     assert result["matched"] is True
     assert "Global rule 1" in result["global_rules"]
@@ -795,7 +795,7 @@ def test_lookup_feature_section_uses_section_cache(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_detail.md").write_text("## Auth\nrules")
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         r1 = _do_lookup_feature_section("Auth")
         # Delete the file — second call must still succeed via cache
         (docs_dir / "project_detail.md").unlink()
@@ -811,7 +811,7 @@ def test_save_project_docs_clears_sections_cache(workspace):
     docs_dir.mkdir(parents=True)
     (workspace / "hub_agents").mkdir(exist_ok=True)
     (workspace / ".gitignore").write_text("")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         # Populate section cache via lookup
         (docs_dir / "project_detail.md").write_text("## Auth\nold rules")
         _do_lookup_feature_section("Auth")
@@ -828,13 +828,13 @@ def test_docs_exist_returns_sections(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("# P")
     (docs_dir / "project_detail.md").write_text("## Auth\nrules\n## Session\nmore")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_docs_exist()
     assert result["sections"] == ["Auth", "Session"]
 
 
 def test_docs_exist_sections_empty_when_no_detail(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_docs_exist()
     assert result["sections"] == []
 
@@ -844,7 +844,7 @@ def test_get_session_header_includes_sections(workspace):
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("# My Project\ntext")
     (docs_dir / "project_detail.md").write_text("## Issue Management\nr\n## Auth\nr")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_get_session_header()
     assert result["docs"] is True
     assert result["sections"] == ["Issue Management", "Auth"]
@@ -854,7 +854,7 @@ def test_get_session_header_no_detail_sections_empty(workspace):
     docs_dir = _gh_planner_docs_dir(workspace)
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("# My Project")
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_get_session_header()
     assert result["sections"] == []
 

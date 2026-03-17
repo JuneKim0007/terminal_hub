@@ -18,10 +18,12 @@
 4. If `github_repo` was set and auth is uncertain → call `check_auth` immediately.
    If not authenticated → follow `terminal-hub://workflow/auth`.
 
-5. Proceed to `terminal-hub://workflow/context` to reload any saved project context.
+5. Call `get_session_header` to check for existing project docs.
+   - `docs: true` → silently note the project title and sections
+   - `docs: false` → offer: "No project context yet. Run `/t-h:github-planner/analyze` to build it, or describe the project and I'll save it."
 
 ## Error cases
 
 | Response | Action |
 |----------|--------|
-| `setup_workspace` fails with any error | Report the error message verbatim, ask the user to check directory permissions |
+| `setup_workspace` fails | Report the error verbatim; ask user to check directory permissions |

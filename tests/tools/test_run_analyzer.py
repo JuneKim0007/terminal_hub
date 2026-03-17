@@ -41,8 +41,8 @@ def _mock_gh():
 
 def test_run_analyzer_success_writes_snapshot(workspace):
     """Lines 294-341: successful run writes analyzer_snapshot.json."""
-    with patch("plugins.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
-         patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
+         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -55,8 +55,8 @@ def test_run_analyzer_success_writes_snapshot(workspace):
 
 def test_run_analyzer_success_display_contains_repo(workspace):
     """Lines 326-335: display string mentions repo name."""
-    with patch("plugins.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
-         patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
+         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -65,8 +65,8 @@ def test_run_analyzer_success_display_contains_repo(workspace):
 
 def test_run_analyzer_success_snapshot_file_in_result(workspace):
     """Lines 337-341: result contains snapshot_file path."""
-    with patch("plugins.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
-         patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
+         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -78,8 +78,8 @@ def test_run_analyzer_success_snapshot_file_in_result(workspace):
 
 def test_run_analyzer_no_auth_returns_error(workspace):
     """Lines 302-303: GitHub client unavailable → github_unavailable error."""
-    with patch("plugins.github_planner._get_github_client", return_value=(None, "No auth.")), \
-         patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner._get_github_client", return_value=(None, "No auth.")), \
+         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -91,7 +91,7 @@ def test_run_analyzer_no_auth_returns_error(workspace):
 
 def test_run_analyzer_not_initialized_returns_needs_init(tmp_path):
     """Lines 297-299: hub_agents/ absent → needs_init status."""
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -105,8 +105,8 @@ def test_run_analyzer_github_api_error_returns_github_error(workspace):
     mock_gh = _mock_gh()
     mock_gh.list_issues.side_effect = Exception("API down")
 
-    with patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -119,8 +119,8 @@ def test_run_analyzer_github_list_labels_error_returns_github_error(workspace):
     mock_gh = _mock_gh()
     mock_gh.list_labels.side_effect = RuntimeError("labels endpoint down")
 
-    with patch("plugins.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -131,7 +131,7 @@ def test_run_analyzer_github_list_labels_error_returns_github_error(workspace):
 
 def test_run_analyzer_tool_is_registered(workspace):
     """Line 451: run_analyzer is available on the server tool list."""
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
     tool_names = [t.name for t in server._tool_manager.list_tools()]
     assert "run_analyzer" in tool_names

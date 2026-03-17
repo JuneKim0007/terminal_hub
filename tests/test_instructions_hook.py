@@ -80,7 +80,7 @@ def test_workflow_file_exists(filename):
     assert (_BUILTIN_DIR / filename).exists(), f"Missing: commands/builtin/{filename}"
 
 
-_PLUGIN_COMMANDS_DIR = Path(__file__).parent.parent / "plugins" / "github_planner" / "commands"
+_PLUGIN_COMMANDS_DIR = Path(__file__).parent.parent / "extensions" / "github_planner" / "commands"
 
 
 @pytest.mark.parametrize("filename", [
@@ -90,7 +90,7 @@ _PLUGIN_COMMANDS_DIR = Path(__file__).parent.parent / "plugins" / "github_planne
     "auth.md",
 ])
 def test_plugin_workflow_file_exists(filename):
-    assert (_PLUGIN_COMMANDS_DIR / filename).exists(), f"Missing: plugins/github_planner/commands/{filename}"
+    assert (_PLUGIN_COMMANDS_DIR / filename).exists(), f"Missing: extensions/github_planner/commands/{filename}"
 
 
 def test_workflow_init_resource_has_content(server):
@@ -116,7 +116,7 @@ def test_workflow_auth_resource_has_content(server):
 # ── _guidance field in tool responses ────────────────────────────────────────
 
 def test_needs_init_includes_guidance(tmp_path):
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         s = create_server()
         result = call(s, "list_issues", {})
     assert result["status"] == "needs_init"
@@ -133,13 +133,13 @@ def test_get_setup_status_uninitialised_includes_guidance(tmp_path):
 def test_github_unavailable_includes_guidance(tmp_path):
     import json
     from datetime import date
-    from plugins.github_planner.auth import TokenSource
-    from plugins.github_planner.storage import write_issue_file
+    from extensions.github_planner.auth import TokenSource
+    from extensions.github_planner.storage import write_issue_file
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
     write_issue_file(root=tmp_path, slug="x", title="x", body="y",
                      assignees=[], labels=[], created_at=date.today())
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path), \
-         patch("plugins.github_planner.resolve_token", return_value=(None, TokenSource.NONE)):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.github_planner.resolve_token", return_value=(None, TokenSource.NONE)):
         s = create_server()
         result = call(s, "submit_issue", {"slug": "x"})
     assert result["error"] == "github_unavailable"
@@ -147,9 +147,9 @@ def test_github_unavailable_includes_guidance(tmp_path):
 
 
 def test_check_auth_unauthenticated_includes_guidance(tmp_path):
-    from plugins.github_planner.auth import TokenSource
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path), \
-         patch("plugins.github_planner.resolve_token", return_value=(None, TokenSource.NONE)):
+    from extensions.github_planner.auth import TokenSource
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.github_planner.resolve_token", return_value=(None, TokenSource.NONE)):
         s = create_server()
         result = call(s, "check_auth", {})
     assert result["authenticated"] is False
@@ -157,8 +157,8 @@ def test_check_auth_unauthenticated_includes_guidance(tmp_path):
 
 
 def test_verify_auth_failure_includes_guidance(tmp_path):
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path), \
-         patch("plugins.github_planner.verify_gh_cli_auth", return_value=(False, "Not logged in")):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.github_planner.verify_gh_cli_auth", return_value=(False, "Not logged in")):
         s = create_server()
         result = call(s, "verify_auth", {})
     assert result["authenticated"] is False

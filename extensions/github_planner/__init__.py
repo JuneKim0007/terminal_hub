@@ -12,7 +12,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-from plugins.github_planner.storage import (
+from extensions.github_planner.storage import (
     IssueStatus,
     list_issue_files,
     read_doc_file,
@@ -24,8 +24,8 @@ from plugins.github_planner.storage import (
     write_doc_file,
     write_issue_file,
 )
-from plugins.github_planner.client import GitHubClient, GitHubError, load_default_labels
-from plugins.github_planner.auth import get_auth_options, resolve_token, verify_gh_cli_auth
+from extensions.github_planner.client import GitHubClient, GitHubError, load_default_labels
+from extensions.github_planner.auth import get_auth_options, resolve_token, verify_gh_cli_auth
 from terminal_hub.env_store import read_env
 from terminal_hub.errors import msg
 from terminal_hub.slugify import slugify
@@ -323,7 +323,7 @@ def _do_get_project_context(doc_key: str) -> dict:
 
 
 def _do_run_analyzer() -> dict:
-    from plugins.github_planner.analyzer import (
+    from extensions.github_planner.analyzer import (
         process_snapshot, write_snapshot, summarize_for_prompt, snapshot_age_hours, load_snapshot
     )
     root = get_workspace_root()
@@ -468,7 +468,7 @@ def _do_fetch_analysis_batch(repo: str | None = None, batch_size: int = 5) -> di
                 files_out.append({"path": path, "content": content, "is_markdown": is_md})
                 state["analyzed"].append({"path": path, "is_markdown": is_md})
             except Exception as exc:
-                from plugins.github_planner.client import GitHubError
+                from extensions.github_planner.client import GitHubError
                 reason = getattr(exc, "error_code", "unknown")
                 state["skipped"].append({"path": path, "reason": reason})
 

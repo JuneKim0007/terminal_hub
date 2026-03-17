@@ -10,7 +10,7 @@ from types import TracebackType
 
 import httpx
 
-from plugins.github_planner.commands import endpoint
+from extensions.github_planner.commands import endpoint
 from terminal_hub.errors import msg
 
 _LABELS_FILE = Path(__file__).parent / "labels.json"

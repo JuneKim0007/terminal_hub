@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from terminal_hub.server import create_server
-from plugins.github_planner import get_github_client, get_workspace_root
+from extensions.github_planner import get_github_client, get_workspace_root
 
 
 # ── get_workspace_root ────────────────────────────────────────────────────────
@@ -20,17 +20,17 @@ def test_get_workspace_root_returns_path():
 # ── get_github_client ─────────────────────────────────────────────────────────
 
 def test_get_github_client_no_token_returns_none():
-    from plugins.github_planner.auth import TokenSource
-    with patch("plugins.github_planner.resolve_token", return_value=(None, TokenSource.NONE)):
+    from extensions.github_planner.auth import TokenSource
+    with patch("extensions.github_planner.resolve_token", return_value=(None, TokenSource.NONE)):
         client, msg = get_github_client()
     assert client is None
     assert "check_auth" in msg
 
 
 def test_get_github_client_success():
-    from plugins.github_planner.auth import TokenSource
-    with patch("plugins.github_planner.resolve_token", return_value=("tok", TokenSource.ENV)), \
-         patch("plugins.github_planner.detect_repo", return_value="owner/repo"):
+    from extensions.github_planner.auth import TokenSource
+    with patch("extensions.github_planner.resolve_token", return_value=("tok", TokenSource.ENV)), \
+         patch("extensions.github_planner.detect_repo", return_value="owner/repo"):
         client, msg = get_github_client()
     assert client is not None
     assert msg == ""
@@ -38,9 +38,9 @@ def test_get_github_client_success():
 
 
 def test_get_github_client_no_repo_returns_error():
-    from plugins.github_planner.auth import TokenSource
-    with patch("plugins.github_planner.resolve_token", return_value=("tok", TokenSource.ENV)), \
-         patch("plugins.github_planner.detect_repo", return_value=None):
+    from extensions.github_planner.auth import TokenSource
+    with patch("extensions.github_planner.resolve_token", return_value=("tok", TokenSource.ENV)), \
+         patch("extensions.github_planner.detect_repo", return_value=None):
         client, msg = get_github_client()
     assert client is None
     assert "setup_workspace" in msg
@@ -49,7 +49,7 @@ def test_get_github_client_no_repo_returns_error():
 # ── terminal_hub_instructions prompt ─────────────────────────────────────────
 
 def test_server_instructions_on_demand_message(tmp_path):
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
     assert "terminal-hub connected" in server.instructions
 
@@ -59,8 +59,8 @@ def test_server_instructions_on_demand_message(tmp_path):
 def test_draft_issue_local_write_failure_returns_error(tmp_path):
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
 
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path), \
-         patch("plugins.github_planner.write_issue_file", side_effect=OSError("disk full")):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.github_planner.write_issue_file", side_effect=OSError("disk full")):
         server = create_server()
         result = asyncio.run(server._tool_manager.call_tool(
             "draft_issue", {"title": "x", "body": "y"}
@@ -73,7 +73,7 @@ def test_draft_issue_local_write_failure_returns_error(tmp_path):
 # ── ensure_initialized guard ──────────────────────────────────────────────────
 
 def test_tools_return_needs_init_when_hub_agents_missing(tmp_path):
-    with patch("plugins.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
         result = asyncio.run(server._tool_manager.call_tool("list_issues", {}))
     assert result["status"] == "needs_init"

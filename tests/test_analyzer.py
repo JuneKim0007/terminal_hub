@@ -1,9 +1,9 @@
-"""Tests for plugins.github_planner.analyzer — pure functions and I/O helpers."""
+"""Tests for extensions.github_planner.analyzer — pure functions and I/O helpers."""
 import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import pytest
-from plugins.github_planner.analyzer import (
+from extensions.github_planner.analyzer import (
     extract_label_patterns, extract_assignee_patterns, extract_body_structure,
     extract_title_prefixes, process_snapshot, load_snapshot, write_snapshot,
     snapshot_age_hours, summarize_for_prompt, _strip_code_blocks,

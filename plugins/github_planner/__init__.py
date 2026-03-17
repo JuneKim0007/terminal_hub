@@ -7,6 +7,7 @@ import ast
 import hashlib
 import json
 import os
+import re
 import time
 from datetime import date
 from pathlib import Path
@@ -48,7 +49,12 @@ _ANALYSIS_CACHE: dict[str, dict] = {}
 
 _PROJECT_DOCS_CACHE: dict[str, dict] = {}
 # Key: "owner/repo"
-# {"summary": str | None, "detail": str | None, "loaded_at": float}
+# {
+#   "summary":    str | None,
+#   "detail":     str | None,
+#   "_sections":  dict[str, str] | None,  # parsed H2 sections of detail
+#   "loaded_at":  float,
+# }
 
 # ── Guidance URIs ─────────────────────────────────────────────────────────────
 _G_INIT    = "terminal-hub://workflow/init"
@@ -523,9 +529,11 @@ def _do_save_project_docs(summary_md: str, detail_md: str, repo: str | None = No
             return {"error": "write_failed", "message": str(exc), "_hook": None}
 
     resolved = _resolve_repo(repo) or "unknown"
+    # Reset cache fully (sections may have changed)
     _PROJECT_DOCS_CACHE[resolved] = {
         "summary": summary_md,
         "detail": detail_md,
+        "_sections": None,  # will be re-parsed on next lookup_feature_section call
         "loaded_at": time.time(),
     }
     # #61 — invalidate session header so next call reflects fresh docs
@@ -581,10 +589,113 @@ def _do_docs_exist(repo: str | None = None) -> dict:
     if summary_exists:
         age_hours = (time.time() - summary_path.stat().st_mtime) / 3600
 
+    # Surface section headings so callers can decide which section to load
+    sections: list[str] = []
+    if detail_exists:
+        text = detail_path.read_text(encoding="utf-8")
+        sections = list(_parse_h2_sections(text).keys())
+
     return {
         "summary_exists": summary_exists,
         "detail_exists": detail_exists,
         "summary_age_hours": age_hours,
+        "sections": sections,
+    }
+
+
+# ── Section-level helpers ─────────────────────────────────────────────────────
+
+
+def _parse_h2_sections(text: str) -> dict[str, str]:
+    """Parse markdown text into {heading: content} for every H2 section."""
+    sections: dict[str, str] = {}
+    current_heading: str | None = None
+    current_lines: list[str] = []
+    for line in text.splitlines():
+        m = re.match(r"^##\s+(.+)", line)
+        if m:
+            if current_heading is not None:
+                sections[current_heading] = "\n".join(current_lines).strip()
+            current_heading = m.group(1).strip()
+            current_lines = []
+        else:
+            if current_heading is not None:
+                current_lines.append(line)
+    if current_heading is not None:
+        sections[current_heading] = "\n".join(current_lines).strip()
+    return sections
+
+
+def _do_lookup_feature_section(feature: str, repo: str | None = None) -> dict:
+    """Return the project_detail.md section whose H2 heading best matches `feature`.
+
+    Matching order: exact → substring → first prefix match.
+    Also returns global_rules from project_summary.md and the full list of
+    available feature headings so Claude can suggest adding a missing section.
+    """
+    resolved = _resolve_repo(repo) or "unknown"
+    entry = _PROJECT_DOCS_CACHE.setdefault(resolved, {})
+
+    # --- section cache ---
+    sections: dict[str, str] | None = entry.get("_sections")
+    if sections is None:
+        root = get_workspace_root()
+        docs_dir = _gh_planner_docs_dir(root)
+        detail_path = docs_dir / "project_detail.md"
+        if not detail_path.exists():
+            return {
+                "matched": False,
+                "available_features": [],
+                "reason": "project_detail.md not found — run analyze or save_project_docs first",
+            }
+        sections = _parse_h2_sections(detail_path.read_text(encoding="utf-8"))
+        entry["_sections"] = sections
+
+    available = list(sections.keys())
+    feature_lower = feature.lower()
+
+    matched_key: str | None = None
+    # 1. exact
+    for k in sections:
+        if k.lower() == feature_lower:
+            matched_key = k
+            break
+    # 2. substring
+    if matched_key is None:
+        for k in sections:
+            if feature_lower in k.lower() or k.lower() in feature_lower:
+                matched_key = k
+                break
+    # 3. first-word prefix
+    if matched_key is None:
+        first_word = feature_lower.split()[0] if feature_lower.split() else ""
+        for k in sections:
+            if first_word and k.lower().startswith(first_word):
+                matched_key = k
+                break
+
+    # --- global rules (project_summary.md, cached) ---
+    global_rules: str | None = entry.get("summary")
+    if global_rules is None:
+        root = get_workspace_root()
+        sp = _gh_planner_docs_dir(root) / "project_summary.md"
+        if sp.exists():
+            global_rules = sp.read_text(encoding="utf-8")
+            entry["summary"] = global_rules
+
+    if matched_key is None:
+        return {
+            "matched": False,
+            "available_features": available,
+            "global_rules": global_rules,
+        }
+
+    return {
+        "matched": True,
+        "feature": matched_key,
+        "section": sections[matched_key],
+        "global_rules": global_rules,
+        "available_features": available,
     }
 
 
@@ -770,10 +881,11 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
 # ── get_session_header ─────────────────────────────────────────────────────────
 
 def _do_get_session_header() -> dict:
-    """Return a ≤80-token context blob for session start. Cached after first call.
+    """Return a ≤120-token context blob for session start. Cached after first call.
 
-    Tells Claude whether project docs exist, how fresh they are, and a one-line
-    summary title. Claude loads the full summary only when planning context is needed.
+    Tells Claude whether project docs exist, how fresh they are, a one-line
+    summary title, and the list of feature-area sections in project_detail.md.
+    Claude loads full summary/section only when planning context is needed.
     """
     if _SESSION_HEADER_CACHE:
         return _SESSION_HEADER_CACHE
@@ -781,6 +893,7 @@ def _do_get_session_header() -> dict:
     root = get_workspace_root()
     docs_dir = _gh_planner_docs_dir(root)
     summary_path = docs_dir / "project_summary.md"
+    detail_path = docs_dir / "project_detail.md"
 
     if not summary_path.exists():
         _SESSION_HEADER_CACHE.update({"docs": False})
@@ -789,11 +902,17 @@ def _do_get_session_header() -> dict:
     age_h = (time.time() - summary_path.stat().st_mtime) / 3600
     first_line = summary_path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
 
+    # Surface section index so Claude knows which feature areas have detail
+    sections: list[str] = []
+    if detail_path.exists():
+        sections = list(_parse_h2_sections(detail_path.read_text(encoding="utf-8")).keys())
+
     _SESSION_HEADER_CACHE.update({
         "docs": True,
         "age_hours": round(age_h, 1),
         "title": first_line,
         "stale": age_h > 168,
+        "sections": sections,
     })
     return _SESSION_HEADER_CACHE
 
@@ -977,9 +1096,28 @@ def register(mcp) -> None:
     def docs_exist(repo: str | None = None) -> dict:
         """Check whether project_summary.md and project_detail.md exist on disk.
 
-        Returns {summary_exists, detail_exists, summary_age_hours}.
+        Returns {summary_exists, detail_exists, summary_age_hours, sections}.
+        sections: list of H2 headings from project_detail.md — use to decide
+        whether a relevant feature section exists before calling lookup_feature_section.
         """
         return _do_docs_exist(repo)
+
+    @mcp.tool()
+    def lookup_feature_section(feature: str, repo: str | None = None) -> dict:
+        """Return the project_detail.md section whose heading best matches `feature`.
+
+        Matching order: exact → substring → prefix. Uses section-level cache so
+        only the matching section (not the full detail doc) is returned to Claude.
+
+        Returns:
+          matched=True:  {feature, section, global_rules, available_features}
+          matched=False: {available_features, global_rules, reason?}
+
+        Call this BEFORE drafting any issue body when project_detail.md exists.
+        If matched=False, show available_features and ask the user whether to add
+        rules for this feature before proceeding.
+        """
+        return _do_lookup_feature_section(feature, repo)
 
     # ── Efficient single-call repo analysis ────────────────────────────────────
 

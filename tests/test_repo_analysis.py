@@ -658,9 +658,12 @@ def test_get_session_header_is_cached(workspace):
         return workspace
 
     with patch("extensions.github_planner.get_workspace_root", side_effect=counting_root):
-        _do_get_session_header()
-        _do_get_session_header()
-    assert call_count == 1  # second call hits cache, no workspace lookup
+        result1 = _do_get_session_header()
+        result2 = _do_get_session_header()
+    # After #94, get_workspace_root() is called each time to build the cache key
+    # (cheap); expensive file I/O is cached — both calls return the same object
+    assert call_count == 2
+    assert result1 is result2
 
 
 # ── _do_list_issues compact mode (#52) ────────────────────────────────────────
@@ -676,7 +679,8 @@ def test_list_issues_compact_returns_minimal_fields(workspace):
 
     issues = result["issues"]
     assert len(issues) == 1
-    assert set(issues[0].keys()) == {"slug", "title", "status"}
+    # local_only is included for pending (unsubmitted) issues (#102)
+    assert set(issues[0].keys()) == {"slug", "title", "status", "local_only"}
 
 
 def test_list_issues_full_returns_all_fields(workspace):
@@ -692,6 +696,103 @@ def test_list_issues_full_returns_all_fields(workspace):
     assert len(issues) == 1
     assert "slug" in issues[0]
     assert "title" in issues[0]
+    # local_only flag is set for unsubmitted issues (#102)
+    assert issues[0]["local_only"] is True
+
+
+# ── _do_list_pending_drafts (#102) ────────────────────────────────────────────
+
+def test_list_pending_drafts_returns_unsubmitted(workspace):
+    from extensions.github_planner import _do_list_pending_drafts
+    from extensions.github_planner.storage import write_issue_file, STATUS_PENDING, STATUS_OPEN
+    import datetime
+    write_issue_file(root=workspace, slug="draft-one", title="Draft One", body="body",
+                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_PENDING)
+    # Write an issue with a github number (submitted)
+    write_issue_file(root=workspace, slug="submitted", title="Submitted", body="body",
+                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 2),
+                     status=STATUS_OPEN, issue_number=42)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_list_pending_drafts()
+
+    assert result["count"] == 1
+    assert result["pending_drafts"][0]["slug"] == "draft-one"
+
+
+def test_list_pending_drafts_empty_when_all_submitted(workspace):
+    from extensions.github_planner import _do_list_pending_drafts
+    from extensions.github_planner.storage import write_issue_file, STATUS_OPEN
+    import datetime
+    write_issue_file(root=workspace, slug="submitted", title="Done", body="body",
+                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_OPEN, issue_number=7)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_list_pending_drafts()
+
+    assert result["count"] == 0
+    assert result["pending_drafts"] == []
+
+
+def test_list_issues_submitted_has_no_local_only(workspace):
+    from extensions.github_planner.storage import write_issue_file, STATUS_OPEN
+    import datetime
+    write_issue_file(root=workspace, slug="gh-issue", title="On GitHub", body="body",
+                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_OPEN, issue_number=99)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_list_issues(compact=False)
+
+    assert "local_only" not in result["issues"][0]
+
+
+# ── _do_generate_issue_workflows (#88) ────────────────────────────────────────
+
+def test_generate_issue_workflows_appends_scaffold(workspace):
+    from extensions.github_planner import _do_generate_issue_workflows
+    from extensions.github_planner.storage import write_issue_file, STATUS_PENDING
+    import datetime
+    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug", body="Repro steps here.",
+                     assignees=[], labels=["bug"], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_PENDING)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_generate_issue_workflows("fix-bug")
+
+    assert result["updated"] is True
+    content = (workspace / "hub_agents" / "issues" / "fix-bug.md").read_text()
+    assert "## Agent Workflow" in content
+    assert "## Program Workflow" in content
+    assert "bug fix" in content
+
+
+def test_generate_issue_workflows_idempotent(workspace):
+    from extensions.github_planner import _do_generate_issue_workflows
+    from extensions.github_planner.storage import write_issue_file, STATUS_PENDING
+    import datetime
+    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug", body="body",
+                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_PENDING)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_generate_issue_workflows("fix-bug")
+        result2 = _do_generate_issue_workflows("fix-bug")
+
+    assert result2["updated"] is False
+    assert "already present" in result2["message"]
+
+
+def test_generate_issue_workflows_unknown_slug(workspace):
+    from extensions.github_planner import _do_generate_issue_workflows
+    (workspace / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_generate_issue_workflows("nonexistent-slug")
+
+    assert result["error"] == "issue_not_found"
 
 
 # ── new tools are registered (#52/#53) ────────────────────────────────────────

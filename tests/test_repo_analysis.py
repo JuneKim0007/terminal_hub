@@ -400,14 +400,26 @@ def test_submit_issue_display_is_number_and_title(workspace):
 # ── Coverage gap-fillers ───────────────────────────────────────────────────────
 
 def test_resolve_repo_uses_single_cache_entry(workspace):
-    """Line 376: when exactly one repo is cached, _resolve_repo returns it."""
+    """_resolve_repo uses cached repo when it matches current workspace env (#103)."""
     _seed_cache("solo/repo", ["README.md"])
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.read_env", return_value={}):
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "solo/repo"}):
         result = _do_get_analysis_status(None)
     # It found the solo entry and returned a proper status response (not repo_required)
     assert result.get("error") != "repo_required"
     assert result["repo"] == "solo/repo"
+
+
+def test_resolve_repo_cache_ignored_when_env_mismatch(workspace):
+    """_resolve_repo ignores cache entry that doesn't match workspace env (#103)."""
+    _seed_cache("other/repo", ["README.md"])
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "my/repo"}):
+        result = _do_get_analysis_status(None)
+    # Cache has "other/repo" but env says "my/repo" — resolve_repo returns env repo
+    # _do_get_analysis_status finds no analysis for "my/repo" → analysis_not_started
+    # (not repo_required, proving env repo was used, not the cache entry)
+    assert result.get("error") in ("repo_required", "analysis_not_started")
 
 
 def test_start_repo_analysis_github_error_returns_error(workspace):

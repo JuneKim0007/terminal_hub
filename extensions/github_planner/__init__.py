@@ -591,14 +591,22 @@ def _gh_planner_docs_dir(root: Path) -> Path:
 
 
 def _resolve_repo(repo: str | None) -> str | None:
-    """Return explicit repo or fall back to env / single cached entry."""
+    """Return explicit repo or fall back to env / single cached entry.
+
+    Cache heuristic is guarded: only returns a cached key if it matches the
+    current workspace env (prevents cross-plugin contamination, #103).
+    """
     if repo:
         return repo
-    if len(_ANALYSIS_CACHE) == 1:
-        return next(iter(_ANALYSIS_CACHE))
     root = get_workspace_root()
     env = read_env(root)
-    return env.get("GITHUB_REPO")
+    env_repo = env.get("GITHUB_REPO")
+    # Use cache only if the single entry matches the current workspace repo (#103)
+    if len(_ANALYSIS_CACHE) == 1:
+        cached_repo = next(iter(_ANALYSIS_CACHE))
+        if env_repo and cached_repo == env_repo:
+            return cached_repo
+    return env_repo
 
 
 # ── Repo analysis tools ────────────────────────────────────────────────────────

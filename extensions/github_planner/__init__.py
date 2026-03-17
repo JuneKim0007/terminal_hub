@@ -1306,7 +1306,17 @@ def _do_list_issues(compact: bool = False) -> dict:
         issues = [{"slug": i["slug"], "title": i["title"], "status": i["status"],
                    **({"local_only": True} if i.get("local_only") else {})}
                   for i in issues]
-    return {"issues": issues}
+    result: dict = {"issues": issues}
+    # Hint to sync if cache is stale (#113)
+    if _issues_cache_stale(root):
+        result["_suggest_sync"] = (
+            "Issue cache is empty or stale. Call sync_github_issues() to fetch "
+            "the latest issues from GitHub at ~30 tokens/issue instead of ~150."
+        )
+    # Unload suggestion when session caches are heavy (#113)
+    if hint := _check_suggest_unload():
+        result["_suggest_unload"] = hint
+    return result
 
 
 def _do_list_pending_drafts() -> dict:
@@ -1322,6 +1332,165 @@ def _do_list_pending_drafts() -> dict:
         if not i.get("issue_number")
     ]
     return {"pending_drafts": pending, "count": len(pending)}
+
+
+# ── GitHub issues sync (#113) ─────────────────────────────────────────────────
+
+_ISSUES_SYNC_TTL = 3600  # seconds — cache considered stale after 1 hour
+
+
+def _check_suggest_unload() -> str | None:
+    """Return an unload suggestion string when session caches are heavy.
+
+    Triggered when analysis, project docs, AND label caches are all populated.
+    """
+    if _ANALYSIS_CACHE and _PROJECT_DOCS_CACHE and _LABEL_CACHE:
+        return (
+            "Context is getting heavy. Say 'unload github issue manager' to free memory "
+            "and keep things fast, or continue working."
+        )
+    return None
+
+
+def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
+    """Fetch issues from GitHub API and write to hub_agents/issues/ as local .md files (#113).
+
+    Uses Python to fetch all issues (paginated), skipping unchanged ones.
+    Records issues_synced_at in github_local_config.json.
+
+    Returns {synced, skipped, total, _display}.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    valid_states = {"open", "closed", "all"}
+    if state not in valid_states:
+        return {"error": "invalid_state", "message": f"state must be one of {sorted(valid_states)}"}
+
+    gh, error_message = get_github_client()
+    if gh is None:
+        return {"error": "github_unavailable", "message": error_message, "_guidance": _G_AUTH}
+
+    with gh:
+        try:
+            raw_issues = gh.list_issues_all(state=state)
+        except Exception as exc:
+            return {"error": "github_error", "message": str(exc)}
+
+    issues_dir = root / "hub_agents" / "issues"
+    issues_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build lookup of existing local files by issue_number for skip check
+    existing_by_number: dict[int, dict] = {}
+    for existing in list_issue_files(root):
+        num = existing.get("issue_number")
+        if num:
+            existing_by_number[num] = existing
+
+    synced = 0
+    skipped = 0
+
+    for raw in raw_issues:
+        # Skip pull requests (GitHub returns PRs in issues endpoint)
+        if raw.get("pull_request"):
+            continue
+
+        number = raw.get("number")
+        title = raw.get("title", "")
+        body = raw.get("body") or ""
+        issue_state = raw.get("state", "open")
+        labels = [l["name"] for l in raw.get("labels", [])]
+        assignees = [a["login"] for a in raw.get("assignees", [])]
+        created_at_str = raw.get("created_at", "")
+        updated_at_str = raw.get("updated_at", "")
+        github_url = raw.get("html_url", "")
+
+        # Build slug: {number}-{slugified-title}
+        base_slug = f"{number}-{slugify(title)}" if number else slugify(title)
+        if not base_slug:
+            base_slug = str(number or "unknown")
+
+        # Skip if already exists and not refreshing and not changed
+        if not refresh and number in existing_by_number:
+            existing = existing_by_number[number]
+            # Read existing file to check updated_at
+            existing_path = issues_dir / f"{existing['slug']}.md"
+            if existing_path.exists():
+                content = existing_path.read_text(encoding="utf-8")
+                if updated_at_str and updated_at_str in content:
+                    skipped += 1
+                    continue
+
+        # Map GitHub state to IssueStatus
+        issue_status = IssueStatus.OPEN if issue_state == "open" else IssueStatus.CLOSED
+
+        # Parse created_at date
+        try:
+            import datetime as _dt
+            created_date = _dt.datetime.fromisoformat(
+                created_at_str.replace("Z", "+00:00")
+            ).date()
+        except (ValueError, AttributeError):
+            created_date = date.today()
+
+        # Build body with metadata footer
+        body_with_meta = body
+        if updated_at_str:
+            body_with_meta = f"{body}\n\n<!-- synced_at: {updated_at_str} -->"
+
+        # Use fixed slug: number-title to avoid collisions with re-syncs
+        slug = base_slug
+        # If a different slug exists for this number, reuse it
+        if number in existing_by_number:
+            slug = existing_by_number[number]["slug"]
+
+        write_issue_file(
+            root=root,
+            slug=slug,
+            title=title,
+            body=body_with_meta,
+            assignees=assignees,
+            labels=labels,
+            created_at=created_date,
+            status=issue_status,
+            issue_number=number,
+            github_url=github_url,
+        )
+        synced += 1
+
+    # Record sync timestamp in github_local_config.json
+    _do_save_github_local_config({"issues_synced_at": time.time(), "issues_state": state})
+
+    total = len(raw_issues)
+    env = read_env(root)
+    repo = env.get("GITHUB_REPO", "unknown")
+    return {
+        "synced": synced,
+        "skipped": skipped,
+        "total": total,
+        "state": state,
+        "_display": (
+            f"✓ Synced {synced} issue(s) from {repo} ({state})\n"
+            f"  Skipped {skipped} unchanged | Total fetched: {total}\n"
+            f"  Stored in hub_agents/issues/"
+        ),
+    }
+
+
+def _issues_cache_stale(root: Path) -> bool:
+    """Return True if local issue cache is empty or older than _ISSUES_SYNC_TTL."""
+    config_path = _local_config_path(root)
+    if not config_path.exists():
+        return True
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        synced_at = data.get("issues_synced_at")
+        if not synced_at:
+            return True
+        return (time.time() - float(synced_at)) > _ISSUES_SYNC_TTL
+    except (json.JSONDecodeError, OSError, ValueError):
+        return True
 
 
 # ── Existing docs detection (#84) ─────────────────────────────────────────────
@@ -1851,8 +2020,24 @@ def register(mcp) -> None:
         """Return tracked issues from local hub_agents/issues/ files.
         compact=True: returns [{slug, title, status}] only (~3× fewer tokens).
         compact=False (default): returns full issue metadata.
-        Issues never submitted to GitHub are marked with local_only: true (#102)."""
+        Issues never submitted to GitHub are marked with local_only: true (#102).
+        If cache is stale, _suggest_sync hints to call sync_github_issues() first (#113)."""
         return _do_list_issues(compact)
+
+    @mcp.tool()
+    def sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
+        """Fetch GitHub issues and cache them locally as .md files (#113).
+
+        Python fetches all issues (paginated) and writes to hub_agents/issues/.
+        ~30 tokens/issue vs ~150 tokens if Claude were to relay raw API responses.
+
+        state: 'open' (default), 'closed', or 'all'
+        refresh: True to re-fetch all issues even if unchanged (default: skip unchanged)
+
+        Returns {synced, skipped, total, _display}.
+        After syncing, call list_issues() to read the cached results.
+        """
+        return _do_sync_github_issues(state, refresh)
 
     @mcp.tool()
     def list_pending_drafts() -> dict:

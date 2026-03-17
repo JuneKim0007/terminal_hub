@@ -1481,3 +1481,205 @@ def test_global_config_not_in_volatile_files():
 def test_local_config_in_volatile_files():
     from extensions.github_planner import _GH_PLANNER_VOLATILE_FILES
     assert "github_local_config.json" in _GH_PLANNER_VOLATILE_FILES
+
+
+# ── sync_github_issues / _check_suggest_unload (#113) ─────────────────────────
+
+def _make_raw_issue(number=1, title="Fix bug", state="open", updated_at=None, labels=None, is_pr=False):
+    raw = {
+        "number": number,
+        "title": title,
+        "body": "Issue body.",
+        "state": state,
+        "labels": [{"name": l} for l in (labels or [])],
+        "assignees": [],
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": updated_at or "2026-01-02T00:00:00Z",
+        "html_url": f"https://github.com/owner/repo/issues/{number}",
+    }
+    if is_pr:
+        raw["pull_request"] = {"url": "..."}
+    return raw
+
+
+def test_sync_github_issues_writes_local_files(workspace):
+    from extensions.github_planner import _do_sync_github_issues
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_issues_all.return_value = [
+        _make_raw_issue(1, "Fix auth bug"),
+        _make_raw_issue(2, "Add dark mode"),
+    ]
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
+        result = _do_sync_github_issues()
+
+    assert result.get("error") is None
+    assert result["synced"] == 2
+    issues_dir = workspace / "hub_agents" / "issues"
+    assert issues_dir.exists()
+    assert len(list(issues_dir.glob("*.md"))) == 2
+
+
+def test_sync_github_issues_skips_pull_requests(workspace):
+    from extensions.github_planner import _do_sync_github_issues
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_issues_all.return_value = [
+        _make_raw_issue(1, "Real issue"),
+        _make_raw_issue(2, "A PR", is_pr=True),
+    ]
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
+        result = _do_sync_github_issues()
+
+    assert result["synced"] == 1
+    assert result["total"] == 2  # total includes the PR in raw count
+
+
+def test_sync_github_issues_skips_unchanged(workspace):
+    from extensions.github_planner import _do_sync_github_issues
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    updated_at = "2026-01-02T00:00:00Z"
+    raw = _make_raw_issue(1, "Fix bug", updated_at=updated_at)
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_issues_all.return_value = [raw]
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
+        # First sync writes the file
+        _do_sync_github_issues()
+        # Second sync should skip unchanged
+        result = _do_sync_github_issues()
+
+    assert result["skipped"] == 1
+    assert result["synced"] == 0
+
+
+def test_sync_github_issues_refresh_forces_rewrite(workspace):
+    from extensions.github_planner import _do_sync_github_issues
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    raw = _make_raw_issue(1, "Fix bug", updated_at="2026-01-02T00:00:00Z")
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_issues_all.return_value = [raw]
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
+        _do_sync_github_issues()
+        result = _do_sync_github_issues(refresh=True)
+
+    assert result["synced"] == 1
+    assert result["skipped"] == 0
+
+
+def test_sync_github_issues_invalid_state(workspace):
+    from extensions.github_planner import _do_sync_github_issues
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_sync_github_issues(state="unknown")
+
+    assert result["error"] == "invalid_state"
+
+
+def test_sync_github_issues_no_auth(workspace):
+    from extensions.github_planner import _do_sync_github_issues
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(None, "No token")):
+        result = _do_sync_github_issues()
+
+    assert result["error"] == "github_unavailable"
+
+
+def test_sync_github_issues_records_synced_at(workspace):
+    from extensions.github_planner import _do_sync_github_issues
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_issues_all.return_value = [_make_raw_issue(1, "Test")]
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
+        _do_sync_github_issues()
+
+    config_path = workspace / "hub_agents" / "extensions" / "gh_planner" / "github_local_config.json"
+    assert config_path.exists()
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    assert "issues_synced_at" in data
+
+
+def test_check_suggest_unload_all_caches(workspace):
+    from extensions.github_planner import _check_suggest_unload, _ANALYSIS_CACHE, _PROJECT_DOCS_CACHE, _LABEL_CACHE
+    _ANALYSIS_CACHE["key"] = {"data": "x"}
+    _PROJECT_DOCS_CACHE["key"] = {"data": "x"}
+    _LABEL_CACHE["key"] = {"data": "x"}
+    result = _check_suggest_unload()
+    assert result is not None
+    assert "unload" in result.lower()
+
+
+def test_check_suggest_unload_partial_caches():
+    from extensions.github_planner import _check_suggest_unload, _ANALYSIS_CACHE, _PROJECT_DOCS_CACHE, _LABEL_CACHE
+    # Only analysis cache populated — should not suggest
+    _ANALYSIS_CACHE["key"] = {"data": "x"}
+    result = _check_suggest_unload()
+    assert result is None
+
+
+def test_list_issues_suggest_sync_when_stale(workspace):
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        result = _do_list_issues()
+
+    # No github_local_config.json → cache is stale
+    assert "_suggest_sync" in result
+
+
+def test_list_issues_no_suggest_sync_when_fresh(workspace):
+    from extensions.github_planner import _do_save_github_local_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+
+    # Write a fresh synced_at timestamp
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_save_github_local_config({"issues_synced_at": time.time()})
+        result = _do_list_issues()
+
+    assert "_suggest_sync" not in result
+
+
+def test_list_issues_suggest_unload_when_heavy(workspace):
+    from extensions.github_planner import _ANALYSIS_CACHE, _PROJECT_DOCS_CACHE, _LABEL_CACHE, _do_save_github_local_config
+    (workspace / "hub_agents").mkdir(parents=True, exist_ok=True)
+    _ANALYSIS_CACHE["k"] = {}
+    _PROJECT_DOCS_CACHE["k"] = {}
+    _LABEL_CACHE["k"] = {}
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_save_github_local_config({"issues_synced_at": time.time()})
+        result = _do_list_issues()
+
+    assert "_suggest_unload" in result

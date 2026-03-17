@@ -147,6 +147,14 @@ _GITHUB_DEFAULT_LABEL_NAMES = frozenset({
 _LABEL_ACTIVE_DAYS = 30  # labels created within this many days are considered "active"
 
 
+def _global_config_path(root: Path) -> Path:
+    return root / "hub_agents" / "github_global_config.json"
+
+
+def _local_config_path(root: Path) -> Path:
+    return _gh_planner_docs_dir(root) / "github_local_config.json"
+
+
 # ── Internal alias for analyzer ───────────────────────────────────────────────
 _get_github_client = get_github_client
 
@@ -1477,7 +1485,7 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
     # Save to disk
     docs_dir = _gh_planner_docs_dir(root)
     docs_dir.mkdir(parents=True, exist_ok=True)
-    config_path = docs_dir / "github_local_config.json"
+    config_path = _local_config_path(root)
 
     existing: dict = {}
     if config_path.exists():
@@ -1523,7 +1531,7 @@ def _do_load_github_local_config() -> dict:
     if err := ensure_initialized(root):
         return err
 
-    config_path = _gh_planner_docs_dir(root) / "github_local_config.json"
+    config_path = _local_config_path(root)
     if not config_path.exists():
         return {"labels": None, "fetched_at": None}
 
@@ -1539,6 +1547,108 @@ def _do_load_github_local_config() -> dict:
         }
     except (json.JSONDecodeError, OSError):
         return {"labels": None, "fetched_at": None}
+
+
+# ── Global / local config (#80) ───────────────────────────────────────────────
+
+_GLOBAL_CONFIG_DEFAULTS: dict = {
+    "auth": {"method": "none", "username": None},
+    "default_repo": None,
+    "rate_limit_remaining": None,
+    "last_checked": None,
+}
+
+
+def _do_load_github_global_config() -> dict:
+    """Load hub_agents/github_global_config.json — creates with defaults if absent (#80).
+
+    Stores auth method, username, default_repo, rate_limit_remaining.
+    Does NOT store tokens. Never cleared by unload_plugin.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    path = _global_config_path(root)
+    if not path.exists():
+        # Populate auth from current token resolution
+        token, source = resolve_token()
+        defaults = {**_GLOBAL_CONFIG_DEFAULTS}
+        if token:
+            defaults["auth"] = {"method": source.value, "username": None}
+        env = read_env(root)
+        if repo := env.get("GITHUB_REPO"):
+            defaults["default_repo"] = repo
+        defaults["last_checked"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # Write defaults
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(defaults, indent=2), encoding="utf-8")
+        import os as _os6; _os6.replace(tmp, path)
+        return {**defaults, "created": True}
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {**_GLOBAL_CONFIG_DEFAULTS}
+
+
+def _do_save_github_local_config(data: dict) -> dict:
+    """Merge data into hub_agents/extensions/gh_planner/github_local_config.json (#80).
+
+    Performs a shallow merge (top-level keys from data overwrite existing).
+    Atomic write via tmp file.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    docs_dir = _gh_planner_docs_dir(root)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    config_path = _local_config_path(root)
+
+    existing: dict = {}
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+
+    existing.update(data)
+    tmp = config_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    import os as _os7; _os7.replace(tmp, config_path)
+
+    return {
+        "saved": True,
+        "file": str(config_path.relative_to(root)),
+        "_display": f"✓ Local config saved to {config_path.relative_to(root)}",
+    }
+
+
+def _do_get_github_config(scope: str = "both") -> dict:
+    """Return GitHub config for scope: 'global', 'local', or 'both' (#80).
+
+    global: auth method, default_repo, rate_limit metadata.
+    local:  project-specific labels, templates, etc.
+    both:   merged view with both sections.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    valid = {"global", "local", "both"}
+    if scope not in valid:
+        return {"error": "invalid_scope", "message": f"scope must be one of {sorted(valid)}"}
+
+    result: dict = {"scope": scope}
+
+    if scope in ("global", "both"):
+        result["global"] = _do_load_github_global_config()
+
+    if scope in ("local", "both"):
+        result["local"] = _do_load_github_local_config()
+
+    return result
 
 
 # ── Plugin unload ─────────────────────────────────────────────────────────────
@@ -1968,3 +2078,34 @@ def register(mcp) -> None:
         Call analyze_github_labels first to populate this file.
         """
         return _do_load_github_local_config()
+
+    @mcp.tool()
+    def load_github_global_config() -> dict:
+        """Read or create hub_agents/github_global_config.json (#80).
+
+        Stores auth method, username, default_repo, and rate-limit metadata.
+        Never stores tokens. Never cleared by unload_plugin (persists across sessions).
+        Returns {auth: {method, username}, default_repo, rate_limit_remaining, last_checked}.
+        """
+        return _do_load_github_global_config()
+
+    @mcp.tool()
+    def save_github_local_config(data: dict) -> dict:
+        """Merge data into hub_agents/extensions/gh_planner/github_local_config.json (#80).
+
+        Shallow merge: top-level keys from data overwrite existing values.
+        Atomic write. Use for storing repo-specific fields like default_branch, issue_templates.
+        """
+        return _do_save_github_local_config(data)
+
+    @mcp.tool()
+    def get_github_config(scope: str = "both") -> dict:
+        """Return GitHub config for scope: 'global', 'local', or 'both' (#80).
+
+        global: auth method, default_repo, rate-limit metadata.
+        local:  project-specific labels, templates, etc.
+        both:   merged view with both sections (default).
+
+        Load only what you need — global is ~20 tokens, local is ~50 tokens.
+        """
+        return _do_get_github_config(scope)

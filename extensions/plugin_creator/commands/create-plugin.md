@@ -21,7 +21,7 @@ Call `write_plugin_file(plugin_name, "plugin.json", ...)` with:
 {
   "name": "<plugin_name>",
   "version": "1.0",
-  "entry": "plugins.<plugin_name>",
+  "entry": "extensions.<plugin_name>",
   "install_namespace": "<namespace>",
   "entry_command": "<first_command>.md",
   "commands_dir": "commands",
@@ -81,7 +81,7 @@ Call `write_test_file(plugin_name, ...)` with:
 """Smoke tests for <plugin_name> plugin."""
 import pytest
 from unittest.mock import MagicMock
-from plugins.<plugin_name> import register
+from extensions.<plugin_name> import register
 
 
 def test_register_is_callable():

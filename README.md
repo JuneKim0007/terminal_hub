@@ -1,19 +1,19 @@
 # terminal-hub
 
-An extensible plugin framework for Claude Code — pair MCP tools with Claude slash commands to build and share workflow plugins.
+An extensible MCP server for Claude Code that pairs Python tools with conversational slash commands. Manages GitHub issues, plans features, and maintains persistent project context — all through natural conversation.
 
-Ships with **github_planner**, a full GitHub issue management plugin, as the reference implementation.
+Ships with **github_planner** (issue management + repo analysis) and **plugin_creator** (conversational plugin scaffolding) as reference extensions.
 
 ---
 
 ## How it works
 
-terminal-hub runs as an MCP server connected to Claude Code. Plugins register two things:
+terminal-hub runs as an MCP server. Extensions register two things:
 
 - **MCP tools** — Python functions Claude can call (fetch data, write files, call APIs)
-- **Slash commands** — `.md` prompt files that load the conversational workflow
+- **Slash commands** — Markdown prompt files that drive the conversational workflow
 
-Both halves are required. The MCP server handles data; the slash commands handle conversation. Together they form a complete, self-contained workflow.
+The server handles data; the commands handle conversation. Together they form complete, self-contained workflows.
 
 ---
 
@@ -21,56 +21,60 @@ Both halves are required. The MCP server handles data; the slash commands handle
 
 ```bash
 pip install terminal-hub
-terminal-hub install    # registers MCP server + copies slash commands
+terminal-hub install    # registers MCP server + installs slash commands
 # restart Claude Code
 ```
 
 Then in Claude Code:
-
 ```
-/github_planner:start
+/t-h:github-planner
 ```
-
-Claude runs the full GitHub planner — workspace setup, auth check, issue drafting, and repo analysis — all in one conversation.
 
 ---
 
-## Bundled plugin: github_planner
+## Bundled extension: github_planner
 
-The default plugin covers the full GitHub issue lifecycle:
+Full GitHub issue lifecycle management with project context awareness.
 
 | Command | What it does |
 |---------|-------------|
-| `/github_planner:start` | Guided session — setup → auth → menu loop |
-| `/github_planner:create` | Draft and push a single GitHub issue |
-| `/github_planner:analyze` | Snapshot label, assignee, and structure patterns |
-| `/github_planner:inspect` | Show what terminal-hub context Claude is holding |
-| `/github_planner:setup` | Configure workspace and GitHub repo |
+| `/t-h:github-planner` | Integrated flow — setup → analysis → planning → issue creation |
+| `/t-h:github-planner/create-issue` | Single guided issue with project context lookup |
+| `/t-h:github-planner/analyze` | Build feature-area design dictionary from repo structure |
+| `/t-h:github-planner/list-issues` | Show tracked issues |
+| `/t-h:github-planner/setup` | Configure workspace and GitHub repo |
+| `/t-h:github-planner/auth` | Auth recovery flow |
+
+### Project context
+
+After analysis, terminal-hub maintains two docs in `hub_agents/extensions/gh_planner/`:
+
+- **`project_summary.md`** — Global rules: tech stack, design principles, known pitfalls (≤500 tokens, loaded on every planning session)
+- **`project_detail.md`** — Feature-area design dictionary: one H2 section per feature with "Existing Design" + "Extension Guidelines". Retrieved section-by-section via `lookup_feature_section(feature="X")` — never loaded in full.
+
+When creating issues, Claude automatically calls `lookup_feature_section` to ground acceptance criteria in the existing design. New repos (no docs) skip the lookup gracefully.
 
 ---
 
-## Conversation mode
+## Bundled extension: plugin_creator
 
-You don't have to type a slash command. The MCP server is always running. When Claude detects GitHub planning intent in conversation, it offers to enable the plugin:
+Conversational plugin scaffolding — generates `plugin.json`, `__init__.py`, `description.json`, command files, and a test scaffold.
 
 ```
-User: I want to track this bug as a GitHub issue.
-
-Claude: It looks like you want to use GitHub issue planning.
-        Would you like to enable github_planner? (yes / no)
+/t-h:create-plugin
 ```
 
 ---
 
-## Writing a plugin
+## Writing an extension
 
-1. Create `plugins/<name>/` with `plugin.json` and `__init__.py`
-2. In `__init__.py`, define `register(mcp)` and decorate tools with `@mcp.tool()`
-3. Add slash command `.md` files to `plugins/<name>/commands/`
-4. Run `terminal-hub install` to copy commands to Claude Code
+1. Create `extensions/<name>/` with `plugin.json`, `description.json`, and `__init__.py`
+2. In `__init__.py`, implement `register(mcp)` and decorate tools with `@mcp.tool()`
+3. Add command `.md` files to `extensions/<name>/commands/`
+4. Re-install to copy commands: `terminal-hub install`
 
 ```python
-# plugins/my_plugin/__init__.py
+# extensions/my_ext/__init__.py
 def register(mcp) -> None:
     @mcp.tool()
     def my_tool(input: str) -> dict:
@@ -79,47 +83,40 @@ def register(mcp) -> None:
 ```
 
 ```json
-// plugins/my_plugin/plugin.json
+// extensions/my_ext/plugin.json
 {
-  "name": "my_plugin",
+  "name": "my_ext",
   "version": "0.1.0",
-  "description": "My custom workflow plugin",
-  "entry": "plugins.my_plugin",
+  "description": "My custom workflow extension",
+  "entry": "extensions.my_ext",
+  "install_namespace": "t-h",
+  "entry_command": "start.md",
   "commands_dir": "commands",
   "commands": ["start.md"]
 }
 ```
 
-See `plugins/github_planner/` for a complete example.
-
----
-
-## Plugin management commands
-
-| Command | What it does |
-|---------|-------------|
-| `/tmh:create_plugin` | Conversational plugin builder — generates code + docs |
-| `/tmh:read_<name>` | Analyze a plugin and generate `for_claude.md` docs |
-| `/tmh:modify_<name>` | Conversational plugin modifier with context loading |
+Use `/t-h:create-plugin` for guided scaffolding.
 
 ---
 
 ## Local state
 
-All terminal-hub state lives in `hub_agents/` inside your project (gitignored):
+All terminal-hub state lives in `hub_agents/` (gitignored):
 
 ```
 hub_agents/
-├── .env                      # GITHUB_REPO, optional GITHUB_TOKEN
-├── config.yaml               # mode: local|github
+├── .env                                 # GITHUB_REPO, optional GITHUB_TOKEN
+├── config.yaml                          # mode: local|github, repo: owner/repo
+├── analyzer_snapshot.json               # repo intelligence cache (labels, assignees)
 ├── issues/
-│   └── <slug>.md             # one file per tracked issue
-├── project_description.md
-├── architecture_design.md
-└── analyzer_snapshot.json    # repo intelligence cache
+│   └── <slug>.md                        # YAML front matter + body per issue
+└── extensions/gh_planner/
+    ├── project_summary.md               # global rules and tech overview
+    └── project_detail.md                # feature-area design dictionary
 ```
 
-No database. No cloud sync. Everything is plain text on your machine.
+No database. No cloud sync. Everything is plain text.
 
 ---
 
@@ -128,17 +125,14 @@ No database. No cloud sync. Everything is plain text on your machine.
 ```bash
 # Set GitHub repo (required for GitHub mode)
 echo "GITHUB_REPO=owner/repo" > hub_agents/.env
-
-# Or pass during setup
-/github_planner:setup
 ```
 
-Authentication uses the GitHub CLI (`gh auth login`) or a `GITHUB_TOKEN` environment variable.
+Authentication uses the GitHub CLI (`gh auth login`) or `GITHUB_TOKEN` env var.
 
 ---
 
 ## Requirements
 
 - Python 3.10+
-- Claude Code (any recent version)
-- GitHub CLI (`gh`) for GitHub features — optional, `GITHUB_TOKEN` works too
+- Claude Code
+- GitHub CLI (`gh`) for GitHub features — or set `GITHUB_TOKEN`

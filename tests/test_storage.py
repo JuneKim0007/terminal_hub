@@ -2,7 +2,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 import pytest
-from plugins.github_planner.storage import (
+from extensions.github_planner.storage import (
     STATUS_OPEN,
     STATUS_PENDING,
     list_issue_files,
@@ -176,7 +176,7 @@ def test_read_issue_frontmatter_returns_none_when_no_frontmatter(workspace):
 def test_atomic_write_cleans_up_tmp_on_error(tmp_path):
     """Lines 54-59: when the write raises, temp file is removed and exception is re-raised."""
     import os
-    from plugins.github_planner.storage import _atomic_write
+    from extensions.github_planner.storage import _atomic_write
     target = tmp_path / "output.md"
     # Patch os.replace to blow up after the temp file is written
     original_replace = os.replace
@@ -184,7 +184,7 @@ def test_atomic_write_cleans_up_tmp_on_error(tmp_path):
     def bad_replace(src, dst):
         calls.append(src)
         raise OSError("replace failed")
-    with patch("plugins.github_planner.storage.os.replace", side_effect=bad_replace):
+    with patch("extensions.github_planner.storage.os.replace", side_effect=bad_replace):
         with pytest.raises(OSError, match="replace failed"):
             _atomic_write(target, "content")
     # After the exception, no stray .tmp files should remain
@@ -197,10 +197,10 @@ def test_atomic_write_cleans_up_tmp_on_error(tmp_path):
 def test_write_issue_file_raises_on_oserror(tmp_path):
     """Lines 54-59: OSError from _atomic_write propagates out of write_issue_file."""
     import os
-    from plugins.github_planner.storage import _atomic_write
+    from extensions.github_planner.storage import _atomic_write
     issues_dir = tmp_path / "hub_agents" / "issues"
     issues_dir.mkdir(parents=True)
-    with patch("plugins.github_planner.storage.os.replace", side_effect=OSError("disk full")):
+    with patch("extensions.github_planner.storage.os.replace", side_effect=OSError("disk full")):
         with pytest.raises(OSError, match="disk full"):
             write_issue_file(
                 root=tmp_path, slug="my-issue", title="My Issue",
@@ -293,7 +293,7 @@ def test_atomic_write_unlink_oserror_is_suppressed_and_exception_still_raises(tm
     """Lines 57-58: if os.unlink also raises OSError during cleanup, it is silenced
     but the original exception is still re-raised."""
     import os
-    from plugins.github_planner.storage import _atomic_write
+    from extensions.github_planner.storage import _atomic_write
 
     def bad_replace(src, dst):
         raise OSError("replace failed")
@@ -301,8 +301,8 @@ def test_atomic_write_unlink_oserror_is_suppressed_and_exception_still_raises(tm
     def bad_unlink(path):
         raise OSError("unlink also failed")
 
-    with patch("plugins.github_planner.storage.os.replace", side_effect=bad_replace), \
-         patch("plugins.github_planner.storage.os.unlink", side_effect=bad_unlink):
+    with patch("extensions.github_planner.storage.os.replace", side_effect=bad_replace), \
+         patch("extensions.github_planner.storage.os.unlink", side_effect=bad_unlink):
         with pytest.raises(OSError, match="replace failed"):
             _atomic_write(tmp_path / "out.md", "content")
 
@@ -327,7 +327,7 @@ def test_read_issue_frontmatter_yaml_error_returns_none(workspace):
     # Write something that starts with --- but has invalid YAML in the front matter block
     path.write_text("---\n{invalid: yaml: :\n---\nbody")
     # Patch yaml.safe_load to force a YAMLError
-    with patch("plugins.github_planner.storage.yaml.safe_load", side_effect=yaml.YAMLError("bad")):
+    with patch("extensions.github_planner.storage.yaml.safe_load", side_effect=yaml.YAMLError("bad")):
         result = read_issue_frontmatter(workspace, "bad-yaml")
     assert result is None
 

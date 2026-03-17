@@ -14,8 +14,8 @@ from pathlib import Path
 from terminal_hub.plugin_loader import validate_manifest
 from terminal_hub.workspace import resolve_workspace_root
 
-_PLUGINS_ROOT = Path(__file__).parent.parent  # plugins/
-_TESTS_ROOT = _PLUGINS_ROOT.parent / "tests"   # tests/
+_EXTENSIONS_ROOT = Path(__file__).parent.parent  # extensions/
+_TESTS_ROOT = _EXTENSIONS_ROOT.parent / "tests"   # tests/
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ def _safe_plugin_name(name: str) -> bool:
 
 
 def _plugin_dir(name: str) -> Path:
-    return _PLUGINS_ROOT / name
+    return _EXTENSIONS_ROOT / name
 
 
 # ── Tool implementations ──────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ def _do_write_plugin_file(plugin_name: str, filename: str, content: str) -> dict
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(content, encoding="utf-8")
-    return {"written": True, "path": str(dest.relative_to(_PLUGINS_ROOT.parent))}
+    return {"written": True, "path": str(dest.relative_to(_EXTENSIONS_ROOT.parent))}
 
 
 def _do_write_test_file(plugin_name: str, content: str) -> dict:
@@ -98,7 +98,7 @@ def _do_validate_plugin(plugin_name: str) -> dict:
     # #62 — inject project root so newly-written plugins can be imported
     entry = manifest.get("entry", "")
     if entry:
-        project_root = str(_PLUGINS_ROOT.parent)
+        project_root = str(_EXTENSIONS_ROOT.parent)
         injected = project_root not in sys.path
         if injected:
             sys.path.insert(0, project_root)

@@ -15,7 +15,7 @@ def workspace(tmp_path):
 
 
 def test_update_project_description_writes_file(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_description", {"content": "# My Project\n"})
     assert result["updated"] is True
@@ -25,14 +25,14 @@ def test_update_project_description_writes_file(workspace):
 
 
 def test_update_project_description_returns_relative_path(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_description", {"content": "text"})
     assert "hub_agents/project_description.md" in result["file"]
 
 
 def test_update_architecture_writes_file(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_architecture", {"content": "# Architecture\n"})
     assert result["updated"] is True
@@ -42,7 +42,7 @@ def test_update_architecture_writes_file(workspace):
 
 
 def test_update_docs_overwrite_preserves_latest(workspace):
-    with patch("plugins.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         call(server, "update_project_description", {"content": "v1"})
         call(server, "update_project_description", {"content": "v2"})

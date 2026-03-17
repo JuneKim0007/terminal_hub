@@ -9,7 +9,7 @@ from types import TracebackType
 
 import httpx
 
-from terminal_hub.commands import endpoint
+from plugins.github_planner.commands import endpoint
 from terminal_hub.errors import msg
 
 _LABELS_FILE = Path(__file__).parent / "labels.json"
@@ -116,6 +116,42 @@ class GitHubClient:
             raise GitHubError(msg("timeout"), error_code="timeout")
 
         return response.json()
+
+    def list_labels(self) -> list[dict]:
+        """List all labels from the repo as raw dicts."""
+        _, url = self._url("github", "list_labels")
+        labels: list[dict] = []
+        page = 1
+        while True:
+            try:
+                resp = self._client.get(url, params={"per_page": 100, "page": page})
+                resp.raise_for_status()
+            except httpx.HTTPStatusError:
+                return labels
+            data = resp.json()
+            if not data:
+                break
+            labels.extend(data)
+            if len(data) < 100:
+                break
+            page += 1
+        return labels
+
+    def list_issues(self, state: str = "all", per_page: int = 50) -> list[dict]:
+        """List issues from the repo."""
+        _, url = self._url("github", "list_issues")
+        resp = self._client.get(url, params={"state": state, "per_page": per_page})
+        resp.raise_for_status()
+        return resp.json()
+
+    def list_collaborators(self) -> list[dict]:
+        """List repo collaborators."""
+        url = BASE_URL + f"/repos/{self.repo}/collaborators"
+        resp = self._client.get(url, params={"per_page": 100})
+        if resp.status_code == 403:
+            return []  # No collaborator access — return empty gracefully
+        resp.raise_for_status()
+        return resp.json()
 
     def get_labels(self) -> set[str]:
         """Return the set of label names that exist in the repo."""

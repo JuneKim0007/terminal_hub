@@ -1,7 +1,7 @@
 from datetime import date
 from pathlib import Path
 import pytest
-from terminal_hub.storage import (
+from plugins.github_planner.storage import (
     STATUS_OPEN,
     STATUS_PENDING,
     list_issue_files,

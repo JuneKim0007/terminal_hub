@@ -3,6 +3,10 @@
 <!-- RULE: after any implementation action, do not narrate results verbosely.
      Present diffs clearly, ask for acceptance, then proceed. -->
 
+<!-- LOAD ANNOUNCEMENT: At the very start of this command, output exactly:
+     🟢 Loaded: gh-implementation — `extensions/gh_implementation/commands/gh-implementation.md`
+     Do this before any tool calls. -->
+
 You are in **gh-implementation** mode — the end-to-end flow for implementing a tracked GitHub issue.
 
 ---
@@ -11,7 +15,7 @@ You are in **gh-implementation** mode — the end-to-end flow for implementing a
 
 Call `apply_unload_policy(command="gh-implementation")`.
 This unloads gh_planner analysis caches and keeps project_summary.md and project_detail.md.
-Do not narrate this.
+**After receiving the result, display its `_display` field verbatim** so the user can see what was cleared.
 
 ---
 

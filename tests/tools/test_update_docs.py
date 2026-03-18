@@ -139,6 +139,97 @@ def test_create_github_repo_not_initialized_returns_needs_init(tmp_path):
     assert result["status"] == "needs_init"
 
 
+# ── update_project_summary_section ────────────────────────────────────────────
+
+def test_update_project_summary_section_creates_file(workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "update_project_summary_section", {
+            "section_name": "Milestones",
+            "content": "| # | Name |\n|---|------|\n| M1 | Core Auth |",
+        })
+    assert result["updated"] is True
+    assert result["action"] == "created"
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    text = (docs_dir / "project_summary.md").read_text()
+    assert "## Milestones" in text
+    assert "Core Auth" in text
+
+
+def test_update_project_summary_section_replaces_existing(workspace):
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text(
+        "# Project\n\n## Milestones\n\nOld content\n\n## Design Principles\n\n- principle\n"
+    )
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "update_project_summary_section", {
+            "section_name": "Milestones",
+            "content": "| M1 | Updated |",
+        })
+    assert result["action"] == "replaced"
+    text = (docs_dir / "project_summary.md").read_text()
+    assert "Updated" in text
+    assert "Old content" not in text
+    assert "Design Principles" in text  # other sections preserved
+
+
+def test_update_project_summary_section_appends_new(workspace):
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# Project\n\n**Goal:** Build stuff\n")
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "update_project_summary_section", {
+            "section_name": "Milestones",
+            "content": "| M1 | Auth |",
+        })
+    assert result["action"] == "appended"
+    text = (docs_dir / "project_summary.md").read_text()
+    assert "Build stuff" in text  # original preserved
+    assert "## Milestones" in text
+
+
+def test_update_project_summary_section_empty_name_returns_error(workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "update_project_summary_section", {
+            "section_name": "",
+            "content": "some content",
+        })
+    assert result["error"] == "invalid_input"
+
+
+def test_update_project_summary_section_empty_content_returns_error(workspace):
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "update_project_summary_section", {
+            "section_name": "Milestones",
+            "content": "",
+        })
+    assert result["error"] == "invalid_input"
+
+
+# ── apply_unload_policy enriched display (#138) ───────────────────────────────
+
+def test_apply_unload_policy_display_has_emoji_lines(workspace):
+    from extensions.github_planner import _ANALYSIS_CACHE
+    _ANALYSIS_CACHE["o/r"] = {"data": True}
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "apply_unload_policy", {"command": "github-planner"})
+
+    _ANALYSIS_CACHE.clear()
+    assert result["success"] is True
+    display = result["_display"]
+    # Should contain emoji status indicators
+    assert any(ch in display for ch in ["🗑️", "⚪", "🟢", "🔵"])
+    assert "Unloaded:" in display
+    assert "Kept:" in display
+
+
 def test_read_doc_file_migrates_legacy_flat_path(workspace):
     """Legacy hub_agents/project_description.md is migrated to namespaced path on read."""
     from extensions.github_planner.storage import read_doc_file, write_doc_file

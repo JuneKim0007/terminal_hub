@@ -4,6 +4,10 @@
      Continue the planning conversation. When all planned issues are created, say:
      "Let me know any plans for this!" -->
 
+<!-- LOAD ANNOUNCEMENT: At the very start of this command, output exactly:
+     🟢 Loaded: github-planner — `extensions/github_planner/commands/github-planner.md`
+     Do this before any tool calls. -->
+
 You are in **github-planner** mode — the integrated flow that orchestrates
 analysis, planning, and issue creation through natural conversation.
 Sub-commands handle each step; this command composes them.
@@ -117,9 +121,19 @@ Proposed milestones:
 Create these on GitHub? (yes / no / yes, always create milestones)
 ```
 
-- **"yes"** → call `create_milestone()` for each; cache results
-- **"yes, always"** → call `create_milestone()` + `set_preference("milestone_assign", True)`
+- **"yes"** → call `create_milestone()` for each; cache results → then persist to project_summary.md (see below)
+- **"yes, always"** → call `create_milestone()` + `set_preference("milestone_assign", True)` → persist to project_summary.md
 - **"no"** → proceed without milestones; no further milestone prompts this session; call `set_preference("milestone_assign", False)`
+
+**After creating milestones**, call `update_project_summary_section(section_name="Milestones", content=...)` to persist the milestone table. Use this format for the content:
+```
+| # | Name | Delivers |
+|---|------|---------|
+| M1 | Core Auth | Users can sign up, log in, and reset their password |
+| M2 | Posting | Authenticated users can create, edit, and delete posts |
+| M3 | Launch Polish | Performance, error handling, and deploy pipeline complete |
+```
+This is the authoritative milestone reference for agents implementing issues — they MUST check this section before asking "which milestone does this belong to?".
 
 **Cache note:** Once milestones are created/fetched this session, they live in `_MILESTONE_CACHE`. Do NOT call `list_milestones()` again — use the cached data for issue assignment.
 
@@ -142,6 +156,10 @@ Call `load_project_docs(doc="summary")`. Absorb silently — do not show to user
 Note the `Feature Sections` line in the summary: this is the index of available
 detail sections. Load individual sections via `lookup_feature_section` only when
 the user discusses a topic that matches a section heading.
+
+Also note the `## Milestones` section if present — this is the authoritative milestone
+reference. Use it to determine which milestone an issue belongs to without calling
+`list_milestones()`. Example: "Feature X → M2 — Posting".
 
 ---
 
@@ -207,8 +225,8 @@ After approval:
 
    | Labels on the batch | Action |
    |---------------------|--------|
-   | Any issue has `enhancement` or `feature` | Call `update_project_detail_section(feature_name, content)` to merge a new or updated section. Do **not** rewrite the full file. |
-   | Any issue has `architecture` | Update `project_summary.md` Design Principles section via `update_project_detail_section`. |
+   | Any issue has `enhancement` or `feature` | Call `update_project_detail_section(feature_name, content)` to merge a new or updated section. Do **not** rewrite the full file. **Include `**Milestone:** Mx — Name` at the top of the section content** if milestones exist in `_MILESTONE_CACHE` or project_summary.md Milestones table. |
+   | Any issue has `architecture` | Update `project_summary.md` Design Principles section via `update_project_summary_section(section_name="Design Principles", content=...)`. |
    | All labels are `bug`, `chore`, `refactor`, or `docs` | **No doc update** — zero extra API calls. |
    | No labels set | Ask user: "This looks like a new feature — should I add it to the design dictionary? (yes/no)" — then follow appropriate row above. |
 

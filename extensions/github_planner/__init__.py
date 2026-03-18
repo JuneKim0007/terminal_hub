@@ -614,6 +614,70 @@ def _do_update_project_detail_section(feature_name: str, content: str) -> dict:
             "_display": f"✓ Section '{feature_name}' {action} in project_detail.md"}
 
 
+def _do_update_project_summary_section(section_name: str, content: str) -> dict:
+    """Merge a single H2 section into project_summary.md without rewriting the full file (#137).
+
+    If a section matching `## {section_name}` already exists, replaces it.
+    Otherwise appends a new section at the end.
+    Used to persist the Milestones table and other summary-level sections.
+    """
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    if not section_name or not section_name.strip():
+        return {"error": "invalid_input", "message": "section_name must be non-empty"}
+    if not content or not content.strip():
+        return {"error": "invalid_input", "message": "content must be non-empty"}
+
+    docs_dir = _gh_planner_docs_dir(root)
+    summary_path = docs_dir / "project_summary.md"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    section_heading = f"## {section_name.strip()}"
+    new_section = f"{section_heading}\n\n{content.strip()}\n"
+
+    if not summary_path.exists():
+        import os as _os4
+        tmp = summary_path.with_suffix(".tmp")
+        tmp.write_text(new_section, encoding="utf-8")
+        _os4.replace(tmp, summary_path)
+        _PROJECT_DOCS_CACHE.pop(str(root), None)
+        return {"updated": True, "action": "created", "section": section_name,
+                "file": str(summary_path.relative_to(root))}
+
+    existing = summary_path.read_text(encoding="utf-8")
+    lines = existing.splitlines(keepends=True)
+    heading_lower = section_heading.lower()
+    start_idx: int | None = None
+    end_idx: int | None = None
+    for i, line in enumerate(lines):
+        if line.strip().lower() == heading_lower:
+            start_idx = i
+        elif start_idx is not None and i > start_idx and line.startswith("## "):
+            end_idx = i
+            break
+
+    if start_idx is not None:
+        before = lines[:start_idx]
+        after = lines[end_idx:] if end_idx is not None else []
+        new_content = "".join(before) + new_section + ("" if not after else "\n" + "".join(after))
+        action = "replaced"
+    else:
+        new_content = existing.rstrip() + "\n\n" + new_section
+        action = "appended"
+
+    import os as _os5
+    tmp = summary_path.with_suffix(".tmp")
+    tmp.write_text(new_content, encoding="utf-8")
+    _os5.replace(tmp, summary_path)
+    _PROJECT_DOCS_CACHE.pop(str(root), None)
+
+    return {"updated": True, "action": action, "section": section_name,
+            "file": str(summary_path.relative_to(root)),
+            "_display": f"✓ Section '{section_name}' {action} in project_summary.md"}
+
+
 def _do_get_project_context(doc_key: str) -> dict:
     root = get_workspace_root()
     if err := ensure_initialized(root):
@@ -2107,13 +2171,49 @@ def _do_apply_unload_policy(command: str) -> dict:
                     errors.append(f"{disk_file}: {exc}")
 
     success = len(errors) == 0
-    keep_summary = ", ".join(to_keep) if to_keep else "none"
-    cleared_summary = ", ".join(cleared) if cleared else "nothing"
+
+    # Build enriched display with emoji status per cache key (#138)
+    cache_descriptions = policy.get("cache_keys", {})
+    always_keep = set(policy.get("always_keep", []))
+
+    unloaded_lines = []
+    for key in to_unload:
+        desc = cache_descriptions.get(key, key)
+        if key in cleared:
+            unloaded_lines.append(f"  🗑️  {key} — {desc}")
+        else:
+            unloaded_lines.append(f"  ⚪ {key} — already empty")
+
+    kept_lines = []
+    for key in to_keep:
+        if key in always_keep:
+            kept_lines.append(f"  🔵 {key} — persistent (never cleared)")
+        else:
+            desc = cache_descriptions.get(key, key)
+            # Check if this in-memory cache is hot
+            mem_cache, _ = _CACHE_KEY_MAP.get(key, (None, None))
+            if mem_cache is not None:
+                status = "hot" if mem_cache else "empty"
+                kept_lines.append(f"  🟢 {key} — {status}")
+            else:
+                kept_lines.append(f"  🔵 {key} — {desc}")
+
+    # Command prompt path
+    cmd_file = command.replace("/", "/") + ".md"
+    cmd_path = _COMMANDS_DIR / cmd_file
+    prompt_line = f"  Prompt: extensions/github_planner/commands/{cmd_file}" if cmd_path.exists() else ""
+
+    unloaded_block = "\n".join(unloaded_lines) if unloaded_lines else "  (nothing to clear)"
+    kept_block = "\n".join(kept_lines) if kept_lines else "  (none)"
     display = (
-        f"✓ Unload policy applied for '{command}'\n"
-        f"  Cleared: {cleared_summary}\n"
-        f"  Kept:    {keep_summary}"
+        f"Context switch — {command}\n"
+        + (f"{prompt_line}\n" if prompt_line else "")
+        + f"Unloaded:\n{unloaded_block}\n"
+        + f"Kept:\n{kept_block}"
     )
+    if errors:
+        display += "\nErrors:\n" + "\n".join(f"  ⚠ {e}" for e in errors)
+
     return {
         "success": success,
         "command": command,
@@ -2442,6 +2542,19 @@ def register(mcp) -> None:
         - Labels are only 'bug', 'chore', 'refactor', 'docs' → do NOT call (no doc update)
         - No labels → ask user first"""
         return _do_update_project_detail_section(feature_name, content)
+
+    @mcp.tool()
+    def update_project_summary_section(section_name: str, content: str) -> dict:
+        """Merge a single H2 section into project_summary.md without rewriting the full file (#137).
+
+        If '## {section_name}' already exists, replaces that section only.
+        Otherwise appends a new section. Use this to persist Milestones, Design Principles,
+        or other top-level summary sections without overwriting the rest of the file.
+
+        Primary use cases:
+        - After Step 2.5 milestone creation: call with section_name='Milestones', content=milestone table
+        - When project goals change: update the relevant section only"""
+        return _do_update_project_summary_section(section_name, content)
 
     @mcp.tool()
     def update_project_description(content: str) -> dict:

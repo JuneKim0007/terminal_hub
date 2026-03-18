@@ -210,6 +210,24 @@ def create_server() -> FastMCP:
         cfg = load_config(root) or {}
         env = read_env(root)
 
+        # In-memory cache status from github_planner extension (#138)
+        cache_status: dict[str, str] = {}
+        try:
+            from extensions.github_planner import (
+                _ANALYSIS_CACHE, _PROJECT_DOCS_CACHE, _FILE_TREE_CACHE,
+                _LABEL_CACHE, _MILESTONE_CACHE, _REPO_CACHE,
+            )
+            cache_status = {
+                "analysis_cache":     "🔵 hot" if _ANALYSIS_CACHE else "⚪ empty",
+                "project_docs_cache": "🔵 hot" if _PROJECT_DOCS_CACHE else "⚪ empty",
+                "file_tree_cache":    "🔵 hot" if _FILE_TREE_CACHE else "⚪ empty",
+                "label_cache":        "🔵 hot" if _LABEL_CACHE else "⚪ empty",
+                "milestone_cache":    "🔵 hot" if _MILESTONE_CACHE else "⚪ empty",
+                "repo_cache":         "🔵 hot" if _REPO_CACHE else "⚪ empty",
+            }
+        except ImportError:
+            pass
+
         # Build runtime section
         try:
             registered_tools = [t.name for t in mcp._tool_manager.list_tools()]
@@ -220,6 +238,7 @@ def create_server() -> FastMCP:
             "loaded_extensions": _LOADED_EXTENSIONS,
             "registered_tools": registered_tools,
             "load_warnings": _PLUGIN_WARNINGS,
+            "cache_status": cache_status,
         }
 
         # Build _display
@@ -261,6 +280,13 @@ def create_server() -> FastMCP:
                         f"\n  {tool_count} tools total — full function awareness active" + \
                         ("\n" + "\n".join(warn_lines) if warn_lines else "")
         caches_block = "CACHES\n" + "\n".join(rows)
+
+        # In-memory cache snapshot (#138)
+        if cache_status:
+            mem_lines = [f"  {k:<22} {v}" for k, v in cache_status.items()]
+            mem_block = "IN-MEMORY CACHES\n" + "\n".join(mem_lines)
+        else:
+            mem_block = ""
         mode = cfg.get("mode", "unknown")
         github_repo = env.get("GITHUB_REPO")
         if github_repo:
@@ -271,7 +297,8 @@ def create_server() -> FastMCP:
             repo_line = "Repo: not configured"
         footer = f"{repo_line}  (mode: {mode})\nRuntime reflects server startup state."
         display = header + "\n" + runtime_block + "\n" + "─" * 50 + "\n" + \
-                  caches_block + "\n" + "─" * 50 + "\n" + footer
+                  caches_block + "\n" + "─" * 50 + "\n" + \
+                  (mem_block + "\n" + "─" * 50 + "\n" if mem_block else "") + footer
 
         return {"items": items, "runtime": runtime, "config": cfg, "_display": display}
 

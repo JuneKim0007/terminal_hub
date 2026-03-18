@@ -115,6 +115,8 @@ def write_issue_file(
     workflow: list[str] | None = None,
     agent_workflow: list[str] | None = None,
     note: str | None = None,
+    milestone_number: int | None = None,
+    milestone_title: str | None = None,
 ) -> Path:
     """Write an issue .md file with YAML front matter atomically. Returns the file path.
 
@@ -135,6 +137,8 @@ def write_issue_file(
         "workflow": workflow if workflow is not None else [],
         "agent_workflow": agent_workflow,
         "note": note,
+        "milestone_number": milestone_number,
+        "milestone_title": milestone_title,
     }
     if issue_number is not None:
         frontmatter["issue_number"] = issue_number

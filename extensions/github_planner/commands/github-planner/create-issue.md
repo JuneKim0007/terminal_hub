@@ -51,7 +51,8 @@ Guided single-issue workflow:
 
 6. Show preview. Ask: "Create this? (yes / edit)"
 
-7. On yes: call `draft_issue(title, body, labels, assignees, agent_workflow=[...])`.
+7. On yes: call `draft_issue(title, body, labels, assignees, agent_workflow=[...], milestone_number=N)`.
+   milestone_number: from `_MILESTONE_CACHE` if milestones exist and this issue's feature area matches one. Omit (None) if no milestones are configured.
 
 8. Before pushing to GitHub, show confirmation block (#82):
    ```

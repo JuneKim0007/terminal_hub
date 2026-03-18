@@ -141,6 +141,8 @@ def _invalidate_repo_cache() -> None:
 # Key: str(root), Value: {active_labels, closed_labels, fetched_at}
 _LABEL_CACHE: dict[str, dict] = {}
 
+_MILESTONE_CACHE: dict[str, list[dict]] = {}  # repo -> [{number, title, description}]
+
 _GITHUB_DEFAULT_LABEL_NAMES = frozenset({
     "bug", "documentation", "duplicate", "enhancement", "good first issue",
     "help wanted", "invalid", "question", "wontfix",
@@ -313,6 +315,7 @@ def _do_draft_issue(
     assignees: list[str] | None = None,
     note: str | None = None,
     agent_workflow: list[str] | None = None,
+    milestone_number: int | None = None,
 ) -> dict:
     """Save an issue draft locally as status=pending."""
     root = get_workspace_root()
@@ -341,12 +344,13 @@ def _do_draft_issue(
             status=IssueStatus.PENDING,
             note=note,
             agent_workflow=agent_workflow,
+            milestone_number=milestone_number,
         )
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
 
     display = f"✓ {title}"
-    return {
+    result = {
         "slug": slug,
         "title": title,
         "preview_body": body[:300] + ("…" if len(body) > 300 else ""),
@@ -356,6 +360,9 @@ def _do_draft_issue(
         "local_file": f"hub_agents/issues/{slug}.md",
         "_display": display,
     }
+    if milestone_number is not None:
+        result["milestone_number"] = milestone_number
+    return result
 
 
 def _do_submit_issue(slug: str) -> dict:
@@ -416,6 +423,11 @@ def _do_submit_issue(slug: str) -> dict:
                 labels=labels,
                 assignees=fm.get("assignees") or [],
             )
+            if fm.get("milestone_number"):
+                try:
+                    gh.update_issue_milestone(result["number"], fm["milestone_number"])
+                except Exception:
+                    pass  # milestone assignment failure is non-fatal
         except GitHubError as exc:
             return {**exc.to_dict(), "_hook": None}
 
@@ -451,7 +463,7 @@ def _do_get_issue_context(slug: str) -> dict:
     return {"slug": slug, "content": content}
 
 
-_ALLOWED_PREFERENCES = {"confirm_arch_changes", "github_repo_connected"}
+_ALLOWED_PREFERENCES = {"confirm_arch_changes", "github_repo_connected", "milestone_assign"}
 
 
 def _do_set_preference(key: str, value: bool) -> dict:
@@ -2032,6 +2044,7 @@ _CACHE_KEY_MAP: dict[str, tuple[dict | None, str | None]] = {
     "file_tree_cache":      (_FILE_TREE_CACHE,       None),
     "session_header_cache": (_SESSION_HEADER_CACHE,  None),
     "label_cache":          (_LABEL_CACHE,           None),
+    "milestone_cache":      (_MILESTONE_CACHE,       None),
     "repo_cache":           (_REPO_CACHE,            None),
     "analyzer_snapshot":    (None, "analyzer_snapshot.json"),
     "file_hashes":          (None, "file_hashes.json"),
@@ -2164,6 +2177,113 @@ def _do_make_label(name: str, color: str, description: str = "") -> dict:
         return {"error": "make_label_failed", "message": str(exc)}
 
 
+# ── Milestone tools ───────────────────────────────────────────────────────────
+
+def _do_list_milestones(state: str = "open") -> dict:
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    repo = read_env(root).get("GITHUB_REPO", "")
+    if repo in _MILESTONE_CACHE:
+        ms = _MILESTONE_CACHE[repo]
+        lines = "\n".join(f"  M{m['number']} — {m['title']}: {m.get('description','')}" for m in ms)
+        return {"milestones": ms, "count": len(ms), "cached": True,
+                "_display": f"{len(ms)} milestones (cached):\n{lines}"}
+    gh, err = get_github_client()
+    if gh is None:
+        return err
+    try:
+        with gh:
+            raw = gh.list_milestones(state=state)
+        ms = [{"number": m["number"], "title": m["title"],
+               "description": m.get("description", ""),
+               "open_issues": m.get("open_issues", 0)} for m in raw]
+        _MILESTONE_CACHE[repo] = ms
+        lines = "\n".join(f"  M{m['number']} — {m['title']}: {m['description']}" for m in ms)
+        return {"milestones": ms, "count": len(ms), "cached": False,
+                "_display": f"{len(ms)} milestones on {repo}:\n{lines}"}
+    except Exception as exc:
+        return {"error": "list_milestones_failed", "message": str(exc)}
+
+
+def _do_create_milestone(title: str, description: str = "", due_on: str | None = None) -> dict:
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    if not title:
+        return {"error": "missing_field", "message": "title is required"}
+    gh, err = get_github_client()
+    if gh is None:
+        return err
+    repo = read_env(root).get("GITHUB_REPO", "")
+    try:
+        with gh:
+            m = gh.create_milestone(title, description, due_on)
+        entry = {"number": m["number"], "title": m["title"],
+                 "description": m.get("description", ""),
+                 "open_issues": m.get("open_issues", 0)}
+        # Update cache
+        cache = _MILESTONE_CACHE.setdefault(repo, [])
+        if not any(x["number"] == entry["number"] for x in cache):
+            cache.append(entry)
+        return {
+            "number": entry["number"],
+            "title": entry["title"],
+            "description": entry["description"],
+            "_display": f"✓ Milestone M{entry['number']} — {entry['title']} created on {repo}",
+        }
+    except Exception as exc:
+        return {"error": "create_milestone_failed", "message": str(exc)}
+
+
+def _do_assign_milestone(slug: str, milestone_number: int) -> dict:
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    repo = read_env(root).get("GITHUB_REPO", "")
+    # Resolve milestone title from cache
+    ms = _MILESTONE_CACHE.get(repo, [])
+    milestone_title = next((m["title"] for m in ms if m["number"] == milestone_number), None)
+
+    # Read issue to get GitHub issue_number
+    fm = read_issue_frontmatter(root, slug)
+    if not fm:
+        return {"error": "issue_not_found", "message": f"No issue for slug {slug!r}"}
+    gh_number = fm.get("issue_number")
+
+    # Assign on GitHub if issue is submitted
+    if gh_number:
+        gh, err = get_github_client()
+        if gh is None:
+            return err
+        try:
+            with gh:
+                gh.update_issue_milestone(gh_number, milestone_number)
+        except Exception as exc:
+            return {"error": "assign_milestone_failed", "message": str(exc)}
+
+    # Update local front matter
+    from extensions.github_planner.storage import _issues_dir, _atomic_write
+    import yaml as _yaml
+    path = _issues_dir(root) / f"{slug}.md"
+    text = path.read_text(encoding="utf-8")
+    parts = text.split("---", 2)
+    raw_fm = _yaml.safe_load(parts[1]) or {}
+    raw_fm["milestone_number"] = milestone_number
+    if milestone_title:
+        raw_fm["milestone_title"] = milestone_title
+    body = parts[2] if len(parts) > 2 else ""
+    _atomic_write(path, f"---\n{_yaml.dump(raw_fm, default_flow_style=False)}---{body}")
+
+    return {
+        "slug": slug,
+        "milestone_number": milestone_number,
+        "milestone_title": milestone_title,
+        "github_assigned": bool(gh_number),
+        "_display": f"✓ #{slug} → M{milestone_number} — {milestone_title or '(unknown)'}",
+    }
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -2216,6 +2336,7 @@ def register(mcp) -> None:
         assignees: list[str] | None = None,
         note: str | None = None,
         agent_workflow: list[str] | None = None,
+        milestone_number: int | None = None,
     ) -> dict:
         """Save an issue draft locally as status=pending.
 
@@ -2242,8 +2363,12 @@ def register(mcp) -> None:
              "Fix minimally — change only what is needed",
              "Add a regression test that would have caught this",
              "Verify full test suite passes"]
+
+        milestone_number: optional GitHub milestone number to assign (from create_milestone
+          or list_milestones). Stored in front matter and passed to GitHub on submit.
         """
-        return _do_draft_issue(title, body, labels, assignees, note=note, agent_workflow=agent_workflow)
+        return _do_draft_issue(title, body, labels, assignees, note=note, agent_workflow=agent_workflow,
+                               milestone_number=milestone_number)
 
     @mcp.tool()
     def generate_issue_workflows(slug: str) -> dict:
@@ -2602,3 +2727,38 @@ def register(mcp) -> None:
         color: hex color WITHOUT the # prefix (e.g. 'd73a4a')
         """
         return _do_make_label(name, color, description)
+
+    @mcp.tool()
+    def list_milestones(state: str = "open") -> dict:
+        """List GitHub milestones. Uses in-memory cache if populated — no API call needed.
+
+        If _MILESTONE_CACHE is populated for this repo, return cached data directly.
+        Only call this when you genuinely don't know the current milestones.
+        state: 'open' | 'closed' | 'all'
+        """
+        return _do_list_milestones(state)
+
+    @mcp.tool()
+    def create_milestone(title: str, description: str = "", due_on: str | None = None) -> dict:
+        """Create a GitHub milestone (idempotent — returns existing if title already taken).
+
+        Use descriptive phase titles, not generic ones:
+          Good: "Core Auth", "Posting & Feed", "Launch Polish"
+          Bad:  "Milestone 1", "Phase A"
+
+        title: short descriptive name (e.g. "Core Auth")
+        description: one sentence — what the user can do after this milestone ships
+        due_on: optional ISO 8601 date string (e.g. '2026-04-01T00:00:00Z')
+        """
+        return _do_create_milestone(title, description, due_on)
+
+    @mcp.tool()
+    def assign_milestone(slug: str, milestone_number: int) -> dict:
+        """Assign a milestone to a local issue and update GitHub if the issue is submitted.
+
+        slug: local issue slug (e.g. '1', 'fix-auth-bug')
+        milestone_number: GitHub milestone number (from create_milestone or list_milestones)
+
+        Updates both local front matter and GitHub. Idempotent — safe to call multiple times.
+        """
+        return _do_assign_milestone(slug, milestone_number)

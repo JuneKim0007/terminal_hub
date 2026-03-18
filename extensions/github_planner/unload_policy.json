@@ -6,6 +6,7 @@
     "file_tree_cache":      "In-memory file tree per repo (_FILE_TREE_CACHE)",
     "session_header_cache": "In-memory session header per root (_SESSION_HEADER_CACHE)",
     "label_cache":          "In-memory GitHub label list per repo (_LABEL_CACHE)",
+    "milestone_cache":      "In-memory GitHub milestone list per repo (_MILESTONE_CACHE)",
     "repo_cache":           "In-memory repo string per root (_REPO_CACHE)",
     "analyzer_snapshot":    "Disk: hub_agents/extensions/gh_planner/analyzer_snapshot.json",
     "file_hashes":          "Disk: hub_agents/extensions/gh_planner/file_hashes.json",
@@ -36,6 +37,7 @@
         "file_tree_cache",
         "session_header_cache",
         "label_cache",
+        "milestone_cache",
         "analyzer_snapshot",
         "file_hashes",
         "file_tree",
@@ -61,6 +63,7 @@
       "keep": [
         "project_docs_cache",
         "label_cache",
+        "milestone_cache",
         "repo_cache",
         "github_repo",
         "workspace_config",
@@ -77,6 +80,7 @@
         "project_docs_cache",
         "file_tree_cache",
         "label_cache",
+        "milestone_cache",
         "repo_cache",
         "github_repo",
         "workspace_config",
@@ -92,6 +96,7 @@
         "file_tree_cache",
         "session_header_cache",
         "label_cache",
+        "milestone_cache",
         "repo_cache",
         "github_repo",
         "workspace_config",
@@ -133,6 +138,7 @@
         "file_tree_cache",
         "session_header_cache",
         "label_cache",
+        "milestone_cache",
         "repo_cache",
         "analyzer_snapshot",
         "file_hashes",
@@ -177,7 +183,7 @@
     },
     "gh-implementation": {
       "description": "Implementation entry — unload analysis caches, keep project docs and issues",
-      "unload": ["analysis_cache", "project_docs_cache", "file_tree_cache", "session_header_cache", "label_cache", "analyzer_snapshot", "file_hashes", "file_tree"],
+      "unload": ["analysis_cache", "project_docs_cache", "file_tree_cache", "session_header_cache", "label_cache", "milestone_cache", "analyzer_snapshot", "file_hashes", "file_tree"],
       "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
     },
     "gh-implementation/implement": {

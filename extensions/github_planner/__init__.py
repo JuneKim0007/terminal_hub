@@ -2144,8 +2144,10 @@ def _load_unload_policy() -> dict:
 def _do_apply_unload_policy(command: str) -> dict:
     """Clear only the caches listed in unload_policy.json for the given command."""
     root = get_workspace_root()
-    if err := ensure_initialized(root):
-        return err
+    # Skip init check for bootstrapping commands — hub_agents/ may not exist yet
+    if command not in ("init",):
+        if err := ensure_initialized(root):
+            return err
 
     policy = _load_unload_policy()
     if "error" in policy:

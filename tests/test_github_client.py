@@ -263,26 +263,33 @@ def test_get_labels_paginates():
 
 def test_create_label_success():
     client = make_client()
-    resp = make_response(201, {"name": "new-label"})
+    label_data = {"name": "new-label", "color": "ff0000", "description": "A label"}
+    resp = make_response(201, label_data)
     with patch.object(client._client, "post", return_value=resp):
-        ok = client.create_label("new-label", "ff0000", "A label")
-    assert ok is True
+        result = client.create_label("new-label", "ff0000", "A label")
+    assert result["name"] == "new-label"
 
 
 def test_create_label_already_exists():
     client = make_client()
-    # 422 means already exists — still considered success
-    resp = make_response(422, text="already exists")
-    with patch.object(client._client, "post", return_value=resp):
-        ok = client.create_label("bug", "d73a4a", "Something isn't working")
-    assert ok is True
+    # 422 means already exists — fetch and return the existing one
+    post_resp = make_response(422, text="already exists")
+    existing_data = {"name": "bug", "color": "d73a4a", "description": "Something isn't working"}
+    get_resp = make_response(200, existing_data)
+    with patch.object(client._client, "post", return_value=post_resp), \
+         patch.object(client._client, "get", return_value=get_resp):
+        result = client.create_label("bug", "d73a4a", "Something isn't working")
+    assert result["name"] == "bug"
 
 
 def test_create_label_returns_false_on_http_error():
     client = make_client()
-    with patch.object(client._client, "post", side_effect=httpx.ConnectError("fail")):
-        ok = client.create_label("bad", "000000", "")
-    assert ok is False
+    # On a non-200/201/422 status, GitHubError is raised
+    resp = make_response(500, text="server error")
+    with patch.object(client._client, "post", return_value=resp):
+        from extensions.github_planner.client import GitHubError
+        with pytest.raises(GitHubError):
+            client.create_label("bad", "000000", "")
 
 
 # ── ensure_labels ─────────────────────────────────────────────────────────────
@@ -303,7 +310,7 @@ def test_ensure_labels_all_exist_returns_none():
 def test_ensure_labels_creates_missing_known_label():
     client = make_client()
     with patch.object(client, "get_labels", return_value=set()):
-        with patch.object(client, "create_label", return_value=True):
+        with patch.object(client, "create_label", return_value={"name": "bug", "color": "d73a4a"}):
             result = client.ensure_labels(["bug"])
     assert result is None
 
@@ -317,9 +324,10 @@ def test_ensure_labels_returns_error_for_unknown_label():
 
 
 def test_ensure_labels_returns_error_when_create_fails():
+    from extensions.github_planner.client import GitHubError
     client = make_client()
     with patch.object(client, "get_labels", return_value=set()):
-        with patch.object(client, "create_label", return_value=False):
+        with patch.object(client, "create_label", side_effect=GitHubError("create failed")):
             result = client.ensure_labels(["bug"])
     assert result is not None
     assert "bug" in result

@@ -11,7 +11,13 @@
     "file_hashes":          "Disk: hub_agents/extensions/gh_planner/file_hashes.json",
     "file_tree":            "Disk: hub_agents/extensions/gh_planner/file_tree.json",
     "github_local_config":  "Disk: hub_agents/extensions/gh_planner/github_local_config.json",
-    "docs_strategy":        "Disk: hub_agents/extensions/gh_planner/docs_strategy.json"
+    "docs_strategy":        "Disk: hub_agents/extensions/gh_planner/docs_strategy.json",
+    "github_repo":          "Persistent: GITHUB_REPO in hub_agents/.env — never cleared by unload",
+    "workspace_config":     "Persistent: hub_agents/config.yaml — never cleared by unload",
+    "preferences":          "Persistent: user preferences in hub_agents/config.yaml — never cleared by unload",
+    "project_summary":      "Persistent: hub_agents/extensions/gh_planner/project_summary.md",
+    "project_detail":       "Persistent: hub_agents/extensions/gh_planner/project_detail.md",
+    "issue_files":          "Persistent: hub_agents/issues/*.md — never cleared by unload"
   },
   "always_keep": [
     "workspace_config",
@@ -168,6 +174,21 @@
         "workspace_config",
         "preferences"
       ]
+    },
+    "gh-implementation": {
+      "description": "Implementation entry — unload analysis caches, keep project docs and issues",
+      "unload": ["analysis_cache", "project_docs_cache", "file_tree_cache", "session_header_cache", "label_cache", "analyzer_snapshot", "file_hashes", "file_tree"],
+      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
+    },
+    "gh-implementation/implement": {
+      "description": "Implement a single issue — no additional unloads",
+      "unload": [],
+      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
+    },
+    "gh-implementation/session-knowledge": {
+      "description": "View/change session flags — keep everything",
+      "unload": [],
+      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
     }
   }
 }

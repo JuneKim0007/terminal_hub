@@ -138,10 +138,11 @@ class GitHubClient:
             page += 1
         return labels
 
-    def list_issues(self, state: str = "all", per_page: int = 50) -> list[dict]:
+    def list_issues(self, state: str = "all", per_page: int = 50, limit: int | None = None) -> list[dict]:
         """List issues from the repo."""
         _, url = self._url("github", "list_issues")
-        resp = self._client.get(url, params={"state": state, "per_page": per_page})
+        page_size = limit if limit is not None else per_page
+        resp = self._client.get(url, params={"state": state, "per_page": page_size})
         resp.raise_for_status()
         return resp.json()
 
@@ -194,14 +195,29 @@ class GitHubClient:
             page += 1
         return names
 
-    def create_label(self, name: str, color: str, description: str) -> bool:
-        """Create a label. Returns True on success or if already exists."""
-        _, url = self._url("github", "create_label")
-        try:
-            resp = self._client.post(url, json={"name": name, "color": color, "description": description})
-            return resp.status_code in (201, 422)
-        except httpx.HTTPError:
-            return False
+    def close_issue(self, number: int, comment: str | None = None) -> dict:
+        """Close a GitHub issue. Optionally post a comment first."""
+        if comment:
+            comment_url = BASE_URL + f"/repos/{self.repo}/issues/{number}/comments"
+            self._client.post(comment_url, json={"body": comment})
+        url = BASE_URL + f"/repos/{self.repo}/issues/{number}"
+        resp = self._client.patch(url, json={"state": "closed"})
+        if resp.status_code not in (200, 201):
+            raise GitHubError(f"Failed to close issue #{number}: {resp.status_code}")
+        return resp.json()
+
+    def create_label(self, name: str, color: str, description: str = "") -> dict:
+        """Create a label. If it already exists (422), fetch and return the existing one."""
+        url = BASE_URL + f"/repos/{self.repo}/labels"
+        resp = self._client.post(url, json={"name": name, "color": color.lstrip("#"), "description": description})
+        if resp.status_code in (200, 201):
+            return resp.json()
+        if resp.status_code == 422:
+            # Label already exists — fetch it
+            existing = self._client.get(url + f"/{name}")
+            if existing.status_code == 200:
+                return existing.json()
+        raise GitHubError(f"Failed to create label '{name}': {resp.status_code}")
 
     def list_repo_tree(self, branch: str = "HEAD") -> list[dict]:
         """Return [{path, size}] for every blob in the repo tree."""
@@ -278,8 +294,9 @@ class GitHubClient:
         for name in missing:
             defn = default_defs.get(name)
             if defn:
-                ok = self.create_label(name, defn["color"], defn.get("description", ""))
-                if not ok:
+                try:
+                    self.create_label(name, defn["color"], defn.get("description", ""))
+                except GitHubError:
                     failed.append(name)
             else:
                 failed.append(name)

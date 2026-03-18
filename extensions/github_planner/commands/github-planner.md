@@ -93,6 +93,38 @@ When the user selects (b) from Step 2 — user wants a repo created, or `get_ses
 
 ---
 
+## Step 2.5 — Milestone derivation (after project summary is saved)
+
+**Check `milestone_assign` preference first** via `read_preference("milestone_assign")`:
+- If `True`: skip the question, go directly to deriving and creating milestones
+- If `False`: skip milestones entirely this session
+- If unset (None): proceed with the question below
+
+**If unset**, derive 2–7 milestones from the saved project summary's feature groups.
+Milestone construction rules (apply these, do not invent new ones):
+- Each milestone covers a set of features that deliver user-visible value together
+- Name milestones descriptively: "Core Auth", "Posting & Feed" — not "Milestone 1"
+- Description = one sentence: what the user can do after this milestone ships
+- A simple app needs 2–3 milestones; a large app 5–7
+
+Show a compact table:
+```
+Proposed milestones:
+  M1 — Core Auth: users can sign up, log in, and reset their password
+  M2 — Posting: authenticated users can create, edit, and delete posts
+  M3 — Launch Polish: performance, error handling, deploy pipeline
+
+Create these on GitHub? (yes / no / yes, always create milestones)
+```
+
+- **"yes"** → call `create_milestone()` for each; cache results
+- **"yes, always"** → call `create_milestone()` + `set_preference("milestone_assign", True)`
+- **"no"** → proceed without milestones; no further milestone prompts this session; call `set_preference("milestone_assign", False)`
+
+**Cache note:** Once milestones are created/fetched this session, they live in `_MILESTONE_CACHE`. Do NOT call `list_milestones()` again — use the cached data for issue assignment.
+
+---
+
 ## Step 3 — Project docs check
 
 Call `get_session_header` (if available) or `docs_exist`.
@@ -145,7 +177,16 @@ After approval:
    - Step 2: `"Build a temporary knowledge base — group relevant files (Group A) vs unrelated (Group B)"`
    - Steps 3–N: specific to this issue's requirements
    - Final step: `"Verify full test suite passes and acceptance criteria are met"`
-3. Call `draft_issue(title, body, labels, assignees, agent_workflow=[...])` for each — **silent**
+2b. **Milestone assignment** — check `milestone_assign` preference:
+   - If `True` (preference set): silently look up which milestone this issue's feature area belongs to (from `_MILESTONE_CACHE` or project_summary.md Milestones table). Set `milestone_number` accordingly.
+   - If `False`: no milestone assignment.
+   - If unset AND milestones exist in cache: ask once (first issue only):
+     ```
+     Assign milestones to each issue? (yes / no / yes, always)
+     ```
+     "yes, always" → `set_preference("milestone_assign", True)`, then assign.
+     "no" → skip for all issues this session.
+3. Call `draft_issue(title, body, labels, assignees, agent_workflow=[...], milestone_number=N_or_None)` for each — **silent**
 3. Show confirmation block before any GitHub call (#82):
    ```
    About to: Create {N} GitHub issues on {repo}

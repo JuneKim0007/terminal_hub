@@ -219,6 +219,40 @@ class GitHubClient:
                 return existing.json()
         raise GitHubError(f"Failed to create label '{name}': {resp.status_code}")
 
+    def create_milestone(self, title: str, description: str = "", due_on: str | None = None) -> dict:
+        """Create a milestone. If title already exists (422), fetch and return the existing one."""
+        url = BASE_URL + f"/repos/{self.repo}/milestones"
+        payload: dict = {"title": title, "description": description}
+        if due_on:
+            payload["due_on"] = due_on
+        resp = self._client.post(url, json=payload)
+        if resp.status_code in (200, 201):
+            return resp.json()
+        if resp.status_code == 422:
+            # Milestone likely already exists — find it by title
+            existing = self._client.get(url, params={"state": "open", "per_page": 100})
+            if existing.status_code == 200:
+                for m in existing.json():
+                    if m["title"] == title:
+                        return m
+        raise GitHubError(f"Failed to create milestone '{title}': {resp.status_code}")
+
+    def list_milestones(self, state: str = "open") -> list[dict]:
+        """Return all milestones for the repo."""
+        url = BASE_URL + f"/repos/{self.repo}/milestones"
+        resp = self._client.get(url, params={"state": state, "per_page": 100})
+        if resp.status_code != 200:
+            raise GitHubError(f"Failed to list milestones: {resp.status_code}")
+        return resp.json()
+
+    def update_issue_milestone(self, issue_number: int, milestone_number: int) -> dict:
+        """Assign a milestone to an existing GitHub issue."""
+        url = BASE_URL + f"/repos/{self.repo}/issues/{issue_number}"
+        resp = self._client.patch(url, json={"milestone": milestone_number})
+        if resp.status_code not in (200, 201):
+            raise GitHubError(f"Failed to assign milestone to #{issue_number}: {resp.status_code}")
+        return resp.json()
+
     def list_repo_tree(self, branch: str = "HEAD") -> list[dict]:
         """Return [{path, size}] for every blob in the repo tree."""
         url = BASE_URL + f"/repos/{self.repo}/git/trees/{branch}?recursive=1"

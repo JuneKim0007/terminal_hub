@@ -207,20 +207,6 @@ def create_server() -> FastMCP:
             "summary": f"{len(issue_files)} total · {pending} pending · {open_count} open" if issue_files else None,
         })
 
-        # Build _display
-        rows = []
-        for item in items:
-            icon = "✓" if item["status"] == "present" else "✗"
-            detail = ""
-            if item["status"] == "present":
-                if item["age_hours"] is not None:
-                    detail = f"  {item['age_hours']}h old"
-                elif item["size_bytes"] is not None:
-                    detail = f"  {item['size_bytes']} bytes"
-                if item["summary"]:
-                    detail += f"  {item['summary']}"
-            rows.append(f"[{item['type']:<6}] {item['label']:<25} {icon}{detail}")
-
         cfg = load_config(root) or {}
         env = read_env(root)
 
@@ -237,6 +223,7 @@ def create_server() -> FastMCP:
         }
 
         # Build _display
+        import json as _json
         rows = []
         for item in items:
             icon = "✓" if item["status"] == "present" else "✗"
@@ -250,13 +237,28 @@ def create_server() -> FastMCP:
                     detail += f"  {item['summary']}"
             rows.append(f"[{item['type']:<6}] {item['label']:<25} {icon}{detail}")
 
-        ext_lines = [f"  • {e['name']} ({len(e.get('tools', []))} tools)" for e in _LOADED_EXTENSIONS]
+        ext_lines = []
+        for e in _LOADED_EXTENSIONS:
+            n_tools = len(e.get("tools", []))
+            desc = ""
+            mp = e.get("manifest_path", "")
+            if mp:
+                desc_path = Path(mp).parent / "description.json"
+                if desc_path.exists():
+                    try:
+                        raw = _json.loads(desc_path.read_text(encoding="utf-8"))
+                        desc = raw.get("summary") or (raw.get("entry") or {}).get("use_when") or ""
+                    except Exception:
+                        pass
+            summary = f" — {desc}" if desc else ""
+            ext_lines.append(f"  • {e['name']}{summary} ({n_tools} tools)")
+
         tool_count = len(registered_tools)
         warn_lines = [f"  ⚠ {w}" for w in _PLUGIN_WARNINGS]
 
         header = "terminal-hub active state\n" + "─" * 50
         runtime_block = "RUNTIME\n" + ("\n".join(ext_lines) or "  (no extensions loaded)") + \
-                        f"\n  {tool_count} tools registered" + \
+                        f"\n  {tool_count} tools total — full function awareness active" + \
                         ("\n" + "\n".join(warn_lines) if warn_lines else "")
         caches_block = "CACHES\n" + "\n".join(rows)
         mode = cfg.get("mode", "unknown")

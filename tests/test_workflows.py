@@ -387,7 +387,7 @@ class TestJourney3_SessionResume:
         # Now save fresh docs — this must clear the session header cache
         with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
              patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
-            _do_save_project_docs("# New Project\nFresh content.", "detail", "o/r")
+            _do_save_project_docs("New Project", ["React"], repo="o/r")
 
         with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
             fresh_header = _do_get_session_header()

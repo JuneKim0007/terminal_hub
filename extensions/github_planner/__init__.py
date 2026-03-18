@@ -444,7 +444,7 @@ def _do_submit_issue(slug: str) -> dict:
         "slug": slug,
         "local_file": f"hub_agents/issues/{slug}.md",
     }
-    return {**result_dict, "_display": f"✓ #{result['number']} {fm['title']}"}
+    return {**result_dict, "_display": f"**✅ Created** #{result['number']} — {fm['title']}\n{result['html_url']}"}
 
 
 def _do_get_issue_context(slug: str) -> dict:
@@ -1051,15 +1051,23 @@ def _do_load_project_docs(doc: str = "summary", repo: str | None = None, force_r
     resolved = _resolve_repo(repo) or "unknown"
     cached = _PROJECT_DOCS_CACHE.get(resolved)
 
-    if cached and not force_reload:
-        if doc == "summary":
-            return {"summary": cached.get("summary"), "detail": None}
-        if doc == "detail":
-            return {"summary": None, "detail": cached.get("detail")}
-        return {"summary": cached.get("summary"), "detail": cached.get("detail")}
-
     root = get_workspace_root()
     docs_dir = _gh_planner_docs_dir(root)
+
+    def _file_size(name: str) -> str:
+        p = docs_dir / name
+        return f"{p.stat().st_size:,} bytes" if p.exists() else "missing"
+
+    if cached and not force_reload:
+        if doc == "summary":
+            return {"summary": cached.get("summary"), "detail": None,
+                    "_display": f"📄 Loaded: project_summary.md ({_file_size('project_summary.md')}) [cached]"}
+        if doc == "detail":
+            return {"summary": None, "detail": cached.get("detail"),
+                    "_display": f"📄 Loaded: project_detail.md ({_file_size('project_detail.md')}) [cached]"}
+        return {"summary": cached.get("summary"), "detail": cached.get("detail"),
+                "_display": (f"📄 Loaded: project_summary.md ({_file_size('project_summary.md')}), "
+                             f"project_detail.md ({_file_size('project_detail.md')}) [cached]")}
 
     def _read(name: str) -> str | None:
         p = docs_dir / name
@@ -1081,10 +1089,14 @@ def _do_load_project_docs(doc: str = "summary", repo: str | None = None, force_r
     _PROJECT_DOCS_CACHE[resolved] = entry
 
     if doc == "summary":
-        return {"summary": summary, "detail": None}
+        return {"summary": summary, "detail": None,
+                "_display": f"📄 Loaded: project_summary.md ({_file_size('project_summary.md')})"}
     if doc == "detail":
-        return {"summary": None, "detail": detail}
-    return {"summary": summary, "detail": detail}
+        return {"summary": None, "detail": detail,
+                "_display": f"📄 Loaded: project_detail.md ({_file_size('project_detail.md')})"}
+    return {"summary": summary, "detail": detail,
+            "_display": (f"📄 Loaded: project_summary.md ({_file_size('project_summary.md')}), "
+                         f"project_detail.md ({_file_size('project_detail.md')})")}
 
 
 def _do_docs_exist(repo: str | None = None) -> dict:

@@ -86,7 +86,10 @@ def install_plugin_commands(manifest: dict, claude_dir: Path) -> None:
     """
     namespace = manifest.get("install_namespace", COMMAND_NAMESPACE)
     plugin_dir = Path(manifest["_plugin_dir"])
-    commands_src = plugin_dir / manifest["commands_dir"]
+    commands_dir = manifest.get("commands_dir")
+    if not commands_dir or not manifest.get("commands"):
+        return  # plugin has no commands to install
+    commands_src = plugin_dir / commands_dir
     dest_root = claude_dir / "commands" / namespace
     dest_root.mkdir(parents=True, exist_ok=True)
     for cmd_file in manifest["commands"]:

@@ -1,0 +1,11 @@
+{
+  "name": "prompt_coloring",
+  "version": "0.1",
+  "description": "ANSI-colored interactive prompts — format_prompt tool used by gh-plan and gh-implementation",
+  "entry": "extensions.prompt_coloring",
+  "commands_dir": null,
+  "commands": [],
+  "requires_env": [],
+  "optional_env": [],
+  "conversation_triggers": []
+}

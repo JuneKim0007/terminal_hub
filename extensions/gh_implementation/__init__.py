@@ -158,7 +158,7 @@ def _do_close_github_issue(issue_number: int, comment: str | None = None) -> dic
         return {
             "issue_number": issue_number,
             "closed": True,
-            "_display": f"✓ GitHub issue #{issue_number} closed",
+            "_display": f"**✅ Closed** issue #{issue_number} on GitHub",
         }
     except Exception as exc:
         return {"error": "close_failed", "message": str(exc)}

@@ -3,6 +3,10 @@
 <!-- RULE: after any implementation action, do not narrate results verbosely.
      Present diffs clearly, ask for acceptance, then proceed. -->
 
+<!-- RULE: for every yes/no or choice prompt shown to the user, call
+     format_prompt(question, options, style) first and print _display verbatim.
+     styles: "question" (default), "confirm", "warning", "switch", "error" -->
+
 <!-- LOAD ANNOUNCEMENT: At the very start of this command, output exactly:
      🟢 Loaded: gh-implementation — `extensions/gh_implementation/commands/gh-implementation.md`
      Do this before any tool calls. -->
@@ -42,15 +46,14 @@ Do NOT show the switch offer again after the user has already said yes in this s
 ## Step 1 — Context switch (silent)
 
 Call `apply_unload_policy(command="gh-implementation")`.
-This unloads gh_planner analysis caches and keeps project_summary.md and project_detail.md.
-**After receiving the result, display its `_display` field verbatim** so the user can see what was cleared.
+Output `_display` verbatim as a **standalone line** — nothing before or after it on the same line.
+Do NOT bury it in a sentence. Example output line: `🧹 Cleared: analysis_cache, label_cache`
 
 ---
 
 ## Step 2 — Read project context (silent)
 
-Call `load_project_docs(doc="summary")` — absorb silently.
-This gives you design principles and tech stack.
+Call `load_project_docs(doc="summary")`. Print `_display` verbatim (e.g. "📄 Loaded: project_summary.md (1,234 bytes)"). Do not show the doc contents.
 Do not read project_detail.md in full — use `lookup_feature_section` per topic when needed.
 
 ---

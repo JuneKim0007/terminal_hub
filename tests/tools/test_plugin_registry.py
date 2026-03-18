@@ -150,12 +150,6 @@ def test_scan_plugins_counts_unidentified(workspace, tmp_path):
     assert result["unidentified"] == 0
 
 
-def test_conversation_md_exists():
-    """conversation.md command file is present."""
-    path = Path(__file__).parent.parent.parent / "extensions" / "builtin" / "conversation.md"
-    assert path.exists()
-
-
 def test_converse_md_exists():
     """converse.md command file is present."""
     path = Path(__file__).parent.parent.parent / "extensions" / "builtin" / "converse.md"

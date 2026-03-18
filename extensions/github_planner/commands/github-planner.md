@@ -20,6 +20,12 @@ Call `get_setup_status`.
 - `initialised: false` → run the **setup sub-command** workflow (`/th:github-planner/setup`)
 - `initialised: true` → continue
 
+If `github_repo` is set, call `list_repo_labels()` silently. This warms the label cache
+so `submit_issue` never hits a cold `ensure_labels` call, and gives Claude the repo's
+actual label names to use during planning (Step 5). If it fails with a 404 or auth
+error, surface the problem immediately — bad repo config should be caught here, not
+at submit time.
+
 ---
 
 ## Step 2 — Repo identification
@@ -174,6 +180,8 @@ Say: **"Let me know any plans for this!"**
     `section` to inform issue scope and AC.
   - Do NOT load `project_detail.md` in full — always use `lookup_feature_section`
     with a specific feature name.
+- When suggesting labels for issues, use the names returned by `list_repo_labels()`
+  from Step 1. Fall back to `labels.json` defaults only if the repo has no custom labels.
 - Ask one clarifying question at a time
 - Propose a breakdown when the user describes enough: epics → issues
 - When ready, show a one-line preview list:

@@ -1,0 +1,28 @@
+{
+  "plugin": "gh_implementation",
+  "display_name": "GitHub Implementation",
+  "summary": "Implement GitHub issues — load issue context, define or follow agent workflow, review diffs, push and close.",
+  "entry": {
+    "command": "/th:gh-implementation",
+    "triggers": ["implement this issue", "work on an issue", "start implementing", "pick up an issue", "let's implement"],
+    "use_when": "User wants to implement a tracked GitHub issue end-to-end"
+  },
+  "subcommands": [
+    {
+      "command": "/th:gh-implementation/implement",
+      "aliases": ["implement issue", "work on issue", "pick up issue"],
+      "use_when": "Run the full implementation flow for a specific issue"
+    },
+    {
+      "command": "/th:gh-implementation/session-knowledge",
+      "aliases": ["session config", "what is my session config", "change automatic to false", "session knowledge"],
+      "use_when": "View or change session-scoped behaviour flags (auto-push, auto-close, auto-delete local issues)"
+    }
+  ],
+  "interface": {
+    "unloads_on_entry": ["gh_planner_analysis", "gh_planner_session_header", "gh_planner_file_tree"],
+    "preserves_on_entry": ["project_summary", "project_detail"],
+    "output_dir": "hub_agents/extensions/gh_planner",
+    "note": "Output files (if any) share the gh_planner namespace so project_summary.md and project_detail.md remain the single source of truth."
+  }
+}

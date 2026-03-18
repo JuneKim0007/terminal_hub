@@ -1,0 +1,24 @@
+{
+  "name": "gh_implementation",
+  "version": "0.1",
+  "description": "GitHub issue implementation — read issues, implement with agent workflow, review diffs, push and close",
+  "entry": "extensions.gh_implementation",
+  "entry_command": "gh-implementation.md",
+  "commands_dir": "commands",
+  "commands": [
+    "gh-implementation.md",
+    "gh-implementation/implement.md",
+    "gh-implementation/session-knowledge.md"
+  ],
+  "requires_env": ["GITHUB_REPO"],
+  "optional_env": ["GITHUB_TOKEN"],
+  "conversation_triggers": [
+    "implement this issue",
+    "work on an issue",
+    "start implementing",
+    "pick up an issue",
+    "let's implement",
+    "work on issue",
+    "implement issue"
+  ]
+}

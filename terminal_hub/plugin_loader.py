@@ -78,9 +78,12 @@ def build_instructions(plugins: list[dict]) -> str:
     lines = [
         "terminal-hub connected.",
         "",
-        "BEHAVIOUR RULE: If the user describes a bug, feature request, or TODO in",
-        "conversation, proactively offer: \"Want me to draft that as a GitHub issue?\"",
-        "Do not wait for them to type a command.",
+        "BEHAVIOUR RULE: Before writing any code, editing any file, or making any",
+        "change to the project, you MUST first draft a GitHub issue with `draft_issue()`",
+        "and get explicit user confirmation. Never implement directly — always issue first.",
+        "If the user describes a bug, feature, or TODO: draft an issue, show it, and wait",
+        "for 'yes' before doing anything. The only exception is if the user explicitly says",
+        "\"just do it\" or \"skip the issue\" — then proceed without drafting.",
         "",
         "Available plugins:",
     ]

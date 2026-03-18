@@ -146,6 +146,63 @@ def create_server() -> FastMCP:
             result["label_warning"] = label_warning
         return result
 
+    # ── Command load announcement ─────────────────────────────────────────────
+
+    @mcp.tool()
+    def announce_command_load(command: str) -> dict:
+        """Announce that a /th: command prompt has been loaded.
+        Call this as the very first step of every /th: command before any other tool.
+
+        command: the command path relative to th/, e.g. 'github-planner' or
+                 'github-planner/create-issue'."""
+        commands_root = Path.home() / ".claude" / "commands" / "th"
+        prompt_path = commands_root / (command + ".md")
+
+        try:
+            registered_tools = [t.name for t in mcp._tool_manager.list_tools()]
+        except Exception:
+            registered_tools = []
+
+        import json as _json
+        ext_lines = []
+        for ext in _LOADED_EXTENSIONS:
+            n = len(ext["tools"])
+            desc = ""
+            mp = ext.get("manifest_path", "")
+            if mp:
+                desc_path = Path(mp).parent / "description.json"
+                if desc_path.exists():
+                    try:
+                        raw = _json.loads(desc_path.read_text(encoding="utf-8"))
+                        desc = raw.get("summary") or ""
+                    except Exception:
+                        pass
+            summary = f" — {desc}" if desc else ""
+            ext_lines.append(f"  • {ext['name']}{summary} ({n} tool{'s' if n != 1 else ''})")
+
+        exists = prompt_path.exists()
+        path_str = str(prompt_path)
+
+        display_lines = [
+            f"🟢 /th:{command} — prompt loaded",
+            f"   Prompt: {path_str}",
+            f"   Tools:  {len(registered_tools)} registered",
+        ]
+        if ext_lines:
+            display_lines.append("   Extensions:")
+            display_lines.extend(ext_lines)
+        if not exists:
+            display_lines.append(f"   ⚠ prompt file not found at {path_str}")
+
+        return {
+            "command": command,
+            "prompt_path": path_str,
+            "prompt_exists": exists,
+            "registered_tools": len(registered_tools),
+            "loaded_extensions": _LOADED_EXTENSIONS,
+            "_display": "\n".join(display_lines),
+        }
+
     # ── Session state / runtime state tools ──────────────────────────────────
 
     @mcp.tool()

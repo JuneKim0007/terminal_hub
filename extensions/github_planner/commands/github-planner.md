@@ -130,7 +130,12 @@ Say: **"Let me know any plans for this!"**
 After approval:
 1. For each planned issue: call `lookup_feature_section(feature="...")` if not already
    done for that area. Use returned section + global_rules in the issue body.
-2. Call `draft_issue(title, body, labels, assignees)` for each — **silent**
+2. For each issue, generate `agent_workflow` steps — **always required, never omit**:
+   - Step 1: `"Scan all files and cache the project file structure"`
+   - Step 2: `"Build a temporary knowledge base — group relevant files (Group A) vs unrelated (Group B)"`
+   - Steps 3–N: specific to this issue's requirements
+   - Final step: `"Verify full test suite passes and acceptance criteria are met"`
+3. Call `draft_issue(title, body, labels, assignees, agent_workflow=[...])` for each — **silent**
 3. Show confirmation block before any GitHub call (#82):
    ```
    About to: Create {N} GitHub issues on {repo}

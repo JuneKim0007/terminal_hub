@@ -312,6 +312,7 @@ def _do_draft_issue(
     labels: list[str] | None = None,
     assignees: list[str] | None = None,
     note: str | None = None,
+    agent_workflow: list[str] | None = None,
 ) -> dict:
     """Save an issue draft locally as status=pending."""
     root = get_workspace_root()
@@ -339,6 +340,7 @@ def _do_draft_issue(
             created_at=date.today(),
             status=IssueStatus.PENDING,
             note=note,
+            agent_workflow=agent_workflow,
         )
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
@@ -2160,6 +2162,7 @@ def register(mcp) -> None:
         labels: list[str] | None = None,
         assignees: list[str] | None = None,
         note: str | None = None,
+        agent_workflow: list[str] | None = None,
     ) -> dict:
         """Save an issue draft locally as status=pending.
 
@@ -2168,10 +2171,26 @@ def register(mcp) -> None:
         Local-only users can stop here — the draft is cached in hub_agents/issues/.
 
         note: optional meta-note about user intent or experience level — stored in
-        front matter for agent reference. Example: "user wants X, may need guidance
-        on Y — suggest step-by-step approach"
+        front matter for agent reference.
+
+        agent_workflow: ordered steps for how an agent should resolve this issue.
+          Always generate this from the issue context — do NOT leave it empty.
+          Steps 1-2 are standard; steps 3-N are issue-specific:
+            1. Scan all files and cache the project file structure
+            2. Build a temporary knowledge base — group files as relevant (Group A)
+               vs unrelated (Group B)
+            3. <issue-specific implementation step>
+            4. <issue-specific test/verify step>
+            ...
+          Example for a bug fix:
+            ["Scan all files and cache project structure",
+             "Build knowledge base — group relevant files (Group A) vs unrelated (Group B)",
+             "Reproduce the bug: identify the failing code path",
+             "Fix minimally — change only what is needed",
+             "Add a regression test that would have caught this",
+             "Verify full test suite passes"]
         """
-        return _do_draft_issue(title, body, labels, assignees, note=note)
+        return _do_draft_issue(title, body, labels, assignees, note=note, agent_workflow=agent_workflow)
 
     @mcp.tool()
     def generate_issue_workflows(slug: str) -> dict:

@@ -95,6 +95,12 @@ def next_local_number(root: Path) -> str:
     return str(max_num + 1)
 
 
+_AGENT_WORKFLOW_NOTE = (
+    "> **Agent workflow** — step-by-step guide for how an agent should resolve this issue. "
+    "Follow these steps in order."
+)
+
+
 def write_issue_file(
     root: Path,
     slug: str,
@@ -107,10 +113,17 @@ def write_issue_file(
     issue_number: int | None = None,
     github_url: str | None = None,
     workflow: list[str] | None = None,
-    agent_workflow: str | None = None,
+    agent_workflow: list[str] | None = None,
     note: str | None = None,
 ) -> Path:
-    """Write an issue .md file with YAML front matter atomically. Returns the file path."""
+    """Write an issue .md file with YAML front matter atomically. Returns the file path.
+
+    agent_workflow: ordered steps for how an agent should resolve this issue.
+      Stored in YAML frontmatter and rendered as a ## Agent Workflow body section.
+      Example: ["Scan all files and cache project structure",
+                "Build knowledge base separating relevant vs unrelated files",
+                "Implement the fix", "Write tests", "Verify suite passes"]
+    """
     validate_slug(slug)
     path = _issues_dir(root) / f"{slug}.md"
     frontmatter: dict[str, Any] = {
@@ -130,7 +143,14 @@ def write_issue_file(
 
     # Prefix body with issue identifier header for easy agent orientation
     header = f"# Issue #{slug}: {title}\n\n"
-    content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{header}{body}\n"
+
+    # Append Agent Workflow section when steps are provided
+    workflow_section = ""
+    if agent_workflow:
+        steps = "\n".join(f"{i + 1}. {step}" for i, step in enumerate(agent_workflow))
+        workflow_section = f"\n\n---\n\n## Agent Workflow\n\n{_AGENT_WORKFLOW_NOTE}\n\n{steps}"
+
+    content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{header}{body}{workflow_section}\n"
     _atomic_write(path, content)
     return path
 

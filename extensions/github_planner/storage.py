@@ -79,6 +79,22 @@ def resolve_slug(root: Path, base_slug: str) -> str:
     return slug
 
 
+def next_local_number(root: Path) -> str:
+    """Return the next sequential local issue number as a string (e.g. '1', '2', '3').
+
+    Scans hub_agents/issues/ for purely numeric stems (e.g. '1.md', '42.md') and
+    returns max + 1. Text-slugged files from earlier versions or GitHub syncs are ignored.
+    Starts at '1' when no numeric issues exist yet.
+    """
+    issues_dir = _issues_dir(root)
+    max_num = 0
+    if issues_dir.exists():
+        for path in issues_dir.glob("*.md"):
+            if path.stem.isdigit():
+                max_num = max(max_num, int(path.stem))
+    return str(max_num + 1)
+
+
 def write_issue_file(
     root: Path,
     slug: str,

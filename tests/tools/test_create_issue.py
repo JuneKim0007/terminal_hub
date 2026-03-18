@@ -33,14 +33,14 @@ def test_draft_issue_creates_pending_local_file(workspace):
         server = create_server()
         result = call(server, "draft_issue", {"title": "Fix auth bug", "body": "Fix it."})
     assert result["status"] == STATUS_PENDING
-    assert (workspace / "hub_agents" / "issues" / "fix-auth-bug.md").exists()
+    assert (workspace / "hub_agents" / "issues" / "1.md").exists()
 
 
-def test_draft_issue_returns_slug_and_preview(workspace):
+def test_draft_issue_returns_numeric_slug_and_preview(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "draft_issue", {"title": "Add feature", "body": "Nice feature."})
-    assert result["slug"] == "add-feature"
+    assert result["slug"] == "1"
     assert "Nice feature" in result["preview_body"]
 
 
@@ -69,12 +69,14 @@ def test_draft_issue_missing_body_returns_error(workspace):
     assert "body" in result["message"]
 
 
-def test_draft_issue_resolves_slug_collision(workspace):
-    (workspace / "hub_agents" / "issues" / "fix-auth-bug.md").write_text("x")
+def test_draft_issue_sequential_numbering(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "draft_issue", {"title": "Fix auth bug", "body": "body"})
-    assert result["slug"] == "fix-auth-bug-2"
+        r1 = call(server, "draft_issue", {"title": "First", "body": "body"})
+        r2 = call(server, "draft_issue", {"title": "Second", "body": "body"})
+    assert r1["slug"] == "1"
+    assert r2["slug"] == "2"
+    assert (workspace / "hub_agents" / "issues" / "2.md").exists()
 
 
 def test_draft_issue_stores_labels_and_assignees(workspace):
@@ -183,25 +185,6 @@ def test_submit_issue_github_error_returns_error(workspace):
         result = call(server, "submit_issue", {"slug": "my-issue"})
     assert result["error"] == "auth_failed"
     assert result["_hook"] is None
-
-
-# ── draft_issue: empty slug from title (line 134-135 in __init__.py) ──────────
-
-def test_draft_issue_empty_slug_from_special_char_title(workspace):
-    """Line 134-135: slugify('---') → '' → returns draft_failed error."""
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
-        server = create_server()
-        result = call(server, "draft_issue", {"title": "---", "body": "some body"})
-    assert result["error"] == "draft_failed"
-    assert "slug" in result["message"].lower() or "alphanumeric" in result["message"].lower()
-
-
-def test_draft_issue_empty_slug_from_only_spaces(workspace):
-    """Line 134-135: title of only whitespace slugifies to '' → draft_failed."""
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
-        server = create_server()
-        result = call(server, "draft_issue", {"title": "   ", "body": "body"})
-    assert result["error"] == "draft_failed"
 
 
 # ── draft_issue: OSError on write (lines 175-176 in __init__.py) ──────────────

@@ -32,13 +32,24 @@ Ask:
 
 When the user selects (c) or `get_session_header` returns `{docs: false}` and GitHub history is empty:
 
-1. Engage conversationally: "Tell me about your project — what is it, what's the main tech stack, and what are you building first?"
-2. From conversation: draft a minimal `project_summary.md` stub (no code analysis needed).
-   Show it: "I'll save this as your project description. Confirm? (yes / edit / cancel)"
-3. On confirm: call `update_project_description(content=...)`.
-4. Ask: "Want me to break your first features into issues? (yes / describe features first)"
-5. On yes: continue to Step 5 (planning conversation) — skip analysis entirely.
-6. Issue creation uses standard Step 6 flow with confirmation hook (#82).
+1. Ask conversationally (one message, keep it casual):
+   > "Tell me about your project idea — what are you building? Do you have any specific tech stacks in mind? (totally optional!)"
+
+2. From the conversation, draft a minimal `project_summary.md` stub. If the user didn't mention a tech stack, suggest 2–3 options that fit their idea alongside the sketch.
+
+3. Show the draft before saving — present it as a project sketch, not a form to fill:
+   > "Here's your project sketch:
+   > ---
+   > {draft summary}
+   > ---
+   > Want to confirm this, add anything, or keep chatting? You can also just say 'looks good' and I'll save it."
+
+4. Wait for explicit confirmation before calling `update_project_description(content=...)`.
+   If the user wants changes, revise the draft and show it again. Keep the conversation going naturally — do not rush to save.
+
+5. Once saved, ask: "Want me to break your first features into issues? (yes / describe features first)"
+6. On yes: continue to Step 5 (planning conversation) — skip analysis entirely.
+7. Issue creation uses standard Step 6 flow with confirmation hook (#82).
 
 ---
 

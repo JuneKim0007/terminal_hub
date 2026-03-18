@@ -38,9 +38,20 @@ Guided single-issue workflow:
    {From global_rules; omit if no docs exist}
    ```
 
+5b. Generate `agent_workflow` steps for this specific issue — **always required**:
+   - Step 1 is always: `"Scan all files and cache the project file structure"`
+   - Step 2 is always: `"Build a temporary knowledge base — group relevant files (Group A) vs unrelated (Group B)"`
+   - Steps 3–N: tailored to what this issue actually requires (implement X, write tests for Y, etc.)
+   - Final step: `"Verify full test suite passes and acceptance criteria are met"`
+
+   Examples by issue type:
+   - **Feature**: `["Scan all files...", "Build knowledge base...", "Implement {feature}", "Write unit tests covering all AC", "Verify suite passes"]`
+   - **Bug**: `["Scan all files...", "Build knowledge base...", "Reproduce the bug — identify the failing code path", "Fix minimally", "Add regression test", "Verify suite passes"]`
+   - **Refactor**: `["Scan all files...", "Build knowledge base...", "Map all call sites of the target code", "Refactor incrementally", "Verify no behaviour change — suite green"]`
+
 6. Show preview. Ask: "Create this? (yes / edit)"
 
-7. On yes: call `draft_issue(title, body, labels, assignees)`.
+7. On yes: call `draft_issue(title, body, labels, assignees, agent_workflow=[...])`.
 
 8. Before pushing to GitHub, show confirmation block (#82):
    ```

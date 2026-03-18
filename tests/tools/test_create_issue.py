@@ -98,6 +98,53 @@ def test_draft_issue_display_shows_title(workspace):
     assert "My Task" in result["_display"]
 
 
+def test_draft_issue_agent_workflow_written_to_file(workspace):
+    steps = [
+        "Scan all files and cache project structure",
+        "Build knowledge base — group relevant files (Group A) vs unrelated (Group B)",
+        "Implement the feature",
+        "Write unit tests",
+        "Verify suite passes",
+    ]
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "draft_issue", {
+            "title": "Add login",
+            "body": "Implement login flow",
+            "agent_workflow": steps,
+        })
+    issue_file = workspace / "hub_agents" / "issues" / f"{result['slug']}.md"
+    content = issue_file.read_text()
+    assert "## Agent Workflow" in content
+    assert "Agent workflow" in content          # side note present
+    assert "Scan all files" in content
+    assert "Build knowledge base" in content
+    assert "Implement the feature" in content
+
+
+def test_draft_issue_agent_workflow_in_frontmatter(workspace):
+    steps = ["Step A", "Step B"]
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "draft_issue", {
+            "title": "Fix crash",
+            "body": "Crashes on startup",
+            "agent_workflow": steps,
+        })
+    from extensions.github_planner.storage import read_issue_frontmatter
+    fm = read_issue_frontmatter(workspace, result["slug"])
+    assert fm["agent_workflow"] == steps
+
+
+def test_draft_issue_no_agent_workflow_no_section(workspace):
+    """Without agent_workflow, ## Agent Workflow section must not appear."""
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "draft_issue", {"title": "Plain issue", "body": "body"})
+    issue_file = workspace / "hub_agents" / "issues" / f"{result['slug']}.md"
+    assert "## Agent Workflow" not in issue_file.read_text()
+
+
 # ── submit_issue ──────────────────────────────────────────────────────────────
 
 def _make_pending(workspace, slug="my-issue", title="My Issue", body="body", labels=None):

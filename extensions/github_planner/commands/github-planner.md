@@ -112,7 +112,13 @@ After approval:
 
    `update_project_detail_section(feature_name, content)` merges a single H2 section
    into `project_detail.md` without rewriting the rest of the file.
-6. Say: **"Let me know any plans for this!"**
+6. **Offer context cleanup:**
+   Ask: "Planning done! Unload cached data to keep Claude's context lean? (yes/no)"
+   - If yes: run the **unload sub-command** workflow (`/th:github-planner/unload`)
+     This clears all in-memory caches (analysis, docs, file tree, session headers).
+     Your issues and project docs on disk are always preserved.
+   - If no: proceed.
+7. Say: **"Let me know any plans for this!"**
 
 ---
 

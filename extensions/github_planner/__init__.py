@@ -2111,6 +2111,59 @@ def _do_apply_unload_policy(command: str) -> dict:
     }
 
 
+# ── Label management helpers ──────────────────────────────────────────────────
+
+def _do_list_repo_labels() -> dict:
+    """Fetch labels from GitHub and cache them."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    gh, err = get_github_client()
+    if gh is None:
+        return err
+    repo = read_env(root).get("GITHUB_REPO", "")
+    try:
+        with gh:
+            labels = gh.list_labels()
+        _LABEL_CACHE[repo] = labels
+        names = [l["name"] for l in labels]
+        display_lines = "\n".join(f"  • {l['name']} — {l.get('description', '')}" for l in labels)
+        return {
+            "labels": labels,
+            "names": names,
+            "count": len(labels),
+            "_display": f"{len(labels)} labels on {repo}:\n{display_lines}",
+        }
+    except Exception as exc:
+        return {"error": "list_labels_failed", "message": str(exc)}
+
+
+def _do_make_label(name: str, color: str, description: str = "") -> dict:
+    """Create a label on GitHub (idempotent). Updates the label cache."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    if not name:
+        return {"error": "missing_field", "message": "name is required"}
+    gh, err = get_github_client()
+    if gh is None:
+        return err
+    repo = read_env(root).get("GITHUB_REPO", "")
+    try:
+        with gh:
+            label = gh.create_label(name, color, description)
+        # Invalidate label cache so next list_repo_labels re-fetches
+        _LABEL_CACHE.pop(repo, None)
+        return {
+            "name": label["name"],
+            "color": label["color"],
+            "description": label.get("description", ""),
+            "_display": f"✓ Label '{name}' ready on {repo}",
+        }
+    except Exception as exc:
+        return {"error": "make_label_failed", "message": str(exc)}
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -2527,3 +2580,25 @@ def register(mcp) -> None:
         Load only what you need — global is ~20 tokens, local is ~50 tokens.
         """
         return _do_get_github_config(scope)
+
+    @mcp.tool()
+    def list_repo_labels() -> dict:
+        """Fetch all labels from the GitHub repo and cache them locally.
+
+        Call before draft_issue to know which labels are available.
+        Returns {labels, names, count}."""
+        return _do_list_repo_labels()
+
+    @mcp.tool()
+    def make_label(name: str, color: str, description: str = "") -> dict:
+        """Create a GitHub label (idempotent — returns existing if already present).
+
+        Follow the conventional palette:
+          bug=#d73a4a, enhancement=#a2eeef, feature=#0075ca,
+          documentation=#0075ca, refactor=#e4e669, performance=#e4e669,
+          chore=#ededed, test=#bfd4f2, priority:high=#e11d48,
+          priority:low=#86efac, status:needs-triage=#fbbf24
+
+        color: hex color WITHOUT the # prefix (e.g. 'd73a4a')
+        """
+        return _do_make_label(name, color, description)

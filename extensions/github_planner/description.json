@@ -2,40 +2,45 @@
   "plugin": "github_planner",
   "summary": "GitHub issue planning — analyze repos, plan work, create and track issues.",
   "entry": {
-    "command": "/th:github-planner",
+    "command": "/th:gh-plan",
     "triggers": ["let's plan", "plan some work", "github planner", "open the planner"],
     "use_when": "Starting any planning, analysis, or issue-management workflow"
   },
   "subcommands": [
     {
-      "command": "/th:github-planner/list-issues",
+      "command": "/th:gh-plan-list",
       "aliases": ["list issues", "what's open", "show tracked issues", "what issues do we have"],
       "use_when": "User wants to see what is already tracked"
     },
     {
-      "command": "/th:github-planner/create-issue",
+      "command": "/th:gh-plan-create",
       "aliases": ["create an issue", "draft an issue", "track this", "log a bug"],
       "use_when": "User wants to draft or submit a single issue quickly"
     },
     {
-      "command": "/th:github-planner/analyze",
+      "command": "/th:gh-plan-analyze",
       "aliases": ["analyze my repo", "read the codebase", "analyze the project"],
       "use_when": "User wants to build or refresh project docs before planning"
     },
     {
-      "command": "/th:github-planner/setup",
+      "command": "/th:gh-plan-setup",
       "aliases": ["set up github", "configure the repo", "initialise terminal-hub"],
       "use_when": "First-time setup or re-configuring the GitHub repo"
     },
     {
-      "command": "/th:github-planner/auth",
+      "command": "/th:gh-plan-auth",
       "aliases": ["fix auth", "github login", "authenticate"],
       "use_when": "GitHub authentication is failing or needs to be refreshed"
     },
     {
-      "command": "/th:github-planner/unload",
+      "command": "/th:gh-plan-unload",
       "aliases": ["unload", "clear cache", "free memory", "clean up context"],
       "use_when": "User wants to clear cached data and free Claude context after planning"
+    },
+    {
+      "command": "/th:gh-plan-settings",
+      "aliases": ["planner settings", "planning preferences", "configure planner"],
+      "use_when": "User wants to view or change planning preferences (milestone_assign, label_auto_assign, confirm_arch_changes)"
     },
     {
       "command": "/th:current-stat",

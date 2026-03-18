@@ -1,14 +1,14 @@
-# /th:github-planner — Integrated planning flow
+# /th:gh-plan — Integrated planning flow
 
 <!-- RULE: after any draft_issue or submit_issue call, do not narrate the result.
      Continue the planning conversation. When all planned issues are created, say:
      "Let me know any plans for this!" -->
 
 <!-- LOAD ANNOUNCEMENT: At the very start of this command, output exactly:
-     🟢 Loaded: github-planner — `extensions/github_planner/commands/github-planner.md`
+     🟢 Loaded: gh-plan — `extensions/github_planner/commands/gh-plan.md`
      Do this before any tool calls. -->
 
-You are in **github-planner** mode — the integrated flow that orchestrates
+You are in **gh-plan** mode — the integrated flow that orchestrates
 analysis, planning, and issue creation through natural conversation.
 Sub-commands handle each step; this command composes them.
 
@@ -17,14 +17,14 @@ Sub-commands handle each step; this command composes them.
 ## Step 1 — Workspace + auth check
 
 Call `get_setup_status`.
-- `initialised: false` → run the **setup sub-command** workflow (`/th:github-planner/setup`)
+- `initialised: false` → run the **setup sub-command** workflow (`/th:gh-plan-setup`)
 - `initialised: true` → continue
 
-If `github_repo` is set, call `list_repo_labels()` silently. This warms the label cache
-so `submit_issue` never hits a cold `ensure_labels` call, and gives Claude the repo's
-actual label names to use during planning (Step 5). If it fails with a 404 or auth
-error, surface the problem immediately — bad repo config should be caught here, not
-at submit time.
+If `github_repo` is set, call `list_repo_labels()` and `list_milestones()` silently.
+This warms both caches so `submit_issue`/`assign_milestone` never make cold API calls,
+and gives Claude the repo's actual label and milestone names for planning (Step 5/6).
+If either call fails with 404 or auth error, surface it immediately — bad repo config
+should be caught here, not at submit time.
 
 ---
 
@@ -141,7 +141,7 @@ Create these on GitHub? (yes / no / yes, always create milestones)
 ```
 This is the authoritative milestone reference for agents implementing issues — they MUST check this section before asking "which milestone does this belong to?".
 
-**Cache note:** Once milestones are created/fetched this session, they live in `_MILESTONE_CACHE`. Do NOT call `list_milestones()` again — use the cached data for issue assignment.
+**Cache note:** Milestones are pre-fetched in Step 1 and live in `_MILESTONE_CACHE`. Do NOT call `list_milestones()` again — use the cached data for issue assignment.
 
 ---
 
@@ -152,7 +152,7 @@ Call `get_session_header` (if available) or `docs_exist`.
 - Docs ≥ 7 days or missing → recommend the **analyze sub-command** workflow
 
 If re-using existing docs → skip to Step 5.
-If analyzing → run the **analyze sub-command** workflow (`/th:github-planner/analyze`).
+If analyzing → run the **analyze sub-command** workflow (`/th:gh-plan-analyze`).
 
 ---
 
@@ -180,8 +180,11 @@ Say: **"Let me know any plans for this!"**
     `section` to inform issue scope and AC.
   - Do NOT load `project_detail.md` in full — always use `lookup_feature_section`
     with a specific feature name.
-- When suggesting labels for issues, use the names returned by `list_repo_labels()`
-  from Step 1. Fall back to `labels.json` defaults only if the repo has no custom labels.
+- **Label suggestions:** use names from `_LABEL_CACHE` (warmed in Step 1). Never invent
+  a label not in cache or `labels.json`. Suggest type label (`bug`/`feature`/`enhancement`/
+  `refactor`/`chore`/`documentation`/`performance`) + area label if identifiable.
+- **Milestone suggestions:** if exactly one active milestone is in `_MILESTONE_CACHE`,
+  mention it as the natural target. If multiple exist, ask which one fits.
 - Ask one clarifying question at a time
 - Propose a breakdown when the user describes enough: epics → issues
 - When ready, show a one-line preview list:
@@ -203,15 +206,27 @@ After approval:
    - Step 2: `"Build a temporary knowledge base — group relevant files (Group A) vs unrelated (Group B)"`
    - Steps 3–N: specific to this issue's requirements
    - Final step: `"Verify full test suite passes and acceptance criteria are met"`
-2b. **Milestone assignment** — check `milestone_assign` preference:
-   - If `True` (preference set): silently look up which milestone this issue's feature area belongs to (from `_MILESTONE_CACHE` or project_summary.md Milestones table). Set `milestone_number` accordingly.
-   - If `False`: no milestone assignment.
-   - If unset AND milestones exist in cache: ask once (first issue only):
-     ```
-     Assign milestones to each issue? (yes / no / yes, always)
-     ```
-     "yes, always" → `set_preference("milestone_assign", True)`, then assign.
-     "no" → skip for all issues this session.
+2b. **Auto-assign labels** — check `label_auto_assign` preference (default `true`):
+   - If `true`/unset: infer labels from issue description using this table (only use names in `_LABEL_CACHE` or `labels.json`):
+     | Condition | Label |
+     |-----------|-------|
+     | Crash / incorrect behaviour / regression | `bug` |
+     | New user-visible capability | `feature` or `enhancement` |
+     | Code cleanup, no behaviour change | `refactor` or `chore` |
+     | Docs/comments only | `documentation` |
+     | Speed / memory / API call improvement | `performance` |
+     Also add an area label (`backend`, `frontend`, `auth`, `api`, etc.) if clearly identifiable.
+   - If `false`: leave labels empty; let user specify.
+
+2c. **Auto-assign milestone** — check `milestone_auto_assign` preference (default `true`):
+   - If `true`/unset: apply the first matching rule below (stop at first match):
+     1. Title/body references a version or sprint (e.g. `v2.0`, `Sprint 3`) → assign milestone whose name matches
+     2. Exactly one active milestone in `_MILESTONE_CACHE` → assign it silently
+     3. Multiple active milestones → ask user: "Which milestone? ({names}) / skip"
+     4. No milestones → leave unassigned (do NOT create one per issue)
+   - If `false`: no milestone assignment.
+   - Never auto-create a milestone for an individual issue — milestones are created in Step 2.5.
+
 3. Call `draft_issue(title, body, labels, assignees, agent_workflow=[...], milestone_number=N_or_None)` for each — **silent**
 3. Show confirmation block before any GitHub call (#82):
    ```
@@ -242,7 +257,7 @@ After approval:
    into `project_detail.md` without rewriting the rest of the file.
 6. **Offer context cleanup:**
    Ask: "Planning done! Unload cached data to keep Claude's context lean? (yes/no)"
-   - If yes: call `apply_unload_policy(command="github-planner")` — this reads
+   - If yes: call `apply_unload_policy(command="gh-plan")` — this reads
      `unload_policy.json` and clears only what's in `unload[]` for this command.
      Repo config, preferences, and all disk docs/issues are always preserved.
      Print `_display` from the result.
@@ -255,8 +270,8 @@ After approval:
 
 | Command | Say | Does |
 |---------|-----|------|
-| `/th:github-planner/list-issues` | "list issues" | Show issue table |
-| `/th:github-planner/create-issue` | "create an issue" | Single guided issue |
-| `/th:github-planner/analyze` | "analyze my repo" | Build project docs |
-| `/th:github-planner/setup` | "set up github" | Workspace init |
-| `/th:github-planner/auth` | "fix auth" | Auth recovery |
+| `/th:gh-plan-list` | "list issues" | Show issue table |
+| `/th:gh-plan-create` | "create an issue" | Single guided issue |
+| `/th:gh-plan-analyze` | "analyze my repo" | Build project docs |
+| `/th:gh-plan-setup` | "set up github" | Workspace init |
+| `/th:gh-plan-auth` | "fix auth" | Auth recovery |

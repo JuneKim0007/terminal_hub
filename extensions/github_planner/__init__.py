@@ -80,7 +80,7 @@ _G_ISSUE   = "terminal-hub://workflow/issue"
 _G_CONTEXT = "terminal-hub://workflow/context"
 _G_AUTH    = "terminal-hub://workflow/auth"
 
-_BUILTIN_COMMANDS = ["create.md", "github-planner/setup.md", "github-planner/auth.md", "context.md"]
+_BUILTIN_COMMANDS = ["create.md", "gh-plan-setup.md", "gh-plan-auth.md", "context.md"]
 
 
 def _load_agent(name: str) -> str:
@@ -2409,22 +2409,22 @@ def register(mcp) -> None:
     @mcp.resource("terminal-hub://workflow/init")
     def workflow_init() -> str:
         """Step-by-step guide for initialising a new project workspace."""
-        return _load_agent("github-planner/setup.md")
+        return _load_agent("gh-plan-setup.md")
 
     @mcp.resource("terminal-hub://workflow/issue")
     def workflow_issue() -> str:
         """Guide for creating, listing, and reloading issue context."""
-        return _load_agent("github-planner/create-issue.md")
+        return _load_agent("gh-plan-create.md")
 
     @mcp.resource("terminal-hub://workflow/context")
     def workflow_context() -> str:
         """Guide for loading and saving project description and architecture."""
-        return _load_agent("github-planner.md")
+        return _load_agent("gh-plan.md")
 
     @mcp.resource("terminal-hub://workflow/auth")
     def workflow_auth() -> str:
         """Auth recovery guide — check_auth → gh auth login → verify_auth."""
-        return _load_agent("github-planner/auth.md")
+        return _load_agent("gh-plan-auth.md")
 
     # ── Auth tools ────────────────────────────────────────────────────────────
 
@@ -2773,8 +2773,8 @@ def register(mcp) -> None:
 
         Returns {cleared: [...], kept: [...], _display: "..."}.
 
-        Common command values: 'github-planner', 'github-planner/analyze',
-        'github-planner/create-issue', 'github-planner/unload', 'create-github-repo'.
+        Common command values: 'gh-plan', 'gh-plan-analyze',
+        'gh-plan-create', 'gh-plan-unload', 'create-github-repo'.
         """
         return _do_apply_unload_policy(command)
 

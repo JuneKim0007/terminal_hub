@@ -219,7 +219,7 @@ def test_apply_unload_policy_display_has_emoji_lines(workspace):
 
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "apply_unload_policy", {"command": "github-planner"})
+        result = call(server, "apply_unload_policy", {"command": "gh-plan"})
 
     _ANALYSIS_CACHE.clear()
     assert result["success"] is True

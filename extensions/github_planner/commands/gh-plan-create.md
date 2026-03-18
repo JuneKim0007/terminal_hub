@@ -1,10 +1,10 @@
-# /th:github-planner/create-issue
+# /th:gh-plan-create
 
 <!-- RULE: after draft_issue or submit_issue, do not narrate the result.
      Continue conversation or say: "Let me know any plans for this!" -->
 
 <!-- LOAD ANNOUNCEMENT: At the very start of this command, output exactly:
-     🟢 Loaded: github-planner/create-issue — `extensions/github_planner/commands/github-planner/create-issue.md`
+     🟢 Loaded: gh-plan-create — `extensions/github_planner/commands/gh-plan-create.md`
      Do this before any tool calls. -->
 
 Guided single-issue workflow:

@@ -51,7 +51,7 @@ def test_unload_keys_are_known_cache_keys():
 def test_github_planner_command_unloads_analysis_keeps_repo():
     policy_path = Path(__file__).parent.parent.parent / "extensions" / "github_planner" / "unload_policy.json"
     data = json.loads(policy_path.read_text())
-    cmd = data["commands"]["github-planner"]
+    cmd = data["commands"]["gh-plan"]
     assert "analysis_cache" in cmd["unload"]
     assert "repo_cache" in cmd["keep"] or "github_repo" in cmd["keep"]
 
@@ -69,9 +69,9 @@ def test_github_repo_creation_keeps_repo_cache():
 def test_apply_unload_policy_success(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "apply_unload_policy", {"command": "github-planner/list-issues"})
+        result = call(server, "apply_unload_policy", {"command": "gh-plan-list"})
     assert result["success"] is True
-    assert result["command"] == "github-planner/list-issues"
+    assert result["command"] == "gh-plan-list"
     assert isinstance(result["cleared"], list)
     assert isinstance(result["kept"], list)
     assert "_display" in result
@@ -83,7 +83,7 @@ def test_apply_unload_policy_clears_in_memory_cache(workspace):
 
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        call(server, "apply_unload_policy", {"command": "github-planner"})
+        call(server, "apply_unload_policy", {"command": "gh-plan"})
 
     assert len(_ANALYSIS_CACHE) == 0
 
@@ -96,7 +96,7 @@ def test_apply_unload_policy_deletes_disk_file(workspace):
 
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "apply_unload_policy", {"command": "github-planner"})
+        result = call(server, "apply_unload_policy", {"command": "gh-plan"})
 
     assert not snapshot.exists()
     assert "analyzer_snapshot.json" in result["cleared"]
@@ -109,7 +109,7 @@ def test_apply_unload_policy_preserves_kept_cache(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         # create-issue only unloads session_header_cache, keeps project_docs_cache
-        call(server, "apply_unload_policy", {"command": "github-planner/create-issue"})
+        call(server, "apply_unload_policy", {"command": "gh-plan-create"})
 
     # project_docs_cache should still have data
     assert "key" in _PROJECT_DOCS_CACHE
@@ -127,7 +127,7 @@ def test_apply_unload_policy_unknown_command_returns_error(workspace):
 def test_apply_unload_policy_not_initialized_returns_needs_init(tmp_path):
     with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
-        result = call(server, "apply_unload_policy", {"command": "github-planner"})
+        result = call(server, "apply_unload_policy", {"command": "gh-plan"})
     assert result["status"] == "needs_init"
 
 
@@ -142,7 +142,7 @@ def test_apply_unload_policy_policy_load_failure(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.github_planner._load_unload_policy", return_value={"error": "file missing", "commands": {}}):
         server = create_server()
-        result = call(server, "apply_unload_policy", {"command": "github-planner"})
+        result = call(server, "apply_unload_policy", {"command": "gh-plan"})
     assert result["error"] == "policy_load_failed"
     assert result["_hook"] is None
 
@@ -157,7 +157,7 @@ def test_apply_unload_policy_oserror_on_unlink(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("pathlib.Path.unlink", side_effect=OSError("permission denied")):
         server = create_server()
-        result = call(server, "apply_unload_policy", {"command": "github-planner"})
+        result = call(server, "apply_unload_policy", {"command": "gh-plan"})
 
     assert result["success"] is False
     assert any("permission denied" in e for e in result["errors"])

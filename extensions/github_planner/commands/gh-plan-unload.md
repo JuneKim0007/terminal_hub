@@ -1,4 +1,4 @@
-# /th:github-planner/unload
+# /th:gh-plan-unload
 
 Unload the gh_planner plugin — clears caches according to `unload_policy.json`.
 
@@ -8,7 +8,7 @@ Unload the gh_planner plugin — clears caches according to `unload_policy.json`
    - Show the user what will be cleared
    - If nothing is loaded: respond "Nothing to unload — plugin state is already clean."
 
-2. Call `apply_unload_policy(command="github-planner/unload")`
+2. Call `apply_unload_policy(command="gh-plan-unload")`
    - This reads `unload_policy.json` and clears everything in the `unload[]` array
    - Items in `keep[]` (github_repo, workspace_config, preferences) are left intact
 
@@ -18,7 +18,7 @@ Unload the gh_planner plugin — clears caches according to `unload_policy.json`
 
 ## What is cleared (per policy)
 
-See `unload_policy.json` → `commands["github-planner/unload"].unload[]`
+See `unload_policy.json` → `commands["gh-plan-unload"].unload[]`
 
 - In-memory: analysis_cache, project_docs_cache, file_tree_cache, session_header_cache, label_cache, repo_cache
 - Disk: analyzer_snapshot.json, file_hashes.json, file_tree.json, github_local_config.json, docs_strategy.json

@@ -6,7 +6,7 @@ Quick status snapshot for the current terminal-hub session.
 
 1. Call `get_runtime_state`
 2. Read `result._display` and print it as-is — do not add prose, do not narrate
-3. If `result.status == "needs_init"`: say "Workspace not initialised. Run `/th:github-planner/setup` to get started."
+3. If `result.status == "needs_init"`: say "Workspace not initialised. Run `/th:gh-plan-setup` to get started."
 
 ## Output format
 

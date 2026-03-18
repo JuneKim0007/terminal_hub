@@ -84,8 +84,8 @@ _PLUGIN_COMMANDS_DIR = Path(__file__).parent.parent / "extensions" / "github_pla
 
 
 @pytest.mark.parametrize("filename", [
-    "github-planner/setup.md",
-    "github-planner/auth.md",
+    "gh-plan-setup.md",
+    "gh-plan-auth.md",
     "current-stat.md",
 ])
 def test_plugin_workflow_file_exists(filename):
@@ -104,7 +104,7 @@ def test_workflow_issue_resource_has_content(server):
 
 def test_workflow_context_resource_has_content(server):
     result = read_resource(server, "terminal-hub://workflow/context")
-    assert "github-planner" in result.lower() or "planning" in result.lower()
+    assert "gh-plan" in result.lower() or "planning" in result.lower()
 
 
 def test_workflow_auth_resource_has_content(server):

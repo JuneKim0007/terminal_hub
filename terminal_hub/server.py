@@ -30,7 +30,7 @@ from extensions.github_planner.storage import (
 
 _BUILTIN_DIR = Path(__file__).parent.parent / "extensions" / "builtin"
 
-_BUILTIN_COMMANDS = ["help.md", "active.md", "conversation.md", "converse.md"]
+_BUILTIN_COMMANDS = ["help.md", "active.md", "converse.md"]
 
 _PLUGIN_WARNINGS: list[str] = []
 # Populated during plugin load — each entry: {name, tools: [str], manifest_path}
@@ -259,8 +259,15 @@ def create_server() -> FastMCP:
                         f"\n  {tool_count} tools registered" + \
                         ("\n" + "\n".join(warn_lines) if warn_lines else "")
         caches_block = "CACHES\n" + "\n".join(rows)
-        footer = f"Repo: {env.get('GITHUB_REPO', 'not set')}  Mode: {cfg.get('mode', 'unknown')}" + \
-                 "\nRuntime reflects server startup state."
+        mode = cfg.get("mode", "unknown")
+        github_repo = env.get("GITHUB_REPO")
+        if github_repo:
+            repo_line = f"GitHub repo: {github_repo}"
+        elif mode == "local":
+            repo_line = "Local mode (no GitHub repo connected)"
+        else:
+            repo_line = "Repo: not configured"
+        footer = f"{repo_line}  (mode: {mode})\nRuntime reflects server startup state."
         display = header + "\n" + runtime_block + "\n" + "─" * 50 + "\n" + \
                   caches_block + "\n" + "─" * 50 + "\n" + footer
 

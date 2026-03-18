@@ -182,3 +182,17 @@ def test_unload_plugin_tool_returns_success(workspace):
         result = call(server, "unload_plugin", {"plugin": "gh_planner"})
     assert result["success"] is True
     assert "Unloading successful!" in result["_display"]
+
+
+def test_list_plugin_state_dict_size_kb_exception(workspace):
+    """_dict_size_kb returns 0 when sys.getsizeof raises (lines 1865-1866)."""
+    import sys as _sys
+    _ANALYSIS_CACHE["o/r"] = {"data": "x"}
+    try:
+        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+             patch("sys.getsizeof", side_effect=Exception("getsizeof failed")):
+            result = _do_list_plugin_state("gh_planner")
+        # Should not crash; estimated_memory_kb should be 0
+        assert result["estimated_memory_kb"] == 0
+    finally:
+        _ANALYSIS_CACHE.clear()

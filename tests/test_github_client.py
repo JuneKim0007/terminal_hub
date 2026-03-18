@@ -142,6 +142,93 @@ def test_load_default_labels_includes_bug_and_feature():
     assert "feature" in names
 
 
+# ── list_issues_all ───────────────────────────────────────────────────────────
+
+def test_list_issues_all_single_page():
+    """Returns issues when first page has fewer than 100 items."""
+    client = make_client()
+    issues = [{"number": i, "title": f"Issue {i}"} for i in range(5)]
+    resp = make_response(200, issues)
+    with patch.object(client._client, "get", return_value=resp):
+        result = client.list_issues_all(state="open")
+    assert result == issues
+
+
+def test_list_issues_all_pagination_stops_on_empty():
+    """Stops pagination when an empty page is returned."""
+    client = make_client()
+    page1 = [{"number": i} for i in range(100)]
+    resp_page1 = make_response(200, page1)
+    resp_empty = make_response(200, [])
+    with patch.object(client._client, "get", side_effect=[resp_page1, resp_empty]):
+        result = client.list_issues_all(state="open")
+    assert len(result) == 100
+
+
+def test_list_issues_all_stops_on_exception():
+    """Breaks loop and returns partial results on HTTP error (lines 157-158)."""
+    client = make_client()
+    # First page must be full (100 items) to trigger next page request
+    page1 = [{"number": i} for i in range(100)]
+    resp_ok = make_response(200, page1)
+    resp_err = make_response(500, text="Internal Server Error")
+    with patch.object(client._client, "get", side_effect=[resp_ok, resp_err]):
+        result = client.list_issues_all(state="open")
+    assert len(result) == 100  # partial results from page1
+
+
+def test_list_issues_all_multiple_full_pages():
+    """Paginates correctly when first page is full (100 items)."""
+    client = make_client()
+    page1 = [{"number": i} for i in range(100)]
+    page2 = [{"number": i} for i in range(100, 125)]
+    resp1 = make_response(200, page1)
+    resp2 = make_response(200, page2)
+    with patch.object(client._client, "get", side_effect=[resp1, resp2]):
+        result = client.list_issues_all(state="open")
+    assert len(result) == 125
+
+
+# ── list_repo_tree error branches ─────────────────────────────────────────────
+
+def test_list_repo_tree_connect_error_raises_github_error():
+    """ConnectError in list_repo_tree raises GitHubError with network_error code."""
+    client = make_client()
+    with patch.object(client._client, "get", side_effect=httpx.ConnectError("refused")):
+        with pytest.raises(GitHubError) as exc_info:
+            client.list_repo_tree()
+    assert exc_info.value.error_code == "network_error"
+
+
+def test_list_repo_tree_timeout_raises_github_error():
+    """TimeoutException in list_repo_tree raises GitHubError with timeout code."""
+    client = make_client()
+    with patch.object(client._client, "get", side_effect=httpx.TimeoutException("timed out")):
+        with pytest.raises(GitHubError) as exc_info:
+            client.list_repo_tree()
+    assert exc_info.value.error_code == "timeout"
+
+
+# ── get_file_content error branches ───────────────────────────────────────────
+
+def test_get_file_content_connect_error_raises_github_error():
+    """ConnectError in get_file_content raises GitHubError with network_error code."""
+    client = make_client()
+    with patch.object(client._client, "get", side_effect=httpx.ConnectError("refused")):
+        with pytest.raises(GitHubError) as exc_info:
+            client.get_file_content("some/file.py")
+    assert exc_info.value.error_code == "network_error"
+
+
+def test_get_file_content_timeout_raises_github_error():
+    """TimeoutException in get_file_content raises GitHubError with timeout code."""
+    client = make_client()
+    with patch.object(client._client, "get", side_effect=httpx.TimeoutException("timed out")):
+        with pytest.raises(GitHubError) as exc_info:
+            client.get_file_content("some/file.py")
+    assert exc_info.value.error_code == "timeout"
+
+
 # ── get_labels ────────────────────────────────────────────────────────────────
 
 def test_get_labels_returns_names():

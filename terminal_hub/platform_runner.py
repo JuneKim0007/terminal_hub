@@ -46,6 +46,48 @@ def detect_platform() -> str:
     return detect_distro()
 
 
+# ── Agent Escalation ───────────────────────────────────────────────────────────
+
+def escalate_to_agent(result: dict[str, Any], context: str = "") -> dict[str, Any]:
+    """Wrap a failed extension result with agent escalation guidance.
+
+    When a Python-layer operation fails, this surfaces a _guidance hint so
+    Claude handles the operation conversationally instead of silently failing.
+
+    Args:
+        result: The failed result dict from run_extension (must have success=False).
+        context: Optional human-readable description of what was being attempted.
+
+    Returns:
+        The result dict augmented with _agent_escalation and _guidance fields.
+    """
+    if result.get("success"):
+        return result  # no escalation needed for success
+
+    ext_id = result.get("id", "extension")
+    error = result.get("error", "unknown error")
+    failed_cmd = result.get("cmd", "")
+
+    parts = [f"The Python layer could not complete '{ext_id}'."]
+    if failed_cmd:
+        parts.append(f"Failed command: `{failed_cmd}`")
+    if error:
+        parts.append(f"Reason: {error}")
+    if context:
+        parts.append(f"Context: {context}")
+    parts.append(
+        "Please handle this operation conversationally: "
+        "ask the user what they need, then use the appropriate tools or commands directly."
+    )
+
+    return {
+        **result,
+        "_agent_escalation": True,
+        "_guidance": "terminal-hub://escalation/handle-conversationally",
+        "_escalation_message": " ".join(parts),
+    }
+
+
 # ── Command Runner ─────────────────────────────────────────────────────────────
 
 def run_extension(ext: dict[str, Any], platform_key: str | None = None) -> dict[str, Any]:
@@ -53,7 +95,11 @@ def run_extension(ext: dict[str, Any], platform_key: str | None = None) -> dict[
 
     Resolution order: exact platform match → 'linux' generic fallback → error.
 
-    Returns dict with keys: success, _display, and on failure: error, cmd, fallback.
+    On failure, automatically calls escalate_to_agent() so callers receive
+    actionable guidance for handing off to Claude conversationally.
+
+    Returns dict with keys: success, _display, and on failure: error, cmd,
+    fallback, _agent_escalation, _guidance, _escalation_message.
     """
     if platform_key is None:
         platform_key = detect_platform()
@@ -63,12 +109,14 @@ def run_extension(ext: dict[str, Any], platform_key: str | None = None) -> dict[
 
     if not commands:
         msg = f"No commands defined for platform '{platform_key}' or 'linux'"
-        return {
+        failed = {
             "success": False,
+            "id": ext.get("id"),
             "error": msg,
             "fallback": ext.get("fallback", "claude"),
             "_display": f"⚠ Extension '{ext.get('id')}' skipped: {msg}",
         }
+        return escalate_to_agent(failed)
 
     for cmd in commands:
         try:
@@ -77,21 +125,25 @@ def run_extension(ext: dict[str, Any], platform_key: str | None = None) -> dict[
             )
             if result.returncode != 0:
                 err = result.stderr.strip() or result.stdout.strip()
-                return {
+                failed = {
                     "success": False,
+                    "id": ext.get("id"),
                     "error": err,
                     "cmd": cmd,
                     "fallback": ext.get("fallback", "claude"),
                     "_display": f"✗ {ext.get('id')} failed: {err}",
                 }
+                return escalate_to_agent(failed)
         except subprocess.TimeoutExpired:
-            return {
+            failed = {
                 "success": False,
+                "id": ext.get("id"),
                 "error": f"timed out after 30s: {cmd}",
                 "cmd": cmd,
                 "fallback": ext.get("fallback", "claude"),
                 "_display": f"✗ {ext.get('id')} timed out",
             }
+            return escalate_to_agent(failed)
 
     return {
         "success": True,

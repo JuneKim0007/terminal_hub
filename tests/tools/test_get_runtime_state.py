@@ -129,3 +129,31 @@ def test_get_runtime_state_load_warnings_empty_by_default(workspace):
         server = create_server()
         result = call(server, "get_runtime_state")
     assert result["runtime"]["load_warnings"] == []
+
+
+def test_get_runtime_state_size_bytes_branch(workspace):
+    """Items with size_bytes but no age_hours are shown with bytes detail (lines 219, 248)."""
+    # Create a non-empty project_summary.md to trigger size_bytes display path
+    docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    (docs_dir / "project_summary.md").write_text("# Summary\nSome content here.\n")
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "get_runtime_state")
+    # project_summary item should have size_bytes set
+    summary_item = next((i for i in result["items"] if i["key"] == "project_summary"), None)
+    assert summary_item is not None
+    assert summary_item["size_bytes"] is not None
+    assert summary_item["status"] == "present"
+
+
+def test_get_runtime_state_list_tools_exception(workspace):
+    """Handles Exception from mcp._tool_manager.list_tools() (lines 230-231)."""
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+    # Patch the tool_manager to raise when listing tools
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch.object(server._tool_manager, "list_tools", side_effect=Exception("broken")):
+        result = asyncio.run(server._tool_manager.call_tool("get_runtime_state", {}))
+    # registered_tools should be []
+    assert result["runtime"]["registered_tools"] == []

@@ -205,6 +205,11 @@
       "description": "View/change session flags — keep everything",
       "unload": [],
       "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
+    },
+    "init": {
+      "description": "Project bootstrap — stateless operation, nothing to unload",
+      "unload": [],
+      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences", "project_summary", "project_detail", "issue_files"]
     }
   }
 }

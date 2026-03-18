@@ -1,4 +1,4 @@
-# /t-h:github-planner/unload
+# /th:github-planner/unload
 
 Unload the gh_planner plugin — clears all in-memory caches and volatile disk files.
 

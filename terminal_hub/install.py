@@ -10,6 +10,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from terminal_hub.namespace import COMMAND_NAMESPACE
+
 _CLAUDE_JSON = Path.home() / ".claude.json"
 
 
@@ -82,7 +84,7 @@ def install_plugin_commands(manifest: dict, claude_dir: Path) -> None:
     Uses install_namespace from manifest if present, falls back to plugin name.
     Preserves subdirectory structure so nested commands install correctly.
     """
-    namespace = manifest.get("install_namespace", manifest["name"])
+    namespace = manifest.get("install_namespace", COMMAND_NAMESPACE)
     plugin_dir = Path(manifest["_plugin_dir"])
     commands_src = plugin_dir / manifest["commands_dir"]
     dest_root = claude_dir / "commands" / namespace

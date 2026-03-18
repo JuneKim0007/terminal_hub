@@ -128,10 +128,10 @@ def test_discover_plugins_reads_description_json(tmp_path):
     p = tmp_path / "myplugin"
     p.mkdir()
     (p / "plugin.json").write_text(json.dumps(VALID))
-    desc = {"plugin": "test_plugin", "subcommands": [{"command": "/t-h:start", "use_when": "start"}]}
+    desc = {"plugin": "test_plugin", "subcommands": [{"command": "/th:start", "use_when": "start"}]}
     (p / "description.json").write_text(json.dumps(desc))
     result = discover_plugins(tmp_path)
-    assert result[0]["_description"]["subcommands"][0]["command"] == "/t-h:start"
+    assert result[0]["_description"]["subcommands"][0]["command"] == "/th:start"
 
 
 def test_discover_plugins_description_json_missing_degrades_gracefully(tmp_path):
@@ -154,27 +154,29 @@ def test_discover_plugins_description_json_invalid_json_degrades_gracefully(tmp_
 # ── build_instructions uses install_namespace + entry_command (#53/#55) ───────
 
 def test_build_instructions_uses_install_namespace():
+    """Explicit install_namespace overrides the global COMMAND_NAMESPACE default."""
     manifest = {
         **VALID,
         "description": "A plugin",
-        "install_namespace": "t-h",
+        "install_namespace": "t-h",  # custom override — must render as t-h, not th
         "entry_command": "github-planner.md",
     }
     result = build_instructions([manifest])
     assert "/t-h:github-planner" in result
 
 
-def test_build_instructions_falls_back_to_name_if_no_namespace():
+def test_build_instructions_falls_back_to_command_namespace_if_no_install_namespace():
+    """Without install_namespace, falls back to COMMAND_NAMESPACE ('th')."""
     manifest = {**VALID, "description": "A plugin"}
     result = build_instructions([manifest])
-    assert "/test_plugin:" in result
+    assert "/th:" in result
 
 
 def test_build_instructions_injects_subcommands_from_description_json():
     desc = {
         "subcommands": [
-            {"command": "/t-h:github-planner/list-issues", "aliases": ["list issues"], "use_when": "user wants to see open issues"},
-            {"command": "/t-h:github-planner/create-issue", "aliases": [], "use_when": "user wants to file a bug"},
+            {"command": "/th:github-planner/list-issues", "aliases": ["list issues"], "use_when": "user wants to see open issues"},
+            {"command": "/th:github-planner/create-issue", "aliases": [], "use_when": "user wants to file a bug"},
         ]
     }
     manifest = {
@@ -192,10 +194,36 @@ def test_build_instructions_injects_subcommands_from_description_json():
 
 def test_build_instructions_limits_subcommands_to_six():
     subcommands = [
-        {"command": f"/t-h:cmd{i}", "aliases": [], "use_when": f"when {i}"}
+        {"command": f"/th:cmd{i}", "aliases": [], "use_when": f"when {i}"}
         for i in range(10)
     ]
     manifest = {**VALID, "description": "", "_description": {"subcommands": subcommands}}
     result = build_instructions([manifest])
-    assert "/t-h:cmd5" in result   # 6th (index 5) included
-    assert "/t-h:cmd6" not in result  # 7th excluded
+    assert "/th:cmd5" in result   # 6th (index 5) included
+    assert "/th:cmd6" not in result  # 7th excluded
+
+
+# ── namespace.py is the single source of truth ────────────────────────────────
+
+def test_command_namespace_value():
+    """COMMAND_NAMESPACE is 'th' — the active prefix for all slash commands."""
+    from terminal_hub.namespace import COMMAND_NAMESPACE
+    assert COMMAND_NAMESPACE == "th"
+
+
+def test_plugin_loader_imports_command_namespace():
+    """plugin_loader uses COMMAND_NAMESPACE, not a hardcoded string."""
+    import terminal_hub.plugin_loader as pl
+    from terminal_hub.namespace import COMMAND_NAMESPACE
+    # build_instructions with no install_namespace must produce /th: prefix
+    manifest = {**VALID, "description": ""}
+    result = pl.build_instructions([manifest])
+    assert f"/{COMMAND_NAMESPACE}:" in result
+
+
+def test_install_imports_command_namespace():
+    """install_plugin_commands uses COMMAND_NAMESPACE as fallback."""
+    import terminal_hub.install as inst
+    from terminal_hub.namespace import COMMAND_NAMESPACE
+    assert hasattr(inst, "COMMAND_NAMESPACE")
+    assert inst.COMMAND_NAMESPACE == COMMAND_NAMESPACE

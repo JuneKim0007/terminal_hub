@@ -1,4 +1,4 @@
-# /t-h:create-plugin
+# /th:create-plugin
 
 <!-- RULE: Guide the user conversationally. Write files only after user confirms each step. Call validate_plugin as the final step and fix any reported errors before declaring done. -->
 
@@ -8,7 +8,7 @@ Plugin creation workflow:
 Ask:
 - "What should the plugin be called? (e.g. `my_plugin` — alphanumeric, hyphens/underscores ok)"
 - "What does this plugin do in one sentence?"
-- "What namespace should commands install under? Default is `t-h` (so commands will be `/t-h:<plugin-name>/...`). Press enter to accept or type a different namespace."
+- "What namespace should commands install under? Default is `th` (so commands will be `/th:<plugin-name>/...`). Press enter to accept or type a different namespace."
 
 ## Step 2 — Commands
 Ask: "What slash commands should this plugin provide? List them one per line (e.g. `start.md`, `list.md`)."

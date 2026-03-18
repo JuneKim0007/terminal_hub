@@ -1,35 +1,34 @@
 {
   "plugin": "github_planner",
-  "install_namespace": "t-h",
   "summary": "GitHub issue planning — analyze repos, plan work, create and track issues.",
   "entry": {
-    "command": "/t-h:github-planner",
+    "command": "/th:github-planner",
     "triggers": ["let's plan", "plan some work", "github planner", "open the planner"],
     "use_when": "Starting any planning, analysis, or issue-management workflow"
   },
   "subcommands": [
     {
-      "command": "/t-h:github-planner/list-issues",
+      "command": "/th:github-planner/list-issues",
       "aliases": ["list issues", "what's open", "show tracked issues", "what issues do we have"],
       "use_when": "User wants to see what is already tracked"
     },
     {
-      "command": "/t-h:github-planner/create-issue",
+      "command": "/th:github-planner/create-issue",
       "aliases": ["create an issue", "draft an issue", "track this", "log a bug"],
       "use_when": "User wants to draft or submit a single issue quickly"
     },
     {
-      "command": "/t-h:github-planner/analyze",
+      "command": "/th:github-planner/analyze",
       "aliases": ["analyze my repo", "read the codebase", "analyze the project"],
       "use_when": "User wants to build or refresh project docs before planning"
     },
     {
-      "command": "/t-h:github-planner/setup",
+      "command": "/th:github-planner/setup",
       "aliases": ["set up github", "configure the repo", "initialise terminal-hub"],
       "use_when": "First-time setup or re-configuring the GitHub repo"
     },
     {
-      "command": "/t-h:github-planner/auth",
+      "command": "/th:github-planner/auth",
       "aliases": ["fix auth", "github login", "authenticate"],
       "use_when": "GitHub authentication is failing or needs to be refreshed"
     }

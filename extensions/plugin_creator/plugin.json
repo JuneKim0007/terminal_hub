@@ -2,7 +2,6 @@
   "name": "plugin_creator",
   "version": "1.0",
   "entry": "extensions.plugin_creator",
-  "install_namespace": "t-h",
   "entry_command": "create-plugin.md",
   "commands_dir": "commands",
   "commands": ["create-plugin.md"],

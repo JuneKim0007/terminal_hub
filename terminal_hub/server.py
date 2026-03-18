@@ -377,7 +377,7 @@ def create_server() -> FastMCP:
                 "last_scanned": None,
                 "_suggest_scan": (
                     "No plugin registry found. Call scan_plugins() to build it — "
-                    "enables smart plugin suggestions via /t-h:converse."
+                    "enables smart plugin suggestions via /th:converse."
                 ),
             }
 

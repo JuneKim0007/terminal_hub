@@ -17,28 +17,38 @@ def workspace(tmp_path):
 def test_update_project_description_writes_file(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "update_project_description", {"content": "# My Project\n"})
+        result = call(server, "update_project_description", {
+            "title": "My Project",
+            "description": "A personal portfolio site.",
+        })
     assert result["updated"] is True
     docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
-    assert (docs_dir / "project_summary.md").read_text() == "# My Project\n"
+    text = (docs_dir / "project_summary.md").read_text()
+    assert "My Project" in text
+    assert "A personal portfolio site." in text
     assert "_display" in result
-    assert result["_display"] == "✓ Project description saved"
+    assert "My Project" in result["_display"]
 
 
 def test_update_project_description_returns_relative_path(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "update_project_description", {"content": "text"})
+        result = call(server, "update_project_description", {"title": "X", "description": "desc"})
     assert "hub_agents/extensions/gh_planner/project_summary.md" in result["file"]
 
 
 def test_update_architecture_writes_file(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        result = call(server, "update_architecture", {"content": "# Architecture\n"})
+        result = call(server, "update_architecture", {
+            "overview": "Layered architecture with routes, services, and storage.",
+            "components": ["Router", "Service layer", "Storage"],
+        })
     assert result["updated"] is True
     docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
-    assert (docs_dir / "project_detail.md").read_text() == "# Architecture\n"
+    text = (docs_dir / "project_detail.md").read_text()
+    assert "Layered architecture" in text
+    assert "Router" in text
     assert "_display" in result
     assert result["_display"] == "✓ Architecture notes saved"
 
@@ -46,10 +56,12 @@ def test_update_architecture_writes_file(workspace):
 def test_update_docs_overwrite_preserves_latest(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
-        call(server, "update_project_description", {"content": "v1"})
-        call(server, "update_project_description", {"content": "v2"})
+        call(server, "update_project_description", {"title": "V1", "description": "first"})
+        call(server, "update_project_description", {"title": "V2", "description": "second"})
     docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
-    assert (docs_dir / "project_summary.md").read_text() == "v2"
+    text = (docs_dir / "project_summary.md").read_text()
+    assert "V2" in text
+    assert "second" in text
 
 
 # ── set_preference ────────────────────────────────────────────────────────────
@@ -146,7 +158,7 @@ def test_update_project_summary_section_creates_file(workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
-            "content": "| # | Name |\n|---|------|\n| M1 | Core Auth |",
+            "table_rows": [{"#": "M1", "Name": "Core Auth", "Delivers": "Users can sign up"}],
         })
     assert result["updated"] is True
     assert result["action"] == "created"
@@ -166,7 +178,7 @@ def test_update_project_summary_section_replaces_existing(workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
-            "content": "| M1 | Updated |",
+            "items": ["M1 — Updated"],
         })
     assert result["action"] == "replaced"
     text = (docs_dir / "project_summary.md").read_text()
@@ -183,7 +195,7 @@ def test_update_project_summary_section_appends_new(workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
-            "content": "| M1 | Auth |",
+            "items": ["M1 — Auth"],
         })
     assert result["action"] == "appended"
     text = (docs_dir / "project_summary.md").read_text()
@@ -196,7 +208,7 @@ def test_update_project_summary_section_empty_name_returns_error(workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "",
-            "content": "some content",
+            "items": ["some content"],
         })
     assert result["error"] == "invalid_input"
 
@@ -206,7 +218,6 @@ def test_update_project_summary_section_empty_content_returns_error(workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
-            "content": "",
         })
     assert result["error"] == "invalid_input"
 

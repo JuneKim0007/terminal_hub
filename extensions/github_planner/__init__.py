@@ -523,21 +523,40 @@ def _do_create_github_repo(name: str, description: str, private: bool) -> dict:
     }
 
 
-def _do_update_project_description(content: str) -> dict:
+def _render_description(title: str, description: str, notes: str = "") -> str:
+    lines = [f"# {title}", "", description.strip()]
+    if notes:
+        lines += ["", f"**Notes:** {notes}"]
+    return "\n".join(lines) + "\n"
+
+
+def _render_architecture(overview: str, components: list[str] | None = None, notes: str = "") -> str:
+    lines = ["# Architecture", "", overview.strip()]
+    if components:
+        lines += ["", "## Components"]
+        lines += [f"- {c}" for c in components]
+    if notes:
+        lines += ["", f"**Notes:** {notes}"]
+    return "\n".join(lines) + "\n"
+
+
+def _do_update_project_description(title: str, description: str, notes: str = "") -> dict:
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
+    content = _render_description(title, description, notes)
     try:
         path = write_doc_file(root, "project_description", content)
-        return {"updated": True, "file": str(path.relative_to(root)), "_display": "✓ Project description saved"}
+        return {"updated": True, "file": str(path.relative_to(root)), "_display": f"✓ Project description saved — {title}"}
     except (OSError, ValueError) as exc:
         return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
 
-def _do_update_architecture(content: str) -> dict:
+def _do_update_architecture(overview: str, components: list[str] | None = None, notes: str = "") -> dict:
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
+    content = _render_architecture(overview, components, notes)
     try:
         path = write_doc_file(root, "architecture", content)
         return {"updated": True, "file": str(path.relative_to(root)), "_display": "✓ Architecture notes saved"}
@@ -545,12 +564,59 @@ def _do_update_architecture(content: str) -> dict:
         return {"error": "write_failed", "message": msg("write_failed", detail=str(exc)), "_hook": None}
 
 
-def _do_update_project_detail_section(feature_name: str, content: str) -> dict:
+def _render_detail_section(
+    feature_name: str,
+    overview: str,
+    milestone: str | None = None,
+    guidelines: list[str] | None = None,
+    anti_patterns: list[str] | None = None,
+) -> str:
+    lines = []
+    if milestone:
+        lines.append(f"**Milestone:** {milestone}")
+        lines.append("")
+    lines.append(overview.strip())
+    if guidelines:
+        lines += ["", "### Guidelines"]
+        lines += [f"- {g}" for g in guidelines]
+    if anti_patterns:
+        lines += ["", "### Anti-patterns"]
+        lines += [f"- {a}" for a in anti_patterns]
+    return "\n".join(lines)
+
+
+def _render_summary_section(
+    items: list[str] | None = None,
+    table_rows: list[dict] | None = None,
+) -> str:
+    """Render a summary section body from structured inputs."""
+    if table_rows:
+        if not table_rows:
+            return ""
+        headers = list(table_rows[0].keys())
+        header_row = "| " + " | ".join(headers) + " |"
+        sep_row = "| " + " | ".join("---" for _ in headers) + " |"
+        data_rows = ["| " + " | ".join(str(row.get(h, "")) for h in headers) + " |" for row in table_rows]
+        return "\n".join([header_row, sep_row] + data_rows)
+    if items:
+        return "\n".join(f"- {item}" for item in items)
+    return ""
+
+
+def _do_update_project_detail_section(
+    feature_name: str,
+    overview: str,
+    milestone: str | None = None,
+    guidelines: list[str] | None = None,
+    anti_patterns: list[str] | None = None,
+) -> dict:
     """Merge a single H2 section into project_detail.md without rewriting the full file (#65).
 
     If a section matching `## {feature_name}` already exists, replaces it.
     Otherwise appends a new section at the end.
     """
+    content = _render_detail_section(feature_name, overview, milestone, guidelines, anti_patterns)
+
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
@@ -558,7 +624,7 @@ def _do_update_project_detail_section(feature_name: str, content: str) -> dict:
     if not feature_name or not feature_name.strip():
         return {"error": "invalid_input", "message": "feature_name must be non-empty"}
     if not content or not content.strip():
-        return {"error": "invalid_input", "message": "content must be non-empty"}
+        return {"error": "invalid_input", "message": "overview must be non-empty"}
 
     docs_dir = _gh_planner_docs_dir(root)
     detail_path = docs_dir / "project_detail.md"
@@ -614,13 +680,19 @@ def _do_update_project_detail_section(feature_name: str, content: str) -> dict:
             "_display": f"✓ Section '{feature_name}' {action} in project_detail.md"}
 
 
-def _do_update_project_summary_section(section_name: str, content: str) -> dict:
+def _do_update_project_summary_section(
+    section_name: str,
+    items: list[str] | None = None,
+    table_rows: list[dict] | None = None,
+) -> dict:
     """Merge a single H2 section into project_summary.md without rewriting the full file (#137).
 
     If a section matching `## {section_name}` already exists, replaces it.
     Otherwise appends a new section at the end.
     Used to persist the Milestones table and other summary-level sections.
     """
+    content = _render_summary_section(items=items, table_rows=table_rows)
+
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
@@ -628,7 +700,7 @@ def _do_update_project_summary_section(section_name: str, content: str) -> dict:
     if not section_name or not section_name.strip():
         return {"error": "invalid_input", "message": "section_name must be non-empty"}
     if not content or not content.strip():
-        return {"error": "invalid_input", "message": "content must be non-empty"}
+        return {"error": "invalid_input", "message": "items or table_rows must be provided and non-empty"}
 
     docs_dir = _gh_planner_docs_dir(root)
     summary_path = docs_dir / "project_summary.md"
@@ -909,41 +981,69 @@ def _do_get_analysis_status(repo: str | None = None) -> dict:
 
 # ── Project docs tools ────────────────────────────────────────────────────────
 
-def _do_save_project_docs(summary_md: str, detail_md: str, repo: str | None = None) -> dict:
+def _render_project_summary(
+    goal: str,
+    tech_stack: list[str],
+    notes: str = "",
+    design_principles: list[str] | None = None,
+) -> str:
+    stack_str = " | ".join(tech_stack) if tech_stack else "TBD"
+    lines = [
+        f"**Tech Stack:** {stack_str}",
+        f"**Goal:** {goal}",
+    ]
+    if notes:
+        lines.append(f"**Notes:** {notes}")
+    if design_principles:
+        lines += ["", "## Design Principles"]
+        lines += [f"- {p}" for p in design_principles]
+    return "\n".join(lines) + "\n"
+
+
+def _do_save_project_docs(
+    goal: str,
+    tech_stack: list[str],
+    notes: str = "",
+    design_principles: list[str] | None = None,
+    repo: str | None = None,
+) -> dict:
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
 
+    summary_md = _render_project_summary(goal, tech_stack, notes, design_principles)
+
     docs_dir = _gh_planner_docs_dir(root)
     docs_dir.mkdir(parents=True, exist_ok=True)
 
-    for filename, content in (("project_summary.md", summary_md), ("project_detail.md", detail_md)):
-        dest = docs_dir / filename
-        tmp = dest.with_suffix(".tmp")
-        try:
-            tmp.write_text(content, encoding="utf-8")
-            os.replace(tmp, dest)
-        except OSError as exc:
-            return {"error": "write_failed", "message": str(exc), "_hook": None}
+    dest = docs_dir / "project_summary.md"
+    tmp = dest.with_suffix(".tmp")
+    try:
+        tmp.write_text(summary_md, encoding="utf-8")
+        os.replace(tmp, dest)
+    except OSError as exc:
+        return {"error": "write_failed", "message": str(exc), "_hook": None}
+
+    # Initialise empty project_detail.md if absent
+    detail_dest = docs_dir / "project_detail.md"
+    if not detail_dest.exists():
+        detail_dest.write_text("", encoding="utf-8")
 
     resolved = _resolve_repo(repo) or "unknown"
-    # Reset docs cache with fresh content (sections re-parsed on next lookup call)
     _PROJECT_DOCS_CACHE[resolved] = {
         "summary": summary_md,
-        "detail": detail_md,
-        "_sections": None,
+        "detail": "",
+        "_sections": {},
         "loaded_at": time.time(),
     }
-    # Analysis data is now superseded by written docs — free the memory
     _ANALYSIS_CACHE.pop(resolved, None)
-    # Invalidate session header for this root only (#61, #94)
     _SESSION_HEADER_CACHE.pop(str(root), None)
 
+    stack_display = ", ".join(tech_stack[:3]) + ("…" if len(tech_stack) > 3 else "")
     return {
         "saved": True,
         "summary_path": str((docs_dir / "project_summary.md").relative_to(root)),
-        "detail_path": str((docs_dir / "project_detail.md").relative_to(root)),
-        "_display": "✓ Project docs saved",
+        "_display": f"✓ Project docs saved — {goal[:60]} [{stack_display}]",
     }
 
 
@@ -1442,7 +1542,10 @@ def _do_get_session_header() -> dict:
         return result
 
     age_h = (time.time() - summary_path.stat().st_mtime) / 3600
-    first_line = summary_path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
+    text = summary_path.read_text(encoding="utf-8")
+    # Prefer **Goal:** line (new structured format); fall back to H1 heading (legacy)
+    _goal_m = re.search(r"\*\*Goal:\*\*\s*(.+)", text)
+    first_line = _goal_m.group(1).strip() if _goal_m else text.splitlines()[0].lstrip("# ").strip()
 
     # Surface section index so Claude knows which feature areas have detail
     # Capped at 10 entries to stay within the ≤120-token budget (#67)
@@ -2546,8 +2649,20 @@ def register(mcp) -> None:
     # ── Project context tools ─────────────────────────────────────────────────
 
     @mcp.tool()
-    def update_project_detail_section(feature_name: str, content: str) -> dict:
+    def update_project_detail_section(
+        feature_name: str,
+        overview: str,
+        milestone: str | None = None,
+        guidelines: list[str] | None = None,
+        anti_patterns: list[str] | None = None,
+    ) -> dict:
         """Merge a single H2 section into project_detail.md without rewriting the full file.
+
+        feature_name: H2 heading for this section (e.g. "Tab Navigation & Routing")
+        overview: 1-3 sentence description of this feature area
+        milestone: optional milestone label e.g. "M1 — Core Auth"
+        guidelines: bullet-point rules for this feature (rendered as "- item")
+        anti_patterns: things to avoid (rendered as "- item")
 
         If '## {feature_name}' already exists, replaces that section only.
         Otherwise appends a new section. Use instead of save_project_docs when
@@ -2558,32 +2673,50 @@ def register(mcp) -> None:
         - Issue labels include 'architecture' → call this for Design Principles section
         - Labels are only 'bug', 'chore', 'refactor', 'docs' → do NOT call (no doc update)
         - No labels → ask user first"""
-        return _do_update_project_detail_section(feature_name, content)
+        return _do_update_project_detail_section(feature_name, overview, milestone, guidelines, anti_patterns)
 
     @mcp.tool()
-    def update_project_summary_section(section_name: str, content: str) -> dict:
+    def update_project_summary_section(
+        section_name: str,
+        items: list[str] | None = None,
+        table_rows: list[dict] | None = None,
+    ) -> dict:
         """Merge a single H2 section into project_summary.md without rewriting the full file (#137).
+
+        section_name: H2 heading (e.g. "Design Principles", "Milestones")
+        items: list of bullet-point strings — use for Design Principles, feature lists, etc.
+        table_rows: list of dicts for table sections — use for Milestones
+                    e.g. [{"#": "M1", "Name": "Core Auth", "Delivers": "Users can sign up"}]
 
         If '## {section_name}' already exists, replaces that section only.
         Otherwise appends a new section. Use this to persist Milestones, Design Principles,
         or other top-level summary sections without overwriting the rest of the file.
 
         Primary use cases:
-        - After Step 2.5 milestone creation: call with section_name='Milestones', content=milestone table
+        - After milestone creation: section_name='Milestones', table_rows=[{"#":"M1","Name":"...","Delivers":"..."}]
+        - Design principles: section_name='Design Principles', items=["No global state", ...]
         - When project goals change: update the relevant section only"""
-        return _do_update_project_summary_section(section_name, content)
+        return _do_update_project_summary_section(section_name, items, table_rows)
 
     @mcp.tool()
-    def update_project_description(content: str) -> dict:
-        """Overwrite hub_agents/project_description.md.
+    def update_project_description(title: str, description: str, notes: str = "") -> dict:
+        """Overwrite hub_agents/project_description.md with structured fields.
+
+        title: project name
+        description: 1-3 sentence project overview
+        notes: optional constraints or deployment notes
         Call get_project_context first to preserve existing content."""
-        return _do_update_project_description(content)
+        return _do_update_project_description(title, description, notes)
 
     @mcp.tool()
-    def update_architecture(content: str) -> dict:
-        """Overwrite hub_agents/architecture_design.md.
+    def update_architecture(overview: str, components: list[str] | None = None, notes: str = "") -> dict:
+        """Overwrite hub_agents/architecture_design.md with structured fields.
+
+        overview: 1-3 sentence architecture summary
+        components: list of key components (rendered as bullet list)
+        notes: optional notes
         Call get_project_context first to preserve existing content."""
-        return _do_update_architecture(content)
+        return _do_update_architecture(overview, components, notes)
 
     @mcp.tool()
     def set_preference(key: str, value: bool) -> dict:
@@ -2666,14 +2799,24 @@ def register(mcp) -> None:
     # ── Project docs tools ────────────────────────────────────────────────────
 
     @mcp.tool()
-    def save_project_docs(summary_md: str, detail_md: str, repo: str | None = None) -> dict:
-        """Write project_summary.md and project_detail.md to hub_agents/extensions/gh_planner/.
+    def save_project_docs(
+        goal: str,
+        tech_stack: list[str],
+        notes: str = "",
+        design_principles: list[str] | None = None,
+        repo: str | None = None,
+    ) -> dict:
+        """Initialise project_summary.md with structured fields — no raw markdown blobs.
 
-        summary_md: ≤400-token project overview, tech stack, and pitfalls.
-        detail_md: per-file descriptions, unique behaviours, cross-references.
-        Both files are written atomically.
+        goal: one-sentence description of what the project does
+        tech_stack: list of framework/language names e.g. ["React 19", "TypeScript", "Vite"]
+        notes: optional deployment/constraint note (short string)
+        design_principles: list of architectural rules e.g. ["No global state", "Color tokens only"]
+
+        After calling this, use update_project_summary_section() to add further H2 sections
+        (Milestones, Feature Sections, etc.) and update_project_detail_section() for per-feature notes.
         """
-        return _do_save_project_docs(summary_md, detail_md, repo)
+        return _do_save_project_docs(goal, tech_stack, notes, design_principles, repo)
 
     @mcp.tool()
     def load_project_docs(doc: str = "summary", repo: str | None = None, force_reload: bool = False) -> dict:

@@ -255,13 +255,14 @@ After approval:
 
    `update_project_detail_section(feature_name, content)` merges a single H2 section
    into `project_detail.md` without rewriting the rest of the file.
-6. **Offer context cleanup:**
-   Ask: "Planning done! Unload cached data to keep Claude's context lean? (yes/no)"
-   - If yes: call `apply_unload_policy(command="gh-plan")` — this reads
-     `unload_policy.json` and clears only what's in `unload[]` for this command.
-     Repo config, preferences, and all disk docs/issues are always preserved.
-     Print `_display` from the result.
-   - If no: proceed.
+6. **Offer implementation** — ask immediately after issues are submitted:
+   > "Implement now using /th:gh-implementation? (yes / no)"
+   - **yes** → call `apply_unload_policy(command="gh-plan")` silently (print `_display`),
+     then invoke `/th:gh-implementation` — this switches mode automatically.
+     Do NOT ask about cache cleanup separately; the unload happens as part of the switch.
+   - **no** → ask: "Unload cached data to keep context lean? (yes/no)"
+     - If yes: call `apply_unload_policy(command="gh-plan")`, print `_display`.
+     - If no: proceed.
 7. Say: **"Let me know any plans for this!"**
 
 ---

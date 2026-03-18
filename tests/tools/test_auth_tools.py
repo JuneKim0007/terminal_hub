@@ -81,7 +81,7 @@ def test_update_project_description_write_failure(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.github_planner.write_doc_file", side_effect=OSError("disk full")):
         server = create_server()
-        result = call(server, "update_project_description", {"content": "text"})
+        result = call(server, "update_project_description", {"title": "X", "description": "desc"})
     assert result["error"] == "write_failed"
     assert "disk full" in result["message"]
 
@@ -90,5 +90,5 @@ def test_update_architecture_write_failure(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.github_planner.write_doc_file", side_effect=OSError("disk full")):
         server = create_server()
-        result = call(server, "update_architecture", {"content": "text"})
+        result = call(server, "update_architecture", {"overview": "layered arch"})
     assert result["error"] == "write_failed"

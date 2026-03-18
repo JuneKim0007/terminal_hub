@@ -262,28 +262,29 @@ def test_get_analysis_status_not_started(workspace):
 def test_save_project_docs_writes_both_files(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
-        result = _do_save_project_docs("summary text", "detail text", "o/r")
+        result = _do_save_project_docs("My portfolio", ["React", "TypeScript"], repo="o/r")
 
     assert result["saved"] is True
     docs_dir = _gh_planner_docs_dir(workspace)
-    assert (docs_dir / "project_summary.md").read_text() == "summary text"
-    assert (docs_dir / "project_detail.md").read_text() == "detail text"
+    text = (docs_dir / "project_summary.md").read_text()
+    assert "My portfolio" in text
+    assert "React" in text
+    assert (docs_dir / "project_detail.md").exists()
 
 
 def test_save_project_docs_populates_cache(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
-        _do_save_project_docs("sum", "det", "o/r")
+        _do_save_project_docs("A project", ["Python"], repo="o/r")
 
-    assert _PROJECT_DOCS_CACHE["o/r"]["summary"] == "sum"
-    assert _PROJECT_DOCS_CACHE["o/r"]["detail"] == "det"
+    assert "A project" in _PROJECT_DOCS_CACHE["o/r"]["summary"]
 
 
 def test_save_project_docs_creates_parent_dirs(workspace):
     # docs_dir does not exist yet
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
-        result = _do_save_project_docs("s", "d", "o/r")
+        result = _do_save_project_docs("App", ["Go"], repo="o/r")
 
     assert result["saved"] is True
     assert _gh_planner_docs_dir(workspace).exists()
@@ -437,14 +438,14 @@ def test_start_repo_analysis_github_error_returns_error(workspace):
 
 
 def test_save_project_docs_returns_needs_init_when_not_set_up(tmp_path):
-    """Line 498: ensure_initialized guard fires when hub_agents is missing."""
+    """ensure_initialized guard fires when hub_agents is missing."""
     with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
-        result = _do_save_project_docs("s", "d", "o/r")
+        result = _do_save_project_docs("App", ["Python"], repo="o/r")
     assert result["status"] == "needs_init"
 
 
 def test_save_project_docs_write_error_returns_error(workspace):
-    """Lines 509-510: OSError during write_text is caught."""
+    """OSError during write_text is caught."""
     from pathlib import Path
     original_write = Path.write_text
 
@@ -456,7 +457,7 @@ def test_save_project_docs_write_error_returns_error(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}), \
          patch.object(Path, "write_text", _fail_on_tmp):
-        result = _do_save_project_docs("s", "d", "o/r")
+        result = _do_save_project_docs("App", ["Python"], repo="o/r")
     assert result["error"] == "write_failed"
 
 
@@ -1097,12 +1098,12 @@ def test_save_project_docs_clears_sections_cache(workspace):
         # Populate section cache via lookup
         (docs_dir / "project_detail.md").write_text("## Auth\nold rules")
         _do_lookup_feature_section("Auth")
-        # Now save new docs
-        _do_save_project_docs("new summary", "## NewArea\nnew rules")
-        # sections cache should be cleared
+        # Now save new docs — sections cache should be reset to empty dict
+        _do_save_project_docs("New summary project", ["Python"])
         resolved = pg._resolve_repo(None) or "unknown"
         entry = pg._PROJECT_DOCS_CACHE.get(resolved, {})
-        assert entry.get("_sections") is None
+        # New save resets _sections to {} (empty, not None — cleared for fresh lookup)
+        assert entry.get("_sections") == {}
 
 
 def test_docs_exist_returns_sections(workspace):
@@ -2357,9 +2358,9 @@ def _mcp_call(tool_name, args, workspace):
 
 
 def test_mcp_wrapper_update_project_detail_section(workspace):
-    """Covers update_project_detail_section MCP wrapper return line 2068."""
+    """Covers update_project_detail_section MCP wrapper."""
     result = _mcp_call("update_project_detail_section",
-                       {"feature_name": "Auth", "content": "JWT tokens used."}, workspace)
+                       {"feature_name": "Auth", "overview": "JWT tokens used."}, workspace)
     assert "error" not in result or result.get("saved") is True or "status" in result
 
 
@@ -2413,9 +2414,9 @@ def test_mcp_wrapper_get_analysis_status_no_cache(workspace):
 
 
 def test_mcp_wrapper_save_project_docs(workspace):
-    """Covers save_project_docs MCP wrapper return line 2150."""
+    """Covers save_project_docs MCP wrapper."""
     result = _mcp_call("save_project_docs",
-                       {"summary_md": "# Summary", "detail_md": "# Detail"}, workspace)
+                       {"goal": "A portfolio site", "tech_stack": ["React", "TypeScript"]}, workspace)
     assert result.get("saved") is True or "status" in result
 
 

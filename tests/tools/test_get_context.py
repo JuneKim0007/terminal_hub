@@ -61,20 +61,20 @@ def test_get_issue_context_not_found(workspace):
 # ── update_project_description: not initialized (line 258) ───────────────────
 
 def test_update_project_description_not_initialized(tmp_path):
-    """Line 258: hub_agents/ absent → needs_init."""
+    """hub_agents/ absent → needs_init."""
     with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
-        result = call(server, "update_project_description", {"content": "content"})
+        result = call(server, "update_project_description", {"title": "X", "description": "desc"})
     assert result["status"] == "needs_init"
 
 
-# ── update_architecture: not initialized (line 269) ───────────────────────────
+# ── update_architecture: not initialized ──────────────────────────────────────
 
 def test_update_architecture_not_initialized(tmp_path):
-    """Line 269: hub_agents/ absent → needs_init."""
+    """hub_agents/ absent → needs_init."""
     with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
-        result = call(server, "update_architecture", {"content": "content"})
+        result = call(server, "update_architecture", {"overview": "layered arch"})
     assert result["status"] == "needs_init"
 
 

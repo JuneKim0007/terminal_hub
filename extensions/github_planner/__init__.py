@@ -2035,12 +2035,12 @@ def register(mcp) -> None:
     @mcp.resource("terminal-hub://workflow/issue")
     def workflow_issue() -> str:
         """Guide for creating, listing, and reloading issue context."""
-        return _load_agent("create.md")
+        return _load_agent("github-planner/create-issue.md")
 
     @mcp.resource("terminal-hub://workflow/context")
     def workflow_context() -> str:
         """Guide for loading and saving project description and architecture."""
-        return _load_agent("context.md")
+        return _load_agent("github-planner.md")
 
     @mcp.resource("terminal-hub://workflow/auth")
     def workflow_auth() -> str:

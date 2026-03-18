@@ -395,7 +395,7 @@ def test_submit_issue_display_is_number_and_title(workspace):
          patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
         result = _do_submit_issue("my-feature")
 
-    assert result["_display"] == "✓ #7 My feature"
+    assert result["_display"] == "**✅ Created** #7 — My feature\nhttps://gh/7"
 
 
 # ── Coverage gap-fillers ───────────────────────────────────────────────────────

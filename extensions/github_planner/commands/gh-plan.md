@@ -4,6 +4,10 @@
      Continue the planning conversation. When all planned issues are created, say:
      "Let me know any plans for this!" -->
 
+<!-- RULE: for every yes/no or choice prompt shown to the user, call
+     format_prompt(question, options, style) first and print _display verbatim.
+     styles: "question" (default), "confirm", "warning", "switch", "error" -->
+
 <!-- LOAD ANNOUNCEMENT: At the very start of this command, output exactly:
      🟢 Loaded: gh-plan — `extensions/github_planner/commands/gh-plan.md`
      Do this before any tool calls. -->
@@ -158,7 +162,7 @@ If analyzing → run the **analyze sub-command** workflow (`/th:gh-plan-analyze`
 
 ## Step 4 — Load summary (silent)
 
-Call `load_project_docs(doc="summary")`. Absorb silently — do not show to user.
+Call `load_project_docs(doc="summary")`. Print `_display` verbatim (e.g. "📄 Loaded: project_summary.md (1,234 bytes)"). Do not show the doc contents.
 Note the `Feature Sections` line in the summary: this is the index of available
 detail sections. Load individual sections via `lookup_feature_section` only when
 the user discusses a topic that matches a section heading.
@@ -257,11 +261,11 @@ After approval:
    into `project_detail.md` without rewriting the rest of the file.
 6. **Offer implementation** — ask immediately after issues are submitted:
    > "Implement now using /th:gh-implementation? (yes / no)"
-   - **yes** → call `apply_unload_policy(command="gh-plan")` silently (print `_display`),
+   - **yes** → call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line,
      then invoke `/th:gh-implementation` — this switches mode automatically.
      Do NOT ask about cache cleanup separately; the unload happens as part of the switch.
    - **no** → ask: "Unload cached data to keep context lean? (yes/no)"
-     - If yes: call `apply_unload_policy(command="gh-plan")`, print `_display`.
+     - If yes: call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line.
      - If no: proceed.
 7. Say: **"Let me know any plans for this!"**
 

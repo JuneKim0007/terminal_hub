@@ -215,3 +215,38 @@ def test_install_plugin_commands_skips_missing_source_files(tmp_path):
     install_plugin_commands(manifest, tmp_path)
     assert (tmp_path / "commands" / "myplugin" / "real.md").exists()
     assert not (tmp_path / "commands" / "myplugin" / "ghost.md").exists()
+
+
+# ── run_install error branches ────────────────────────────────────────────────
+
+def test_run_install_install_commands_permission_error(claude_json, tmp_path):
+    """PermissionError in install_commands is caught and printed (lines 139-140)."""
+    with patch("terminal_hub.install.install_commands", side_effect=PermissionError("denied")), \
+         patch("terminal_hub.plugin_loader.discover_plugins", return_value=[]), \
+         patch("builtins.input", return_value="y"):
+        # Should not raise — error is caught and printed
+        run_install(claude_json_path=claude_json, claude_dir=tmp_path)
+
+
+def test_run_install_plugin_command_error(claude_json, tmp_path):
+    """OSError in install_plugin_commands is caught and printed (lines 150-151)."""
+    fake_manifest = {"name": "myplugin", "version": "1.0",
+                     "entry": "ext.myplugin", "commands": [],
+                     "commands_dir": "commands", "_plugin_dir": str(tmp_path)}
+    with patch("terminal_hub.plugin_loader.discover_plugins", return_value=[fake_manifest]), \
+         patch("terminal_hub.install.install_plugin_commands", side_effect=OSError("perm")), \
+         patch("builtins.input", return_value="y"):
+        run_install(claude_json_path=claude_json, claude_dir=tmp_path)
+
+
+def test_run_verify_missing_commands_prints_warning(claude_json, tmp_path, capsys):
+    """verify_commands missing files prints warning (lines 174-175)."""
+    from terminal_hub.install import write_claude_json, build_mcp_config, read_claude_json
+    cfg = build_mcp_config()
+    data = read_claude_json(claude_json)
+    data["mcpServers"]["terminal-hub"] = cfg
+    write_claude_json(claude_json, data)
+    # Don't install commands — so verify_commands will find missing files
+    run_verify(claude_json_path=claude_json, claude_dir=tmp_path)
+    captured = capsys.readouterr()
+    assert "Missing" in captured.out or "missing" in captured.out.lower()

@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock
 import pytest
 from extensions.github_planner.analyzer import (
     extract_label_patterns, extract_assignee_patterns, extract_body_structure,
@@ -195,3 +196,18 @@ def test_summarize_for_prompt_partial_data():
     result = summarize_for_prompt(snap)
     assert "[analyzer]" in result
     assert "bug" in result
+
+
+def test_summarize_for_prompt_exception_returns_empty():
+    """summarize_for_prompt returns '' when an exception is raised (lines 185-186)."""
+    import extensions.github_planner.analyzer as ana
+    # Pass a snap that makes the function crash at repr/str step
+    bad_snap = MagicMock()
+    bad_snap.__bool__ = MagicMock(side_effect=RuntimeError("boom"))
+    # The function starts with `if not snap: return ""` — force it past that
+    # by passing a malformed dict that raises during processing
+    class BadDict(dict):
+        def get(self, key, default=None):
+            raise RuntimeError("boom during get")
+    result = summarize_for_prompt(BadDict({"x": 1}))
+    assert result == ""

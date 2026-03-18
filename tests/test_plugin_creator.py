@@ -209,3 +209,79 @@ def test_plugin_creator_tools_registered():
     assert "write_plugin_file" in tool_names
     assert "write_test_file" in tool_names
     assert "validate_plugin" in tool_names
+
+
+# ── register() MCP wrapper lines ──────────────────────────────────────────────
+
+def test_register_mcp_write_plugin_file(tmp_path):
+    """Calling write_plugin_file via MCP covers register() wrapper line 156."""
+    import asyncio
+    from terminal_hub.server import create_server
+    ext_root = tmp_path / "extensions"
+    ext_root.mkdir()
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.plugin_creator._EXTENSIONS_ROOT", ext_root), \
+         patch("extensions.plugin_creator._TESTS_ROOT", tmp_path / "tests"):
+        server = create_server()
+        result = asyncio.run(server._tool_manager.call_tool(
+            "write_plugin_file",
+            {"plugin_name": "test_plug", "filename": "cmd.md", "content": "# cmd"}
+        ))
+    assert result.get("written") is True
+
+
+def test_register_mcp_write_test_file(tmp_path):
+    """Calling write_test_file via MCP covers register() wrapper line 165."""
+    import asyncio
+    from terminal_hub.server import create_server
+    tests_root = tmp_path / "tests"
+    tests_root.mkdir()
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.plugin_creator._TESTS_ROOT", tests_root):
+        server = create_server()
+        result = asyncio.run(server._tool_manager.call_tool(
+            "write_test_file",
+            {"plugin_name": "test_plug", "content": "def test_foo(): pass\n"}
+        ))
+    assert result.get("written") is True
+
+
+def test_register_mcp_validate_plugin(tmp_path):
+    """Calling validate_plugin via MCP covers register() wrapper line 177."""
+    import asyncio
+    from terminal_hub.server import create_server
+    ext_root = tmp_path / "extensions"
+    ext_root.mkdir()
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
+    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.plugin_creator._EXTENSIONS_ROOT", ext_root):
+        server = create_server()
+        result = asyncio.run(server._tool_manager.call_tool(
+            "validate_plugin",
+            {"plugin_name": "nonexistent_plugin"}
+        ))
+    # Should return valid=False with errors, not crash
+    assert "valid" in result
+
+
+def test_validate_plugin_register_not_callable(tmp_path):
+    """'register' attribute exists but is not callable (line 126)."""
+    plugin_dir = tmp_path / "bad_plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(json.dumps({
+        "name": "bad_plugin", "version": "1.0",
+        "entry": "extensions.bad_plugin",
+        "commands_dir": "commands", "commands": [],
+    }))
+    (plugin_dir / "description.json").write_text(json.dumps({"plugin": "bad_plugin"}))
+
+    mock_mod = MagicMock()
+    mock_mod.register = "not_callable_string"
+
+    with patch("extensions.plugin_creator._EXTENSIONS_ROOT", tmp_path), \
+         patch("importlib.import_module", return_value=mock_mod):
+        result = _do_validate_plugin("bad_plugin")
+    assert result["valid"] is False
+    assert any("not callable" in e for e in result["errors"])

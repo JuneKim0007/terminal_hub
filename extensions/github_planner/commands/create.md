@@ -20,8 +20,10 @@
 
 3. Call `draft_issue(title=..., body=..., labels=..., assignees=...)` to save locally.
 
-4. Optionally call `generate_issue_workflows(slug=...)` to append agent + program
-   workflow scaffolding to the issue file (recommended for implementation tasks).
+4. Call `generate_issue_workflows(slug=...)` to append agent + program workflow
+   scaffolding to the issue file. **Skip only** if labels include `question`,
+   `documentation`, or `wontfix` — all other issues get workflows by default.
+   (Safe to call even if workflows already exist — returns `updated: false` silently.)
 
 5. If the user wants to publish to GitHub, call `submit_issue(slug=...)`.
 

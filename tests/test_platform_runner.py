@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from terminal_hub.platform_runner import detect_distro, detect_platform, run_extension
+from terminal_hub.platform_runner import detect_distro, detect_platform, escalate_to_agent, run_extension
 
 
 # ── detect_platform ────────────────────────────────────────────────────────────
@@ -205,3 +205,96 @@ def test_run_extension_no_platform_no_linux():
     assert result["success"] is False
     assert "No commands defined" in result["error"]
     assert result["fallback"] == "claude"
+
+
+def test_run_extension_detects_platform_when_none(monkeypatch):
+    """run_extension calls detect_platform() when platform_key is None (line 59)."""
+    ext = {"id": "auto-ext", "platforms": {"darwin": ["true"]}}
+    with patch("terminal_hub.platform_runner.detect_platform", return_value="darwin") as mock_dp:
+        result = run_extension(ext, platform_key=None)
+    mock_dp.assert_called_once()
+    assert result["success"] is True
+
+
+def test_detect_distro_alpine_in_os_release(monkeypatch):
+    """Returns 'alpine' when /etc/os-release contains 'alpine' (lines 31-32)."""
+    original_exists = Path.exists
+    original_read_text = Path.read_text
+
+    def patched_exists(self):
+        if str(self) == "/etc/alpine-release":
+            return False
+        return original_exists(self)
+
+    def patched_read_text(self, *args, **kwargs):
+        if str(self) == "/etc/os-release":
+            return "ID=alpine\nNAME=\"Alpine Linux\"\n"
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", patched_exists)
+    monkeypatch.setattr(Path, "read_text", patched_read_text)
+    assert detect_distro() == "alpine"
+
+
+# ── escalate_to_agent ──────────────────────────────────────────────────────────
+
+def test_escalate_to_agent_passthrough_on_success():
+    """Does not modify a successful result."""
+    result = {"success": True, "_display": "✓ done"}
+    out = escalate_to_agent(result)
+    assert out == result
+    assert "_agent_escalation" not in out
+
+
+def test_escalate_to_agent_adds_guidance_fields():
+    """Augments a failed result with escalation fields."""
+    result = {"success": False, "id": "my-ext", "error": "exit 1", "cmd": "false"}
+    out = escalate_to_agent(result)
+    assert out["_agent_escalation"] is True
+    assert "_guidance" in out
+    assert "_escalation_message" in out
+    assert "my-ext" in out["_escalation_message"]
+    assert "false" in out["_escalation_message"]
+    assert "exit 1" in out["_escalation_message"]
+
+
+def test_escalate_to_agent_includes_context():
+    """Includes the caller-provided context string in the escalation message."""
+    result = {"success": False, "id": "x", "error": "fail"}
+    out = escalate_to_agent(result, context="Installing dependencies")
+    assert "Installing dependencies" in out["_escalation_message"]
+
+
+def test_escalate_to_agent_no_cmd_field():
+    """Works when the result has no 'cmd' field (no-platform-found branch)."""
+    result = {"success": False, "id": "x", "error": "no platform"}
+    out = escalate_to_agent(result)
+    assert out["_agent_escalation"] is True
+
+
+def test_run_extension_failure_includes_escalation():
+    """Failed run_extension result includes _agent_escalation fields."""
+    ext = {"id": "my-ext", "fallback": "claude", "platforms": {"darwin": ["false"]}}
+    result = run_extension(ext, platform_key="darwin")
+    assert result["success"] is False
+    assert result["_agent_escalation"] is True
+    assert "_guidance" in result
+    assert "_escalation_message" in result
+
+
+def test_run_extension_no_platform_includes_escalation():
+    """No-platform result includes _agent_escalation fields."""
+    ext = {"id": "x", "fallback": "claude", "platforms": {"darwin": ["true"]}}
+    result = run_extension(ext, platform_key="windows")
+    assert result["success"] is False
+    assert result["_agent_escalation"] is True
+
+
+def test_run_extension_timeout_includes_escalation():
+    """Timeout result includes _agent_escalation fields."""
+    ext = {"id": "slow", "fallback": "claude", "platforms": {"linux": ["sleep 100"]}}
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="sleep 100", timeout=30)):
+        result = run_extension(ext, platform_key="linux")
+    assert result["success"] is False
+    assert result["_agent_escalation"] is True
+    assert "timed out" in result["error"]

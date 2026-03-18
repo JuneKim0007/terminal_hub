@@ -160,9 +160,10 @@ After approval:
    into `project_detail.md` without rewriting the rest of the file.
 6. **Offer context cleanup:**
    Ask: "Planning done! Unload cached data to keep Claude's context lean? (yes/no)"
-   - If yes: run the **unload sub-command** workflow (`/th:github-planner/unload`)
-     This clears all in-memory caches (analysis, docs, file tree, session headers).
-     Your issues and project docs on disk are always preserved.
+   - If yes: call `apply_unload_policy(command="github-planner")` — this reads
+     `unload_policy.json` and clears only what's in `unload[]` for this command.
+     Repo config, preferences, and all disk docs/issues are always preserved.
+     Print `_display` from the result.
    - If no: proceed.
 7. Say: **"Let me know any plans for this!"**
 

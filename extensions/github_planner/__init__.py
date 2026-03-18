@@ -2020,6 +2020,95 @@ def _do_unload_plugin(plugin: str) -> dict:
     }
 
 
+_UNLOAD_POLICY_PATH = _PLUGIN_DIR / "unload_policy.json"
+
+# Map policy key → (in-memory cache dict | None, disk filename | None)
+# disk filenames are relative to _gh_planner_docs_dir(root)
+_CACHE_KEY_MAP: dict[str, tuple[dict | None, str | None]] = {
+    "analysis_cache":       (_ANALYSIS_CACHE,       None),
+    "project_docs_cache":   (_PROJECT_DOCS_CACHE,   None),
+    "file_tree_cache":      (_FILE_TREE_CACHE,       None),
+    "session_header_cache": (_SESSION_HEADER_CACHE,  None),
+    "label_cache":          (_LABEL_CACHE,           None),
+    "repo_cache":           (_REPO_CACHE,            None),
+    "analyzer_snapshot":    (None, "analyzer_snapshot.json"),
+    "file_hashes":          (None, "file_hashes.json"),
+    "file_tree":            (None, "file_tree.json"),
+    "github_local_config":  (None, "github_local_config.json"),
+    "docs_strategy":        (None, "docs_strategy.json"),
+}
+
+
+def _load_unload_policy() -> dict:
+    """Load and return the full unload_policy.json contents."""
+    try:
+        return json.loads(_UNLOAD_POLICY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"error": str(exc), "commands": {}}
+
+
+def _do_apply_unload_policy(command: str) -> dict:
+    """Clear only the caches listed in unload_policy.json for the given command."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    policy = _load_unload_policy()
+    if "error" in policy:
+        return {"error": "policy_load_failed", "message": policy["error"], "_hook": None}
+
+    commands = policy.get("commands", {})
+    if command not in commands:
+        available = sorted(commands.keys())
+        return {
+            "error": "unknown_command",
+            "message": f"No policy found for command {command!r}. Available: {available}",
+            "_hook": None,
+        }
+
+    entry = commands[command]
+    to_unload: list[str] = entry.get("unload", [])
+    to_keep: list[str] = entry.get("keep", [])
+    docs_dir = _gh_planner_docs_dir(root)
+
+    cleared: list[str] = []
+    errors: list[str] = []
+
+    for key in to_unload:
+        if key not in _CACHE_KEY_MAP:
+            errors.append(f"Unknown cache key: {key!r}")
+            continue
+        mem_cache, disk_file = _CACHE_KEY_MAP[key]
+        if mem_cache is not None and mem_cache:
+            mem_cache.clear()
+            cleared.append(key)
+        if disk_file is not None:
+            p = docs_dir / disk_file
+            if p.exists():
+                try:
+                    p.unlink()
+                    cleared.append(disk_file)
+                except OSError as exc:
+                    errors.append(f"{disk_file}: {exc}")
+
+    success = len(errors) == 0
+    keep_summary = ", ".join(to_keep) if to_keep else "none"
+    cleared_summary = ", ".join(cleared) if cleared else "nothing"
+    display = (
+        f"✓ Unload policy applied for '{command}'\n"
+        f"  Cleared: {cleared_summary}\n"
+        f"  Kept:    {keep_summary}"
+    )
+    return {
+        "success": success,
+        "command": command,
+        "cleared": cleared,
+        "kept": to_keep,
+        "errors": errors,
+        "_display": display,
+    }
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -2348,6 +2437,21 @@ def register(mcp) -> None:
         On error returns {success: false, errors: [...]} — analyze errors and retry.
         """
         return _do_unload_plugin(plugin)
+
+    @mcp.tool()
+    def apply_unload_policy(command: str) -> dict:
+        """Apply the unload policy for a command from unload_policy.json.
+
+        Selectively clears only the caches listed in the command's unload[] array,
+        preserving everything in keep[]. Persistent state (issues, project docs,
+        config.yaml, .env) is never touched.
+
+        Returns {cleared: [...], kept: [...], _display: "..."}.
+
+        Common command values: 'github-planner', 'github-planner/analyze',
+        'github-planner/create-issue', 'github-planner/unload', 'create-github-repo'.
+        """
+        return _do_apply_unload_policy(command)
 
     @mcp.tool()
     def analyze_github_labels(refresh: bool = False) -> dict:

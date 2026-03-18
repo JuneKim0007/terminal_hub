@@ -31,6 +31,21 @@
       "command": "/th:github-planner/auth",
       "aliases": ["fix auth", "github login", "authenticate"],
       "use_when": "GitHub authentication is failing or needs to be refreshed"
+    },
+    {
+      "command": "/th:github-planner/unload",
+      "aliases": ["unload", "clear cache", "free memory", "clean up context"],
+      "use_when": "User wants to clear cached data and free Claude context after planning"
+    },
+    {
+      "command": "/th:current-stat",
+      "aliases": ["status", "what's loaded", "show state", "current stat"],
+      "use_when": "Quick snapshot of what caches and docs are currently loaded"
     }
-  ]
+  ],
+  "unload_policy": {
+    "file": "unload_policy.json",
+    "description": "Per-command cache lifecycle policy. Each command entry declares unload[] (caches to clear when done) and keep[] (caches to preserve). Call apply_unload_policy(command) to execute. Persistent state (issues, project docs, config.yaml, .env) is never touched by any policy.",
+    "tool": "apply_unload_policy"
+  }
 }

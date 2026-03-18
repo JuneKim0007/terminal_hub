@@ -1,0 +1,30 @@
+{
+  "_comment": "gh_implementation unload policy. On entry: clears gh_planner heavy caches; preserves project docs. On exit: caller decides via apply_unload_policy.",
+  "cache_keys": {
+    "analysis_cache":      {"description": "gh_planner in-memory repo analysis cache (_ANALYSIS_CACHE)"},
+    "session_header_cache":{"description": "gh_planner session header cache (_SESSION_HEADER_CACHE)"},
+    "file_tree_cache":     {"description": "gh_planner file tree cache (_FILE_TREE_CACHE)"},
+    "label_cache":         {"description": "gh_planner label cache (_LABEL_CACHE)"},
+    "project_summary":     {"description": "project_summary.md — preserved: governs design principles"},
+    "project_detail":      {"description": "project_detail.md — preserved: feature knowledge base"},
+    "issue_files":         {"description": "hub_agents/issues/*.md — preserved: implementation source of truth"}
+  },
+  "always_keep": ["project_summary", "project_detail", "issue_files", "github_repo", "workspace_config", "preferences"],
+  "commands": {
+    "gh-implementation": {
+      "description": "Entry point — unload gh_planner heavy caches, keep project docs and issues",
+      "unload": ["analysis_cache", "session_header_cache", "file_tree_cache", "label_cache"],
+      "keep":   ["project_summary", "project_detail", "issue_files", "github_repo", "workspace_config", "preferences"]
+    },
+    "gh-implementation/implement": {
+      "description": "Implement a single issue — no additional unloads needed",
+      "unload": [],
+      "keep":   ["project_summary", "project_detail", "issue_files", "github_repo", "workspace_config", "preferences"]
+    },
+    "gh-implementation/session-knowledge": {
+      "description": "View/change session flags — keep everything",
+      "unload": [],
+      "keep":   ["project_summary", "project_detail", "issue_files", "github_repo", "workspace_config", "preferences"]
+    }
+  }
+}

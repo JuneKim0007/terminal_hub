@@ -1,4 +1,4 @@
-# /th:github-planner/list-issues
+# /th:gh-plan-list
 
 <!-- RULE: Show the issue list concisely. Do not narrate tool call details. -->
 

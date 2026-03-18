@@ -29,7 +29,7 @@
     "project_detail"
   ],
   "commands": {
-    "github-planner": {
+    "gh-plan": {
       "description": "Full integrated planning flow — heavy analysis + docs loaded",
       "unload": [
         "analysis_cache",
@@ -50,7 +50,7 @@
         "preferences"
       ]
     },
-    "github-planner/analyze": {
+    "gh-plan-analyze": {
       "description": "Repo analysis only — clears analysis artifacts, keeps docs",
       "unload": [
         "analysis_cache",
@@ -70,7 +70,7 @@
         "preferences"
       ]
     },
-    "github-planner/create-issue": {
+    "gh-plan-create": {
       "description": "Single issue creation — lightweight, only clear session header",
       "unload": [
         "session_header_cache"
@@ -87,7 +87,7 @@
         "preferences"
       ]
     },
-    "github-planner/list-issues": {
+    "gh-plan-list": {
       "description": "Issue listing — nothing to unload, stateless read",
       "unload": [],
       "keep": [
@@ -103,7 +103,7 @@
         "preferences"
       ]
     },
-    "github-planner/setup": {
+    "gh-plan-setup": {
       "description": "Workspace setup — clears repo cache so new repo is picked up",
       "unload": [
         "repo_cache",
@@ -120,7 +120,7 @@
         "preferences"
       ]
     },
-    "github-planner/auth": {
+    "gh-plan-auth": {
       "description": "Auth recovery — no caches to clear",
       "unload": [],
       "keep": [
@@ -130,7 +130,7 @@
         "preferences"
       ]
     },
-    "github-planner/unload": {
+    "gh-plan-unload": {
       "description": "Manual full unload — clears everything except persistent config",
       "unload": [
         "analysis_cache",
@@ -147,6 +147,16 @@
         "docs_strategy"
       ],
       "keep": [
+        "github_repo",
+        "workspace_config",
+        "preferences"
+      ]
+    },
+    "gh-plan-settings": {
+      "description": "View/change planning preferences — keep all caches intact",
+      "unload": [],
+      "keep": [
+        "repo_cache",
         "github_repo",
         "workspace_config",
         "preferences"

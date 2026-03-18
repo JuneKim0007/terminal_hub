@@ -11,6 +11,34 @@ You are in **gh-implementation** mode — the end-to-end flow for implementing a
 
 ---
 
+## Mode switching — bidirectional (always active)
+
+Detect planning intent at any point during the conversation. Signals include:
+- "I want to add a feature / create an issue / plan something"
+- "what should I work on next", "let me think about what to build"
+- "can we plan X", "I have an idea for Y"
+- User describes a new requirement without referencing an existing issue
+
+**Session flag: `auto_switch_modes`**
+
+- **Not set (first time):** Ask once:
+  > "Sounds like you want to plan — switch to /th:gh-plan? (yes / no / yes, don't ask again)"
+  - "yes, don't ask again" → set `auto_switch_modes = true` in session via `set_implementation_session_flag`
+  - "yes" → switch (ask next time)
+  - "no" → stay in implementation mode
+
+- **`auto_switch_modes = true`:** Switch silently — just print one line:
+  > `→ Switching to planning mode`
+  Then apply unload + load gh-plan. No offer shown.
+
+**On switch:**
+1. Call `apply_unload_policy(command="gh-implementation")` — print `_display`
+2. Invoke `/th:gh-plan` skill — that command takes over from Step 1
+
+Do NOT show the switch offer again after the user has already said yes in this session.
+
+---
+
 ## Step 1 — Context switch (silent)
 
 Call `apply_unload_policy(command="gh-implementation")`.

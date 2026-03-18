@@ -30,7 +30,7 @@ _DEFAULT_FLAGS: dict[str, Any] = {
     "confirmed_auto_close_this_session": False,  # internal — True after "don't ask again"
 }
 
-_ALLOWED_SESSION_FLAGS = {"close_automatically_on_gh", "delete_local_issue_on_gh"}
+_ALLOWED_SESSION_FLAGS = {"close_automatically_on_gh", "delete_local_issue_on_gh", "auto_switch_modes"}
 
 
 def _get_flags(root: Path) -> dict[str, Any]:
@@ -194,7 +194,7 @@ def register(mcp: FastMCP) -> None:
     def set_implementation_session_flag(key: str, value: bool, persist: bool = False) -> dict:
         """Update a session-scoped implementation flag.
 
-        key: 'close_automatically_on_gh' | 'delete_local_issue_on_gh'
+        key: 'close_automatically_on_gh' | 'delete_local_issue_on_gh' | 'auto_switch_modes'
         value: true | false
         persist: if true, write to hub_agents/config.yaml preferences so it survives sessions
         """

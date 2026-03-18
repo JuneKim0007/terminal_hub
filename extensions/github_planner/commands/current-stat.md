@@ -16,8 +16,8 @@ Print the `_display` value verbatim inside a code block so alignment is preserve
 terminal-hub active state
 ──────────────────────────────────────────────────
 RUNTIME
-  • github_planner (N tools)
-  N tools registered
+  • github_planner — GitHub issue planning — analyze repos, plan work, create and track issues. (N tools)
+  N tools total — full function awareness active
 ──────────────────────────────────────────────────
 CACHES
 [cache ] Analyzer snapshot         ✓  2.3h old
@@ -25,7 +25,7 @@ CACHES
 [prompt] Project detail            ✗
 [cache ] Tracked issues            ✓  3 total · 2 pending · 1 open
 ──────────────────────────────────────────────────
-Repo: owner/repo  Mode: github
+GitHub repo: owner/repo  (mode: github)
 Runtime reflects server startup state.
 ```
 

@@ -723,6 +723,10 @@ def _do_run_analyzer() -> dict:
         except Exception as exc:
             return {"error": "github_error", "message": str(exc)}
 
+    # Warm label cache as a free side-effect of the fetch already done above
+    if repo not in _LABEL_CACHE:
+        _LABEL_CACHE[repo] = labels
+
     snapshot = process_snapshot(issues, labels, members, repo=repo)
     path = write_snapshot(root, snapshot)
     summary = summarize_for_prompt(snapshot)
@@ -964,7 +968,17 @@ def _do_load_project_docs(doc: str = "summary", repo: str | None = None, force_r
     summary = _read("project_summary.md")
     detail = _read("project_detail.md")
 
-    _PROJECT_DOCS_CACHE[resolved] = {"summary": summary, "detail": detail, "loaded_at": time.time()}
+    entry: dict = {"summary": summary, "detail": detail, "loaded_at": time.time()}
+
+    # Pre-populate section cache so lookup_feature_section() gets a cache hit
+    # immediately after load_project_docs — no second disk read required.
+    if detail is not None:
+        detail_path = docs_dir / "project_detail.md"
+        if detail_path.exists():
+            entry["_sections"] = _parse_h2_sections(detail)
+            entry["_sections_mtime"] = detail_path.stat().st_mtime
+
+    _PROJECT_DOCS_CACHE[resolved] = entry
 
     if doc == "summary":
         return {"summary": summary, "detail": None}
@@ -1748,7 +1762,8 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
     if err := ensure_initialized(root):
         return err
 
-    root_key = str(root)
+    repo = read_env(root).get("GITHUB_REPO", str(root))
+    root_key = repo
     if not refresh and root_key in _LABEL_CACHE:
         cached = _LABEL_CACHE[root_key]
         return {**cached, "cached": True}

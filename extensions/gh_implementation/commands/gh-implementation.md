@@ -124,7 +124,25 @@ If accepted:
 
 ---
 
-## Step 9 — Cleanup
+## Step 9 — Post-ship doc sync
+
+After pushing and closing, update project docs to reflect what was actually built.
+Read the closed issue's labels from its local file frontmatter, then apply this table:
+
+| Labels | Action |
+|--------|--------|
+| Any `enhancement` or `feature` | Call `update_project_detail_section(feature_name, content)` — merge/update the feature section to reflect what was shipped. Include `**Milestone:** Mx — Name` at the top if milestones are in use. |
+| Any `architecture` | Call `update_project_summary_section(section_name="Design Principles", content=...)` |
+| All `bug`, `chore`, `refactor`, or `docs` | **No doc update** — skip entirely |
+| No labels | Ask: "Should I update the design notes for this? (yes/no)" — then follow the appropriate row above |
+
+Before writing, check `confirm_arch_changes` preference:
+- `true` or unset → show a one-line preview and ask "Update project notes? (yes/no)" before calling any update tool
+- `false` → update silently
+
+---
+
+## Step 10 — Cleanup
 
 Ask: **"Remove local issue file hub_agents/issues/{slug}.md? (yes / no / yes, never ask again)"**
 - "yes, never ask again" → set `delete_local_issue_on_gh = false` in session (suppress future prompts)
@@ -135,5 +153,5 @@ Ask: **"Remove local issue file hub_agents/issues/{slug}.md? (yes / no / yes, ne
 
 | Command | Does |
 |---------|------|
-| `/th:gh-implementation/implement` | Run Steps 3–9 for a specific issue |
+| `/th:gh-implementation/implement` | Run Steps 3–10 for a specific issue |
 | `/th:gh-implementation/session-knowledge` | View or change session flags |

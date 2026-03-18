@@ -78,23 +78,34 @@ When implementation is complete → go to Step 7.
 
 ## Step 7 — Present changes
 
-Show a summary of what changed, then present a human-readable diff:
+Run `git diff HEAD` (Bash tool), then present in two blocks — never dump raw patch:
 
+**Block 1 — Workflow summary** (what the agent did, one line per step completed):
 ```
-Changes for issue #{slug}: {title}
-
-Files modified:
-  M  src/auth.py        (+24 / -3)
-  A  tests/test_auth.py (+41)
-
-Diff summary:
-[human-readable description of what changed and why]
-
---- git diff excerpt ---
-{key hunks only — omit noise}
+What was done:
+1. Scanned all files — identified N relevant files
+2. Built knowledge base — grouped X as relevant, Y as unrelated
+3. <specific action taken for this issue>
+4. Added/updated tests: <what was tested>
+5. Verified: N tests pass, coverage N%
 ```
+
+**Block 2 — Diff summary** (structured, not raw patch):
+```
+Files changed:
+  M  src/auth.py        +24 / -3
+  A  tests/test_auth.py +41
+
+Key changes:
+- src/auth.py: <plain English description of change>
+- tests/test_auth.py: <plain English description>
+```
+
+If diff > 200 lines: show Block 1 + file list only, then ask "Show full diff? (yes / no)".
 
 Ask: **"Accept these changes? (yes / review more / cancel)"**
+- "review more" → show specific file or hunk the user asks about
+- "cancel" → `git checkout -- .` to revert, return to issue list
 
 ---
 

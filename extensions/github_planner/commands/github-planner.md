@@ -44,7 +44,17 @@ When the user selects (b) from Step 2 — user wants a repo created, or `get_ses
    **Tech Stack:** <stack, or "TBD" if not mentioned>
    **Goal:** <one-sentence goal>
    **Notes:** <any constraints, deployment targets, or "TBD">
+
+   ## Design Principles
+   - <Architectural style — e.g. "layered: routes → services → storage">
+   - <Key convention — e.g. "all public functions must have type hints">
+   - <Non-negotiable rule — e.g. "no mutable global state outside MCP server init">
+   - <Test policy — e.g. "coverage ≥ 80%; no merging with failing tests">
    ```
+
+   If the user hasn't described conventions yet, use sensible defaults for their stack
+   and mark them `(default — update anytime)`. Agents implementing issues MUST read
+   Design Principles before touching any code.
 
    If the user didn't mention a tech stack, suggest 2–3 sensible options that fit their idea alongside the sketch.
 

@@ -2,7 +2,7 @@
 
 **Trigger:** User mentions a task, bug, feature request, or asks what to work on next.
 
-For the full guided flow use `/t-h:github-planner/create-issue`.
+For the full guided flow use `/th:github-planner/create-issue`.
 
 ## Quick create (no project docs)
 

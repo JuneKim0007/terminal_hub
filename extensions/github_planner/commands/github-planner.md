@@ -1,4 +1,4 @@
-# /t-h:github-planner — Integrated planning flow
+# /th:github-planner — Integrated planning flow
 
 <!-- RULE: after any draft_issue or submit_issue call, do not narrate the result.
      Continue the planning conversation. When all planned issues are created, say:
@@ -13,7 +13,7 @@ Sub-commands handle each step; this command composes them.
 ## Step 1 — Workspace + auth check
 
 Call `get_setup_status`.
-- `initialised: false` → run the **setup sub-command** workflow (`/t-h:github-planner/setup`)
+- `initialised: false` → run the **setup sub-command** workflow (`/th:github-planner/setup`)
 - `initialised: true` → continue
 
 ---
@@ -49,7 +49,7 @@ Call `get_session_header` (if available) or `docs_exist`.
 - Docs ≥ 7 days or missing → recommend the **analyze sub-command** workflow
 
 If re-using existing docs → skip to Step 5.
-If analyzing → run the **analyze sub-command** workflow (`/t-h:github-planner/analyze`).
+If analyzing → run the **analyze sub-command** workflow (`/th:github-planner/analyze`).
 
 ---
 
@@ -120,8 +120,8 @@ After approval:
 
 | Command | Say | Does |
 |---------|-----|------|
-| `/t-h:github-planner/list-issues` | "list issues" | Show issue table |
-| `/t-h:github-planner/create-issue` | "create an issue" | Single guided issue |
-| `/t-h:github-planner/analyze` | "analyze my repo" | Build project docs |
-| `/t-h:github-planner/setup` | "set up github" | Workspace init |
-| `/t-h:github-planner/auth` | "fix auth" | Auth recovery |
+| `/th:github-planner/list-issues` | "list issues" | Show issue table |
+| `/th:github-planner/create-issue` | "create an issue" | Single guided issue |
+| `/th:github-planner/analyze` | "analyze my repo" | Build project docs |
+| `/th:github-planner/setup` | "set up github" | Workspace init |
+| `/th:github-planner/auth` | "fix auth" | Auth recovery |

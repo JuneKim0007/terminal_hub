@@ -30,7 +30,7 @@ def ext_dir(tmp_path):
         "name": "plugin_a",
         "display_name": "Plugin A",
         "usage": "Do amazing things with A.",
-        "commands": ["/t-h:plugin-a"],
+        "commands": ["/th:plugin-a"],
         "triggers": ["use a", "do a", "plugin a"],
     }), encoding="utf-8")
 
@@ -41,11 +41,11 @@ def ext_dir(tmp_path):
         "plugin": "plugin_b",
         "summary": "Plugin B for tracking things.",
         "entry": {
-            "command": "/t-h:plugin-b",
+            "command": "/th:plugin-b",
             "triggers": ["track", "monitor"],
         },
         "subcommands": [
-            {"command": "/t-h:plugin-b/list"},
+            {"command": "/th:plugin-b/list"},
         ],
     }), encoding="utf-8")
 

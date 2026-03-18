@@ -46,8 +46,8 @@ Does that sound right? (yes / no / describe more)
 ```
 No plugin covers that directly. Here's what terminal-hub can help with:
 
-• GitHub Planner (/t-h:github-planner) — plan work, manage GitHub issues
-• Plugin Creator (/t-h:create-plugin) — build new plugins
+• GitHub Planner (/th:github-planner) — plan work, manage GitHub issues
+• Plugin Creator (/th:create-plugin) — build new plugins
 
 Or I can help you directly without a plugin.
 ```

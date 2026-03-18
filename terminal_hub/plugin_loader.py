@@ -5,6 +5,8 @@ import importlib
 import json
 from pathlib import Path
 
+from terminal_hub.namespace import COMMAND_NAMESPACE
+
 
 _REQUIRED_FIELDS = {"name", "version", "entry", "commands_dir", "commands"}
 
@@ -84,7 +86,7 @@ def build_instructions(plugins: list[dict]) -> str:
     ]
 
     for p in plugins:
-        namespace = p.get("install_namespace", p["name"])
+        namespace = p.get("install_namespace", COMMAND_NAMESPACE)
         entry_cmd = p.get("entry_command", p["commands"][0] if p.get("commands") else "")
         entry_stem = Path(entry_cmd).stem if entry_cmd else p["name"]
         cmd_path = f"/{namespace}:{entry_stem}"

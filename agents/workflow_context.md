@@ -5,7 +5,7 @@
 ## Load context at session start
 
 1. Call `get_session_header`
-   - `docs: false` → offer to analyze: "No project context yet. Run `/t-h:github-planner/analyze` to build it?"
+   - `docs: false` → offer to analyze: "No project context yet. Run `/th:github-planner/analyze` to build it?"
    - `docs: true` → note `title` and `sections` list silently; proceed
    - `docs: true, stale: true` → suggest re-analysis: "Project notes are {N}h old — re-analyze?"
 
@@ -21,7 +21,7 @@
 
 ## Save project docs (after analysis or conversation)
 
-Use `/t-h:github-planner/analyze` to regenerate docs from code.
+Use `/th:github-planner/analyze` to regenerate docs from code.
 For manual updates: call `save_project_docs(summary_md=..., detail_md=...)`.
 Always call `load_project_docs(doc="all")` first to avoid overwriting existing content.
 

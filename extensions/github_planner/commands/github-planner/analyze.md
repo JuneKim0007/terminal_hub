@@ -1,4 +1,4 @@
-# /t-h:github-planner/analyze
+# /th:github-planner/analyze
 
 <!-- RULE: Run analysis silently. Report summary counts only, not file contents. -->
 

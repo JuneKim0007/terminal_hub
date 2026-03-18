@@ -27,7 +27,7 @@ terminal-hub install    # registers MCP server + installs slash commands
 
 Then in Claude Code:
 ```
-/t-h:github-planner
+/th:github-planner
 ```
 
 ---
@@ -38,12 +38,12 @@ Full GitHub issue lifecycle management with project context awareness.
 
 | Command | What it does |
 |---------|-------------|
-| `/t-h:github-planner` | Integrated flow — setup → analysis → planning → issue creation |
-| `/t-h:github-planner/create-issue` | Single guided issue with project context lookup |
-| `/t-h:github-planner/analyze` | Build feature-area design dictionary from repo structure |
-| `/t-h:github-planner/list-issues` | Show tracked issues |
-| `/t-h:github-planner/setup` | Configure workspace and GitHub repo |
-| `/t-h:github-planner/auth` | Auth recovery flow |
+| `/th:github-planner` | Integrated flow — setup → analysis → planning → issue creation |
+| `/th:github-planner/create-issue` | Single guided issue with project context lookup |
+| `/th:github-planner/analyze` | Build feature-area design dictionary from repo structure |
+| `/th:github-planner/list-issues` | Show tracked issues |
+| `/th:github-planner/setup` | Configure workspace and GitHub repo |
+| `/th:github-planner/auth` | Auth recovery flow |
 
 ### Project context
 
@@ -61,7 +61,7 @@ When creating issues, Claude automatically calls `lookup_feature_section` to gro
 Conversational plugin scaffolding — generates `plugin.json`, `__init__.py`, `description.json`, command files, and a test scaffold.
 
 ```
-/t-h:create-plugin
+/th:create-plugin
 ```
 
 ---
@@ -96,7 +96,7 @@ def register(mcp) -> None:
 }
 ```
 
-Use `/t-h:create-plugin` for guided scaffolding.
+Use `/th:create-plugin` for guided scaffolding.
 
 ---
 

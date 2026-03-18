@@ -185,10 +185,12 @@ def _make_plugin_manifest(tmp_path, name="myplugin", namespace=None, commands=("
     return manifest
 
 
-def test_install_plugin_commands_uses_plugin_name_as_namespace(tmp_path):
+def test_install_plugin_commands_uses_command_namespace_as_default(tmp_path):
+    """Without install_namespace in manifest, falls back to COMMAND_NAMESPACE ('th')."""
+    from terminal_hub.namespace import COMMAND_NAMESPACE
     manifest = _make_plugin_manifest(tmp_path, name="myplugin")
     install_plugin_commands(manifest, tmp_path)
-    assert (tmp_path / "commands" / "myplugin" / "start.md").exists()
+    assert (tmp_path / "commands" / COMMAND_NAMESPACE / "start.md").exists()
 
 
 def test_install_plugin_commands_uses_install_namespace(tmp_path):
@@ -210,11 +212,12 @@ def test_install_plugin_commands_preserves_subdirectory_structure(tmp_path):
 
 
 def test_install_plugin_commands_skips_missing_source_files(tmp_path):
+    from terminal_hub.namespace import COMMAND_NAMESPACE
     manifest = _make_plugin_manifest(tmp_path, name="myplugin", commands=("real.md",))
     manifest["commands"].append("ghost.md")  # not on disk
     install_plugin_commands(manifest, tmp_path)
-    assert (tmp_path / "commands" / "myplugin" / "real.md").exists()
-    assert not (tmp_path / "commands" / "myplugin" / "ghost.md").exists()
+    assert (tmp_path / "commands" / COMMAND_NAMESPACE / "real.md").exists()
+    assert not (tmp_path / "commands" / COMMAND_NAMESPACE / "ghost.md").exists()
 
 
 # ── run_install error branches ────────────────────────────────────────────────

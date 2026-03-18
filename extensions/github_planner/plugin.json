@@ -3,7 +3,6 @@
   "version": "1.1",
   "description": "GitHub issue planning, analysis, and project context management",
   "entry": "extensions.github_planner",
-  "install_namespace": "t-h",
   "entry_command": "github-planner.md",
   "commands_dir": "commands",
   "commands": [

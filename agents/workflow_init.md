@@ -20,7 +20,7 @@
 
 5. Call `get_session_header` to check for existing project docs.
    - `docs: true` → silently note the project title and sections
-   - `docs: false` → offer: "No project context yet. Run `/t-h:github-planner/analyze` to build it, or describe the project and I'll save it."
+   - `docs: false` → offer: "No project context yet. Run `/th:github-planner/analyze` to build it, or describe the project and I'll save it."
 
 ## Error cases
 

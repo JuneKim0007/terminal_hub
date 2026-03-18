@@ -1,4 +1,4 @@
-# /t-h:github-planner/create-issue
+# /th:github-planner/create-issue
 
 <!-- RULE: after draft_issue or submit_issue, do not narrate the result.
      Continue conversation or say: "Let me know any plans for this!" -->

@@ -21,8 +21,8 @@ Available plugins ({N} total):
 
 | Plugin              | Entry Command                    | When to use |
 |---------------------|----------------------------------|-------------|
-| GitHub Planner      | /t-h:github-planner              | Plan work, create and track GitHub issues |
-| Plugin Creator      | /t-h:create-plugin               | Create a new terminal-hub plugin |
+| GitHub Planner      | /th:github-planner              | Plan work, create and track GitHub issues |
+| Plugin Creator      | /th:create-plugin               | Create a new terminal-hub plugin |
 ```
 
 ## Step 3 — Offer to match

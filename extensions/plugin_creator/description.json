@@ -1,9 +1,8 @@
 {
   "plugin": "plugin_creator",
-  "install_namespace": "t-h",
   "summary": "Create new terminal-hub plugins — guided workflow for scaffolding plugin structure, commands, and tests.",
   "entry": {
-    "command": "/t-h:create-plugin",
+    "command": "/th:create-plugin",
     "use_when": "user wants to create a new terminal-hub plugin",
     "triggers": ["create a plugin", "build a plugin", "new plugin", "make a plugin", "scaffold plugin"]
   },

@@ -15,6 +15,7 @@ from pathlib import Path
 from extensions.github_planner.storage import (
     IssueStatus,
     list_issue_files,
+    next_local_number,
     read_doc_file,
     read_issue_file,
     read_issue_frontmatter,
@@ -298,11 +299,7 @@ def _do_draft_issue(
     labels = labels or []
     assignees = assignees or []
 
-    base_slug = slugify(title)
-    if not base_slug:
-        return {"error": "draft_failed", "message": "Title produced an empty slug — use at least one alphanumeric character.", "_hook": None}
-
-    slug = resolve_slug(root, base_slug)
+    slug = next_local_number(root)
 
     try:
         write_issue_file(

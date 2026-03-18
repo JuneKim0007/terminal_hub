@@ -13,9 +13,7 @@
     "github-planner/unload.md",
     "github-planner/setup.md",
     "github-planner/auth.md",
-    "current-stat.md",
-    "create.md",
-    "context.md"
+    "current-stat.md"
   ],
   "requires_env": ["GITHUB_REPO"],
   "optional_env": ["GITHUB_TOKEN"],

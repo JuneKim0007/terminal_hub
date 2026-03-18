@@ -85,9 +85,8 @@ _PLUGIN_COMMANDS_DIR = Path(__file__).parent.parent / "extensions" / "github_pla
 
 @pytest.mark.parametrize("filename", [
     "github-planner/setup.md",
-    "create.md",
-    "context.md",
     "github-planner/auth.md",
+    "current-stat.md",
 ])
 def test_plugin_workflow_file_exists(filename):
     assert (_PLUGIN_COMMANDS_DIR / filename).exists(), f"Missing: extensions/github_planner/commands/{filename}"
@@ -100,12 +99,12 @@ def test_workflow_init_resource_has_content(server):
 
 def test_workflow_issue_resource_has_content(server):
     result = read_resource(server, "terminal-hub://workflow/issue")
-    assert len(result) > 0  # content loaded from workflow_issue.md
+    assert "draft_issue" in result
 
 
 def test_workflow_context_resource_has_content(server):
     result = read_resource(server, "terminal-hub://workflow/context")
-    assert "get_project_context" in result
+    assert "github-planner" in result.lower() or "planning" in result.lower()
 
 
 def test_workflow_auth_resource_has_content(server):

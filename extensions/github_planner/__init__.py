@@ -25,8 +25,9 @@ from extensions.github_planner.storage import (
     write_doc_file,
     write_issue_file,
 )
-from extensions.github_planner.client import GitHubClient, GitHubError, load_default_labels
+from extensions.github_planner.client import GitHubClient, GitHubError, create_user_repo, load_default_labels
 from extensions.github_planner.auth import get_auth_options, resolve_token, verify_gh_cli_auth
+from terminal_hub.config import read_preference, write_preference
 from terminal_hub.env_store import read_env
 from terminal_hub.errors import msg
 from terminal_hub.slugify import slugify
@@ -220,13 +221,27 @@ def _do_generate_issue_workflows(slug: str) -> dict:
     else:
         change_type = "implementation"
 
-    workflow_section = f"""
+    workflow_steps = [
+        "orient: re-read issue, identify affected files",
+        "plan: list changes, confirm approach fits codebase patterns",
+        "implement: atomic, test-verified changes",
+        "verify: all tests pass, coverage ≥ 80%, acceptance criteria met",
+    ]
+
+    agent_workflow_text = (
+        f"Orient → read issue #{slug} carefully. "
+        f"Change type: {change_type}. "
+        "Plan minimal file changes, implement with test verification after each step, "
+        "verify full suite passes before marking done."
+    )
+
+    workflow_body_section = f"""
 ---
 
 ## Agent Workflow
 
 ### 1. Orient
-- Re-read this issue title and body carefully
+- Re-read this issue (Issue #{slug}) title and body carefully
 - Identify the minimal set of files affected
 - Understand the acceptance criteria before touching any code
 
@@ -267,16 +282,27 @@ def _do_generate_issue_workflows(slug: str) -> dict:
     if "## Agent Workflow" in existing:
         return {"slug": slug, "updated": False, "message": "Workflow section already present"}
 
-    tmp = issue_path.with_suffix(".tmp")
-    tmp.write_text(existing.rstrip() + workflow_section, encoding="utf-8")
+    # Update front-matter with workflow + agent_workflow fields if not set
+    # (Files without front matter can't reach here — read_issue_frontmatter returns None first)
+    import yaml as _yaml
+    parts = existing.split("---", 2)
+    raw_fm = _yaml.safe_load(parts[1]) or {}
+    body_rest = parts[2] if len(parts) > 2 else ""
+    if not raw_fm.get("workflow"):
+        raw_fm["workflow"] = workflow_steps
+    if not raw_fm.get("agent_workflow"):
+        raw_fm["agent_workflow"] = agent_workflow_text
+    updated_front = f"---\n{_yaml.dump(raw_fm, default_flow_style=False)}---\n{body_rest}"
     import os as _os
+    tmp = issue_path.with_suffix(".tmp")
+    tmp.write_text(updated_front.rstrip() + workflow_body_section, encoding="utf-8")
     _os.replace(tmp, issue_path)
 
     return {
         "slug": slug,
         "updated": True,
         "file": f"hub_agents/issues/{slug}.md",
-        "_display": f"✓ Workflow scaffold added to {slug}",
+        "_display": f"✓ Workflow scaffold added to #{slug}",
     }
 
 
@@ -285,6 +311,7 @@ def _do_draft_issue(
     body: str,
     labels: list[str] | None = None,
     assignees: list[str] | None = None,
+    note: str | None = None,
 ) -> dict:
     """Save an issue draft locally as status=pending."""
     root = get_workspace_root()
@@ -311,6 +338,7 @@ def _do_draft_issue(
             labels=labels,
             created_at=date.today(),
             status=IssueStatus.PENDING,
+            note=note,
         )
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
@@ -419,6 +447,66 @@ def _do_get_issue_context(slug: str) -> dict:
     if content is None:
         return {"error": "not_found", "message": msg("not_found", detail=slug), "_hook": None}
     return {"slug": slug, "content": content}
+
+
+_ALLOWED_PREFERENCES = {"confirm_arch_changes", "github_repo_connected"}
+
+
+def _do_set_preference(key: str, value: bool) -> dict:
+    """Persist a user preference in hub_agents/config.yaml."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    if key not in _ALLOWED_PREFERENCES:
+        return {
+            "error": "unknown_preference",
+            "message": f"Unknown preference {key!r}. Valid keys: {sorted(_ALLOWED_PREFERENCES)}",
+            "_hook": None,
+        }
+    write_preference(root, key, value)
+    label = "on" if value else "off"
+    return {"key": key, "value": value, "_display": f"✓ Preference '{key}' set to {label}"}
+
+
+def _do_create_github_repo(name: str, description: str, private: bool) -> dict:
+    """Create a new GitHub repo under the authenticated user, then call setup_workspace."""
+    from terminal_hub.workspace import resolve_workspace_root
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    token, source = resolve_token()
+    if token is None:
+        return {
+            "error": "github_unavailable",
+            "message": source.suggestion(),
+            "_guidance": _G_AUTH,
+            "_hook": None,
+        }
+
+    try:
+        data = create_user_repo(token=token, name=name, description=description, private=private)
+    except GitHubError as exc:
+        return {"error": exc.error_code, "message": str(exc), "_hook": None}
+
+    full_name = data.get("full_name", f"unknown/{name}")
+    html_url = data.get("html_url", "")
+
+    # Persist the new repo in workspace config
+    from terminal_hub.config import save_config, WorkspaceMode
+    from terminal_hub.env_store import write_env as _write_env
+    _write_env(root, {"GITHUB_REPO": full_name})
+    save_config(root, WorkspaceMode.GITHUB, full_name)
+    write_preference(root, "github_repo_connected", True)
+    _invalidate_repo_cache()
+
+    return {
+        "success": True,
+        "github_repo": full_name,
+        "url": html_url,
+        "private": private,
+        "_display": f"✓ GitHub repo created: {full_name} ({'private' if private else 'public'})",
+    }
 
 
 def _do_update_project_description(content: str) -> dict:
@@ -1982,14 +2070,19 @@ def register(mcp) -> None:
         body: str,
         labels: list[str] | None = None,
         assignees: list[str] | None = None,
+        note: str | None = None,
     ) -> dict:
         """Save an issue draft locally as status=pending.
 
         Returns {slug, title, preview_body, status} so Claude can show the user
         a preview and ask for approval before calling submit_issue.
         Local-only users can stop here — the draft is cached in hub_agents/issues/.
+
+        note: optional meta-note about user intent or experience level — stored in
+        front matter for agent reference. Example: "user wants X, may need guidance
+        on Y — suggest step-by-step approach"
         """
-        return _do_draft_issue(title, body, labels, assignees)
+        return _do_draft_issue(title, body, labels, assignees, note=note)
 
     @mcp.tool()
     def generate_issue_workflows(slug: str) -> dict:
@@ -2075,6 +2168,26 @@ def register(mcp) -> None:
         """Overwrite hub_agents/architecture_design.md.
         Call get_project_context first to preserve existing content."""
         return _do_update_architecture(content)
+
+    @mcp.tool()
+    def set_preference(key: str, value: bool) -> dict:
+        """Persist a user preference in hub_agents/config.yaml.
+        Supported keys: confirm_arch_changes (bool), github_repo_connected (bool).
+        confirm_arch_changes=True → always ask before auto-updating project docs.
+        confirm_arch_changes=False → auto-update docs silently.
+        github_repo_connected tracks whether a GitHub repo has been linked."""
+        return _do_set_preference(key, value)
+
+    @mcp.tool()
+    def create_github_repo(name: str, description: str, private: bool = True) -> dict:
+        """Create a new GitHub repo under the authenticated user and link it to this workspace.
+
+        Call this when the user wants terminal-hub to set up their GitHub repo automatically.
+        Ask for public/private preference before calling.
+        name: repo name (no owner prefix — GitHub adds it automatically)
+        description: short repo description (used as the GitHub repo description)
+        private: True for private, False for public"""
+        return _do_create_github_repo(name, description, private)
 
     @mcp.tool()
     def get_project_context(doc_key: str) -> dict:

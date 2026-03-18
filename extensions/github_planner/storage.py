@@ -106,6 +106,9 @@ def write_issue_file(
     status: IssueStatus | str = IssueStatus.PENDING,
     issue_number: int | None = None,
     github_url: str | None = None,
+    workflow: list[str] | None = None,
+    agent_workflow: str | None = None,
+    note: str | None = None,
 ) -> Path:
     """Write an issue .md file with YAML front matter atomically. Returns the file path."""
     validate_slug(slug)
@@ -116,13 +119,18 @@ def write_issue_file(
         "created_at": created_at.strftime("%Y-%m-%d"),
         "assignees": assignees,
         "labels": labels,
+        "workflow": workflow if workflow is not None else [],
+        "agent_workflow": agent_workflow,
+        "note": note,
     }
     if issue_number is not None:
         frontmatter["issue_number"] = issue_number
     if github_url is not None:
         frontmatter["github_url"] = github_url
 
-    content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{body}\n"
+    # Prefix body with issue identifier header for easy agent orientation
+    header = f"# Issue #{slug}: {title}\n\n"
+    content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{header}{body}\n"
     _atomic_write(path, content)
     return path
 

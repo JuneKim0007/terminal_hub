@@ -957,6 +957,25 @@ def test_generate_issue_workflows_unknown_slug(workspace):
     assert result["error"] == "issue_not_found"
 
 
+def test_generate_issue_workflows_updates_frontmatter_fields(workspace):
+    """generate_issue_workflows should write workflow + agent_workflow into front matter."""
+    from extensions.github_planner import _do_generate_issue_workflows
+    from extensions.github_planner.storage import write_issue_file, read_issue_frontmatter, STATUS_PENDING
+    import datetime
+    write_issue_file(root=workspace, slug="my-task", title="My Task", body="Do it.",
+                     assignees=[], labels=["enhancement"], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_PENDING)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_generate_issue_workflows("my-task")
+
+    fm = read_issue_frontmatter(workspace, "my-task")
+    assert isinstance(fm["workflow"], list) and len(fm["workflow"]) > 0
+    assert fm["agent_workflow"] is not None
+    assert "feature" in fm["agent_workflow"]
+
+
+
 # ── new tools are registered (#52/#53) ────────────────────────────────────────
 
 def test_analyze_repo_full_and_get_session_header_registered(workspace):

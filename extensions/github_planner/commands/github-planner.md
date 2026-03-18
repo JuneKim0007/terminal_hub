@@ -20,36 +20,66 @@ Call `get_setup_status`.
 
 ## Step 2 — Repo identification
 
-Ask:
-> What repo are we planning for?
-> a) GitHub URL or `owner/repo`  b) Use configured repo  c) Brand-new repo
+Check `get_setup_status` result:
+- `github_repo` is set → skip to Step 3 (already configured)
+- `github_repo` is null → ask:
 
-- **(b)**: read env, skip to Step 3
-- **(c)**: brand-new repo → follow **New-repo path** below
-- **(a)**: call `setup_workspace(github_repo=...)` if not already set
+> Do you have a GitHub repo for this project?
+> a) Yes — give me the URL or `owner/repo`  b) Not yet — create one for me  c) Skip, I'll work locally for now
+
+- **(a)**: call `setup_workspace(github_repo=...)`. Store `set_preference("github_repo_connected", True)`.
+- **(b)**: → follow **New-repo path + repo creation** below
+- **(c)**: call `setup_workspace()` (local-only). Store `set_preference("github_repo_connected", False)`.
 
 ### New-repo path (#83)
 
-When the user selects (c) or `get_session_header` returns `{docs: false}` and GitHub history is empty:
+When the user selects (b) from Step 2 — user wants a repo created, or `get_session_header` returns `{docs: false}` and no repo is configured:
 
 1. Ask conversationally (one message, keep it casual):
    > "Tell me about your project idea — what are you building? Do you have any specific tech stacks in mind? (totally optional!)"
 
-2. From the conversation, draft a minimal `project_summary.md` stub. If the user didn't mention a tech stack, suggest 2–3 options that fit their idea alongside the sketch.
+2. From the conversation, draft a minimal `project_summary.md` stub using this structured format:
 
-3. Show the draft before saving — present it as a project sketch, not a form to fill:
+   ```
+   **Tech Stack:** <stack, or "TBD" if not mentioned>
+   **Goal:** <one-sentence goal>
+   **Notes:** <any constraints, deployment targets, or "TBD">
+   ```
+
+   If the user didn't mention a tech stack, suggest 2–3 sensible options that fit their idea alongside the sketch.
+
+3. Show the sketch before saving — keep it conversational:
    > "Here's your project sketch:
-   > ---
-   > {draft summary}
-   > ---
-   > Want to confirm this, add anything, or keep chatting? You can also just say 'looks good' and I'll save it."
+   >
+   > **Tech Stack:** FastAPI (Python), React (TBD)
+   > **Goal:** REST API backend with a frontend and local-first deployment
+   > **Notes:** Cloud deployment optional later
+   >
+   > Does this look right? You can confirm, add anything, or just keep chatting — I won't save until you say so."
+
+   *(Note: when you call `update_project_description`, Claude Code will show the MCP tool call in its UI — that's normal and expected, not an error.)*
 
 4. Wait for explicit confirmation before calling `update_project_description(content=...)`.
-   If the user wants changes, revise the draft and show it again. Keep the conversation going naturally — do not rush to save.
+   If the user wants changes, revise the sketch and show it again. Do not rush to save.
 
-5. Once saved, ask: "Want me to break your first features into issues? (yes / describe features first)"
-6. On yes: continue to Step 5 (planning conversation) — skip analysis entirely.
-7. Issue creation uses standard Step 6 flow with confirmation hook (#82).
+5. After saving, offer to create the GitHub repo (if not already done in Step 2):
+   > "Want me to create a GitHub repo for this? I'll use your project name and description.
+   > Should it be public or private? (or skip if you want to set that up yourself)"
+
+   - If user wants one created: call `create_github_repo(name=..., description=..., private=...)`
+     On success: repo is linked, call `set_preference("github_repo_connected", True)`
+   - If user skips: call `set_preference("github_repo_connected", False)` and continue
+
+7. Ask once about confirmation preference:
+   > "One quick thing — when I update your project design notes in the future (after new features or architecture changes), should I always ask you first, or just do it silently?
+   > (always ask / just do it)"
+
+   - "always ask" → call `set_preference("confirm_arch_changes", True)`
+   - "just do it" → call `set_preference("confirm_arch_changes", False)`
+
+8. Ask: "Want me to break your first features into issues? (yes / describe features first)"
+9. On yes: continue to Step 5 (planning conversation) — skip analysis entirely.
+10. Issue creation uses standard Step 6 flow with confirmation hook (#82).
 
 ---
 
@@ -113,6 +143,11 @@ After approval:
 4. If yes: call `submit_issue(slug)` for each — **silent**
 5. **Auto-update project docs** — use the label-based decision table below.
    Do **not** use LLM inference on title text; only labels are authoritative.
+
+   Before updating docs, check the `confirm_arch_changes` preference:
+   - If `confirm_arch_changes = true` (or unknown/unset): show a one-line preview and ask
+     "Update project notes to include this feature? (yes/no)" before calling any update tool.
+   - If `confirm_arch_changes = false`: update silently, no prompt needed.
 
    | Labels on the batch | Action |
    |---------------------|--------|

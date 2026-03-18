@@ -252,6 +252,12 @@ class GitHubClient:
         except UnicodeDecodeError:
             raise GitHubError(f"File {path} is binary or non-UTF-8", error_code="binary_file")
 
+    def get_authenticated_user(self) -> dict:
+        """Return the authenticated user's login and name."""
+        resp = self._client.get(BASE_URL + "/user")
+        resp.raise_for_status()
+        return resp.json()
+
     def ensure_labels(self, labels: list[str]) -> str | None:
         """Ensure all requested labels exist, creating missing ones from labels.json.
 
@@ -281,3 +287,27 @@ class GitHubClient:
         if failed:
             return msg("label_bootstrap_failed", detail=", ".join(failed))
         return None
+
+
+def create_user_repo(token: str, name: str, description: str, private: bool) -> dict:
+    """Create a new GitHub repo under the authenticated user. Returns response JSON.
+
+    Raises GitHubError on API failure.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    payload = {"name": name, "description": description, "private": private, "auto_init": True}
+    try:
+        resp = httpx.post(BASE_URL + "/user/repos", json=payload, headers=headers, timeout=30.0)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        info = parse_error(resp.status_code, resp.text)
+        raise GitHubError(info["message"], error_code=info["error"])
+    except httpx.ConnectError as exc:
+        raise GitHubError(msg("network_error", detail=str(exc)), error_code="network_error")
+    except httpx.TimeoutException:
+        raise GitHubError(msg("timeout"), error_code="timeout")
+    return resp.json()

@@ -267,12 +267,12 @@ After approval:
    - Keep this block concise — it is context for the implementing agent, not user-facing prose
 
 2. For each issue, generate `agent_workflow` steps — **always required, never omit**:
-   - Step 1 is always a **strategic self-assessment** (exact wording):
-     `"Read project_summary.md (Interface Layers, Design Principles, Planned Features, Known Pitfalls) and load any relevant sections from project_detail.md for this issue's feature area. Then define your strategy: which specific files will you touch? which interface layers are in scope? which existing patterns must you follow? are there external libraries, APIs, or docs you need? Write out your approach before writing any code."`
+   - Step 1 is always a **strategic orientation** (exact wording):
+     `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings first — read only the sections relevant to this issue's area, skip the rest. If no docs exist, list the files in the repo, filter by likely relevance to this issue, then read only what's needed. Stop reading once you have enough context to act. Then state your concrete plan: what you will change, where, in what order, what patterns to follow, and what risks to watch for."`
    - Steps 2–N: concrete implementation steps specific to this issue — derive from the issue body, AC, and feature section
    - Final step: `"Verify full test suite passes and all acceptance criteria are met"`
 
-   **Do NOT use generic steps like "scan all files" or "build a knowledge base" — the self-assessment in Step 1 replaces these. Every step after Step 1 must be specific to this issue.**
+   **Do NOT prescribe which files to read — Step 1 lets the agent decide that itself. Every step after Step 1 must be specific to this issue.**
 2b. **Auto-assign labels** — check `label_auto_assign` preference (default `true`):
    - If `true`/unset: infer labels from issue description using this table (only use names in `_LABEL_CACHE` or `labels.json`):
      | Condition | Label |

@@ -96,10 +96,10 @@ If issue has no `agent_workflow`, derive one from:
 - Matching feature section from project_detail.md
 - Design principles from project_summary.md
 
-Step 1 is always a **strategic self-assessment**:
-1. `"Read project_summary.md (Interface Layers, Design Principles, Planned Features, Known Pitfalls) and load any relevant sections from project_detail.md for this issue's feature area. Then define your strategy: which specific files will you touch? which interface layers are in scope? which existing patterns must you follow? are there external libraries, APIs, or docs you need? Write out your approach before writing any code."`
+Step 1 is always a **strategic orientation**:
+1. `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings first — read only the sections relevant to this issue's area, skip the rest. If no docs exist, list the files in the repo, filter by likely relevance to this issue, then read only what's needed. Stop reading once you have enough context to act. Then state your concrete plan: what you will change, where, in what order, what patterns to follow, and what risks to watch for."`
 
-Then add issue-specific steps for 2–N. Do NOT use generic steps like "scan all files" — Step 1 handles orientation.
+Then add issue-specific steps for 2–N. Do NOT prescribe which files to read — Step 1 lets the agent decide.
 
 Call `draft_issue` or update the issue file to persist the workflow before proceeding.
 

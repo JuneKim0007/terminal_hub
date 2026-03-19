@@ -54,12 +54,26 @@ Repo analysis workflow:
 - {Feature A}: {one-line description}
 - {Feature B}: {one-line description}
 
+## Interface Layers
+| Layer | Description |
+|-------|-------------|
+| {name} | {what lives here — key files, inputs, outputs} |
+
 ## Design Principles
 - {Principle extracted from recurring code patterns}
 
 ## Known Pitfalls
 - {Non-obvious constraint or gotcha}
+
+## Planned Features
+*(populated automatically as issues are created)*
 ```
+
+**Interface Layers guidance:** Derive from the tech stack and code structure. Examples:
+- Web app: `Frontend` (React/templates) → `API` (routes/controllers) → `Services` (business logic) → `Storage` (DB/files)
+- CLI tool: `Commands` (entry points) → `Core Logic` (processing) → `Adapters` (external APIs/files)
+- MCP server: `MCP Tools` (public surface) → `Extension Logic` (per-plugin handlers) → `Storage` (config/issues/cache)
+Keep layer names short (1–2 words). Description = one sentence about what code lives there.
 
 <!-- NOTE: Do NOT add a "Feature Sections" line — it goes stale when project_detail.md is edited.
      Use get_session_header() which returns the live sections list from project_detail.md. -->

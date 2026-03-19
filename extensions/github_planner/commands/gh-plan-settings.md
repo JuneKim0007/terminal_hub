@@ -1,37 +1,50 @@
 # /th:gh-plan-settings — View and toggle automation preferences
 
-**On load:** call `announce_command_load(command="gh-plan-settings")` and print `_display` verbatim before any other tool call.
+<!-- LOAD ANNOUNCEMENT: output exactly:
+     🟢 Loaded: gh-plan-settings — `extensions/github_planner/commands/gh-plan-settings.md`
+     before any tool calls -->
 
-## What it does
+View and change th:gh-plan automation preferences.
 
-1. Call `get_runtime_state` or read preferences via `load_github_local_config` to get current preference values
-2. Display the full settings table
-3. If user asked to change a setting, update it and confirm
+## Available preferences
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `confirm_arch_changes` | true | Ask before updating project docs |
+| `label_auto_assign` | true | Auto-infer and assign labels when creating issues |
+| `milestone_auto_assign` | true | Auto-assign milestone when target is unambiguous |
+| `milestone_assign` | unset | Whether to propose milestone creation during planning |
+| `sequential_milestone_planning` | false | Prompt to plan next milestone after submitting |
+| `github_repo_connected` | unset | Whether a GitHub repo is linked |
+
+## Commands
+
+- `show` (default): list all preferences with current values
+- `set <key> <value>`: update a preference (true/false/unset)
+- `reset`: reset all to defaults
+
+## Steps
+
+1. Call `apply_unload_policy(command="gh-plan-settings")` silently
+2. If no args or "show": call `get_runtime_state` and read the `preferences` field; display the full settings table below
+3. If "set <key> <value>": call `set_preference(key, value)` — confirm with `✅ **Set:** {key} = {value}`
+4. If "reset": call `set_preference` for each key to its default value
 
 ## Display format
 
 ```
 gh-plan automation settings
 ────────────────────────────────────────────────────────────────
-label_auto_assign        true    Auto-infer and assign labels when creating issues
-milestone_auto_assign    true    Auto-assign milestone when target is unambiguous
-milestone_assign         unset   Propose milestone creation during planning sessions
-confirm_arch_changes     true    Ask before updating project_summary / project_detail
+confirm_arch_changes           true    Ask before updating project_summary / project_detail
+label_auto_assign              true    Auto-infer and assign labels when creating issues
+milestone_auto_assign          true    Auto-assign milestone when target is unambiguous
+milestone_assign               unset   Propose milestone creation during planning sessions
+sequential_milestone_planning  false   Prompt to plan next milestone after submitting
+github_repo_connected          unset   Whether a GitHub repo is linked
 ────────────────────────────────────────────────────────────────
 Say "set label_auto_assign to false" or "turn off auto-milestone" to change.
 Changes persist to hub_agents/config.yaml across sessions.
 ```
-
-## Reading current values
-
-Call `get_runtime_state` and read the `preferences` field. Map each key:
-
-| Preference key | Display name | Default |
-|----------------|--------------|---------|
-| `label_auto_assign` | label_auto_assign | `true` |
-| `milestone_auto_assign` | milestone_auto_assign | `true` |
-| `milestone_assign` | milestone_assign | `unset` |
-| `confirm_arch_changes` | confirm_arch_changes | `true` |
 
 Show `unset` (not `None` or `null`) for preferences that haven't been explicitly set.
 
@@ -48,6 +61,8 @@ Natural language aliases:
 - "silent doc updates" / "skip doc confirmations" → `confirm_arch_changes = false`
 - "always create milestones" / "enable milestone planning" → `milestone_assign = true`
 - "skip milestone planning" → `milestone_assign = false`
+- "enable sequential planning" / "plan milestones one by one" → `sequential_milestone_planning = true`
+- "disable sequential planning" → `sequential_milestone_planning = false`
 
 ## Rules
 

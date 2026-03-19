@@ -157,6 +157,27 @@ This is the authoritative milestone reference for agents implementing issues —
 
 **Cache note:** Milestones are pre-fetched in Step 1 and live in `_MILESTONE_CACHE`. Do NOT call `list_milestones()` again — use the cached data for issue assignment.
 
+**Interface Layers derivation (after milestones are saved):** Check if `## Interface Layers` already exists in project_summary.md. If absent, derive 2–5 architectural layers from the tech stack and feature groups. Show compact table:
+```
+Proposed interface layers:
+  L1 — {name}: {what lives here — 1 sentence}
+  L2 — {name}: {what lives here}
+  ...
+
+Save these? (yes / customize / skip)
+```
+- **yes** → `update_project_summary_section(section_name="Interface Layers", content=...)` using format:
+  ```
+  | Layer | Description |
+  |-------|-------------|
+  | {name} | {description} |
+  ```
+- **customize** → show the proposed table, wait for edits, then save
+- **skip** → proceed (issues will omit the Interface Layers line)
+
+Interface Layers are the authoritative record of your architecture's vertical slices.
+Agents read this section to know which files/modules belong to each layer before implementing.
+
 ---
 
 ## Step 3 — Project docs check
@@ -170,16 +191,21 @@ If analyzing → run the **analyze sub-command** workflow (`/th:gh-plan-analyze`
 
 ---
 
-## Step 4 — Load summary (silent)
+## Step 4 — Load summary + issue landscape (silent)
 
 Call `load_project_docs(doc="summary")`. Print `_display` verbatim (e.g. "📄 Loaded: project_summary.md (1,234 bytes)"). Do not show the doc contents.
 Note the `Feature Sections` line in the summary: this is the index of available
 detail sections. Load individual sections via `lookup_feature_section` only when
 the user discusses a topic that matches a section heading.
 
-Also note the `## Milestones` section if present — this is the authoritative milestone
-reference. Use it to determine which milestone an issue belongs to without calling
-`list_milestones()`. Example: "Feature X → M2 — Posting".
+Also note:
+- `## Milestones` section if present — authoritative milestone reference (do NOT call `list_milestones()` again)
+- `## Interface Layers` section if present — authoritative layer reference; used in issue bodies and doc updates
+- `## Planned Features` section if present — running table of all tracked issues
+
+Call `list_issues` silently. Store the result as `_ISSUE_LANDSCAPE` — the full set of
+tracked issues (slug, title, labels, milestone_number, status). Use in Step 5 to detect
+scope overlap and in Step 6 to populate per-issue sibling context.
 
 ---
 
@@ -194,6 +220,9 @@ Say: **"Let me know any plans for this!"**
     `section` to inform issue scope and AC.
   - Do NOT load `project_detail.md` in full — always use `lookup_feature_section`
     with a specific feature name.
+  - **Overlap check:** scan `_ISSUE_LANDSCAPE` for existing issues with similar title or
+    feature area. If found, surface it before planning: "This looks similar to #{slug} —
+    {title}. Extend that issue, or create a new one?" Do not silently duplicate.
 - **Label suggestions:** use names from `_LABEL_CACHE` (warmed in Step 1). Never invent
   a label not in cache or `labels.json`. Suggest type label (`bug`/`feature`/`enhancement`/
   `refactor`/`chore`/`documentation`/`performance`) + area label if identifiable.
@@ -201,10 +230,10 @@ Say: **"Let me know any plans for this!"**
   mention it as the natural target. If multiple exist, ask which one fits.
 - Ask one clarifying question at a time
 - Propose a breakdown when the user describes enough: epics → issues
-- When ready, show a one-line preview list:
+- When ready, show a one-line preview list — **include milestone target if assigned**:
   ```
-  • [feat] Add OAuth refresh
-  • [bug] Fix cache race condition
+  • [feat] Add OAuth refresh  → M2 — Posting
+  • [bug] Fix cache race condition  → M1 — Core Auth
   Create these? (yes / edit / cancel)
   ```
 
@@ -215,6 +244,28 @@ Say: **"Let me know any plans for this!"**
 After approval:
 1. For each planned issue: call `lookup_feature_section(feature="...")` if not already
    done for that area. Use returned section + global_rules in the issue body.
+
+1b. **Build Planning Context block** — append to each issue body before calling `draft_issue`:
+
+   ```markdown
+   ## Planning Context
+   **Milestone:** {Mx — Name} — *{what this milestone delivers}*
+
+   **Other issues in this milestone:**
+   - #{slug} — {title} [{labels}]
+   *(none yet)*
+
+   **Interface layers affected:** {comma-separated layers, inferred from feature area + `## Interface Layers` in project_summary.md}
+
+   > Agents implementing this issue: read `## Interface Layers` in `project_summary.md` before touching any code.
+   ```
+
+   Rules:
+   - If no milestone assigned → omit the Milestone + sibling-issues block entirely
+   - Siblings = all issues in `_ISSUE_LANDSCAPE` with matching `milestone_number`, excluding this issue itself
+   - If `## Interface Layers` is absent from project_summary.md → omit that line
+   - Keep this block concise — it is context for the implementing agent, not user-facing prose
+
 2. For each issue, generate `agent_workflow` steps — **always required, never omit**:
    - Step 1: `"Scan all files and cache the project file structure"`
    - Step 2: `"Build a temporary knowledge base — group relevant files (Group A) vs unrelated (Group B)"`
@@ -262,13 +313,21 @@ After approval:
 
    | Labels on the batch | Action |
    |---------------------|--------|
-   | Any issue has `enhancement` or `feature` | Call `update_project_detail_section(feature_name, content)` to merge a new or updated section. Do **not** rewrite the full file. **Include `**Milestone:** Mx — Name` at the top of the section content** if milestones exist in `_MILESTONE_CACHE` or project_summary.md Milestones table. |
+   | Any issue has `enhancement` or `feature` | (a) Call `update_project_detail_section(feature_name, content)` to merge a new or updated section. Include `**Milestone:** Mx — Name` at the top of the section content if milestones exist. (b) Call `update_project_summary_section(section_name="Planned Features", content=...)` to add/update rows in the Planned Features table (merge — do NOT replace existing rows). |
    | Any issue has `architecture` | Update `project_summary.md` Design Principles section via `update_project_summary_section(section_name="Design Principles", content=...)`. |
    | All labels are `bug`, `chore`, `refactor`, or `docs` | **No doc update** — zero extra API calls. |
    | No labels set | Ask user: "This looks like a new feature — should I add it to the design dictionary? (yes/no)" — then follow appropriate row above. |
 
    `update_project_detail_section(feature_name, content)` merges a single H2 section
    into `project_detail.md` without rewriting the rest of the file.
+
+   **Planned Features table format** (used with `update_project_summary_section(section_name="Planned Features", ...)`):
+   ```
+   | # | Title | Milestone | Labels | Interface Layers |
+   |---|-------|-----------|--------|-----------------|
+   | #{N} | {title} | M2 — Posting | feature, backend | api, backend |
+   ```
+   Merge new rows into the existing table — do NOT replace rows from prior sessions.
 6. **Offer implementation** — ask immediately after issues are submitted:
    > "Implement now using /th:gh-implementation? (yes / no)"
    - **yes** → call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line,

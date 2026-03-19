@@ -82,10 +82,10 @@ Call `list_issues`. If issues are returned: show a compact numbered list and ask
 
 If no local issues:
 > "No local issues found. Options:
-> a) Switch to planner mode (/th:github-planner) to create some
+> a) Switch to planner mode (/th:gh-plan) to create some
 > b) Fetch issues from GitHub and sync them locally"
 
-- **(a)**: say "Run `/th:github-planner` to plan and track issues."
+- **(a)**: say "Run `/th:gh-plan` to plan and track issues."
 - **(b)**: call `fetch_github_issues()` (TODO #125) to pull open issues from GitHub
 
 ---

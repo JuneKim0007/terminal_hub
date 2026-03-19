@@ -177,6 +177,15 @@ This is the authoritative milestone reference for agents implementing issues —
 
 **Cache note:** Milestones are pre-fetched in Step 1 and live in `_MILESTONE_CACHE`. Do NOT call `list_milestones()` again — use the cached data for issue assignment.
 
+**Sequential planning preference:**
+Check `sequential_milestone_planning` preference via `read_preference("sequential_milestone_planning")`.
+- `True`: after submitting all issues for a milestone, automatically ask:
+  > "M{n} issues submitted. Implement now or plan M{n+1}? (implement / plan next / done)"
+  - "implement" → switch to /th:gh-implementation
+  - "plan next" → call `generate_milestone_knowledge(n+1)` then continue Step 5 for next milestone
+  - "done" → offer unload
+- `False` or unset: no prompt (existing behavior)
+
 **Interface Layers derivation (after milestones are saved):** Check if `## Interface Layers` already exists in project_summary.md. If absent, derive 2–5 architectural layers from the tech stack and feature groups. Show compact table:
 ```
 Proposed interface layers:
@@ -282,15 +291,32 @@ If size is ambiguous, pick the smaller bucket — err on the side of less.
 
 ### 6b — Feature section lookup (medium/large only)
 
-For **medium** and **large** issues: call `lookup_feature_section(feature="...")` if not already
-done for that area. Use returned section + global_rules in the issue body.
-Skip for trivial/small — the overhead isn't worth it.
+For **medium** and **large** issues with a milestone assigned:
+1. **First**, call `load_milestone_knowledge(milestone_number=N)` if the issue has a milestone.
+   - If the knowledge file exists: use its `## Interface Contract` section as the primary context for Planning Context (Step 6c). Skip `lookup_feature_section` for this issue — the knowledge file already contains the relevant contract.
+   - If no knowledge file exists (tool returns empty or error): fall back to `lookup_feature_section(feature="...")` for that area, using the returned section + global_rules in the issue body.
+
+For **medium** and **large** issues with **no milestone**: call `lookup_feature_section(feature="...")` if not already done for that area. Use returned section + global_rules in the issue body.
+
+Skip both for trivial/small — the overhead isn't worth it.
 
 ### 6c — Planning Context block
 
 Append to each issue body (**omit entirely for trivial issues**):
 
-**First issue in a milestone batch** (or no active milestone) — full block:
+**When knowledge file was loaded (preferred path):**
+```markdown
+## Planning Context
+**Milestone:** M{n} — {title from knowledge file}
+**Goal:** {Goal section from knowledge file}
+**Interface contract:** {Interface Contract section from knowledge file}
+**Sibling issues:** #{slug} — {title} [{labels}] (from _ISSUE_LANDSCAPE filtered by same milestone_number)
+**Layers affected:** {layers listed in Interface Contract}
+```
+
+**When no knowledge file (fallback path):**
+
+First issue in a milestone batch (or no active milestone) — full block:
 ```markdown
 ## Planning Context
 **Milestone:** {Mx — Name} — *{what this milestone delivers}*
@@ -300,16 +326,18 @@ Append to each issue body (**omit entirely for trivial issues**):
 **Interface layers:** {layers from `## Interface Layers` in project_summary.md}
 ```
 
-**Subsequent issues in the same milestone batch** — slim reference:
+Subsequent issues in the same milestone batch — slim reference:
 ```markdown
 ## Planning Context
 Milestone context same as #{first_slug_in_batch}. This issue: {one-sentence scope delta}.
 **Interface layers:** {layers if different, otherwise omit}
 ```
 
+<!-- If knowledge file absent, use _MILESTONE_CACHE title + _ISSUE_LANDSCAPE for siblings. -->
+
 Rules:
 - Omit milestone lines if no milestone is assigned
-- Omit interface layers line if `## Interface Layers` absent from project_summary.md
+- Omit interface layers line if `## Interface Layers` absent from project_summary.md and no knowledge file loaded
 - Siblings come from `_ISSUE_LANDSCAPE` filtered by same `milestone_number`
 
 ### 6d — AC format
@@ -336,24 +364,33 @@ Generate based on size:
 ### 6f — Labels + milestone
 
 **Auto-assign labels** — label cache is already warm from Step 1 — use cached label names (do NOT call `list_repo_labels()` again). Check `label_auto_assign` preference (default `true`):
-- If `true`/unset: infer from issue description (only use names in `_LABEL_CACHE` or `labels.json`):
+- If `true`/unset: infer from issue title + body using these rules (apply all that match; only use names in `_LABEL_CACHE` or `labels.json`):
   | Condition | Label |
   |-----------|-------|
-  | Crash / regression | `bug` |
-  | New user-visible capability | `feature` or `enhancement` |
-  | Code cleanup, no behaviour change | `refactor` or `chore` |
-  | Docs/comments only | `documentation` |
-  | Speed / memory improvement | `performance` |
-  Add area label (`backend`, `frontend`, `auth`, `api`, etc.) if identifiable.
+  | Title/body contains "fix", "bug", "broken", "error", "crash", "regression" | `bug` |
+  | Contains "feat", "add", "implement", "create", "new" | `feature` or `enhancement` |
+  | Contains "refactor", "cleanup", "rename", "move", "reorganise" | `refactor` |
+  | Contains "test", "spec", "coverage" | `test` |
+  | Contains "doc", "readme", "changelog", "comment" | `documentation` |
+  | Contains "slow", "cache", "optimise", "perf", "performance" | `performance` |
+  | Backend files mentioned (*.py, routes, models, services) | `backend` |
+  | Frontend files mentioned (*.tsx, *.jsx, components) | `frontend` |
+  | Auth-related (login, token, OAuth, JWT) | `auth` |
+
+  Always assign at minimum: one **type label** (bug/feature/enhancement/refactor/chore/documentation/performance). Add **area label** (`backend`, `frontend`, `auth`, `api`, `ci`, etc.) if identifiable from title/body/files.
+
+  Show auto-assigned labels in the confirmation block: `[feat] Add OAuth refresh → M1 Core Auth [auto]`
 - If `false`: leave empty.
 
 **Auto-assign milestone** — check `milestone_auto_assign` preference (default `true`):
 - If `true`/unset (stop at first match):
-  1. Title/body references a version or sprint → assign matching milestone
+  1. Title/body references a version or sprint string → assign matching milestone from `_MILESTONE_CACHE`
   2. Exactly one active milestone in `_MILESTONE_CACHE` → assign silently
-  3. Multiple active milestones → ask: "Which milestone? ({names}) / skip"
-  4. No milestones → leave unassigned
+  3. Multiple active milestones → use `dispatch_task("issue_classification", issue_title + body)` if available to determine likely milestone from size + area; show: `[feat] Add OAuth refresh → M1 Core Auth [auto]` and let user override in edit phase
+  4. Multiple milestones, no dispatch_task → ask: "Which milestone? ({names}) / skip"
+  5. No milestones → leave unassigned
 - Never auto-create a milestone for a single issue.
+- **Do NOT auto-assign milestone when:** issue is a question/discussion/support request, labelled `wontfix`/`duplicate`/`invalid`, or is a tracking/epic issue spanning multiple deliverables.
 
 ### 6g — Draft, confirm, submit
 

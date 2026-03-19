@@ -2788,6 +2788,296 @@ def _do_assign_milestone(slug: str, milestone_number: int) -> dict:
     }
 
 
+# ── Milestone knowledge base (#50, #51) ───────────────────────────────────────
+
+def _milestones_dir(root: Path) -> Path:
+    return root / "hub_agents" / "milestones"
+
+
+def _milestone_knowledge_path(root: Path, milestone_number: int) -> Path:
+    return _milestones_dir(root) / f"M{milestone_number}.md"
+
+
+def _milestone_index_path(root: Path) -> Path:
+    return _milestones_dir(root) / "milestone_index.json"
+
+
+def _load_milestone_index(root: Path) -> dict:
+    path = _milestone_index_path(root)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_milestone_index(root: Path, index: dict) -> None:
+    path = _milestone_index_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    from extensions.github_planner.storage import _atomic_write
+    _atomic_write(path, json.dumps(index, indent=2))
+
+
+def _update_milestone_enables_depends(root: Path, new_number: int) -> None:
+    """Update Enables/Depends On in adjacent milestone knowledge files."""
+    index = _load_milestone_index(root)
+
+    # Resolve new milestone title
+    new_title = index.get(str(new_number), {}).get("title", f"M{new_number}")
+    new_ref = f"M{new_number} — {new_title}"
+
+    # Update prior milestone (new_number - 1): set its Enables to point to new_number
+    prior_number = new_number - 1
+    if prior_number >= 1 and str(prior_number) in index:
+        prior_path = _milestone_knowledge_path(root, prior_number)
+        if prior_path.exists():
+            text = prior_path.read_text(encoding="utf-8")
+            lines = text.splitlines(keepends=True)
+            new_lines = []
+            in_enables = False
+            for line in lines:
+                if re.match(r"^## Enables", line):
+                    in_enables = True
+                    new_lines.append(line)
+                    continue
+                if in_enables:
+                    # Replace content line(s) of Enables section until next heading
+                    if line.startswith("## "):
+                        in_enables = False
+                        new_lines.append(f"{new_ref}\n")
+                        new_lines.append(line)
+                    else:
+                        # Skip old content lines (will be replaced after loop if section is last)
+                        continue
+                else:
+                    new_lines.append(line)
+            if in_enables:
+                # Section was last in file
+                new_lines.append(f"{new_ref}\n")
+            from extensions.github_planner.storage import _atomic_write
+            _atomic_write(prior_path, "".join(new_lines))
+
+    # Update next milestone (new_number + 1): set its Depends On to point to new_number
+    next_number = new_number + 1
+    if str(next_number) in index:
+        next_path = _milestone_knowledge_path(root, next_number)
+        if next_path.exists():
+            text = next_path.read_text(encoding="utf-8")
+            lines = text.splitlines(keepends=True)
+            new_lines = []
+            in_depends = False
+            for line in lines:
+                if re.match(r"^## Depends On", line):
+                    in_depends = True
+                    new_lines.append(line)
+                    continue
+                if in_depends:
+                    if line.startswith("## "):
+                        in_depends = False
+                        new_lines.append(f"{new_ref}\n")
+                        new_lines.append(line)
+                    else:
+                        continue
+                else:
+                    new_lines.append(line)
+            if in_depends:
+                new_lines.append(f"{new_ref}\n")
+            from extensions.github_planner.storage import _atomic_write
+            _atomic_write(next_path, "".join(new_lines))
+
+
+def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
+    """Generate a structured knowledge file for a milestone."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    # Get milestone details from cache
+    repo = read_env(root).get("GITHUB_REPO", "")
+    cached_milestones = _MILESTONE_CACHE.get(repo, [])
+    milestone_entry = next((m for m in cached_milestones if m["number"] == milestone_number), None)
+
+    if milestone_entry is None:
+        title = f"M{milestone_number}"
+        description = ""
+    else:
+        title = milestone_entry.get("title", f"M{milestone_number}")
+        description = milestone_entry.get("description", "")
+
+    # Get project docs from cache or load them
+    resolved = _resolve_repo(None) or "unknown"
+    cached_docs = _PROJECT_DOCS_CACHE.get(resolved)
+    if cached_docs:
+        summary_text = cached_docs.get("summary") or ""
+        detail_text = cached_docs.get("detail") or ""
+        detail_sections = cached_docs.get("_sections") or {}
+    else:
+        docs_dir = _gh_planner_docs_dir(root)
+        summary_path = docs_dir / "project_summary.md"
+        detail_path = docs_dir / "project_detail.md"
+        summary_text = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
+        detail_text = detail_path.read_text(encoding="utf-8") if detail_path.exists() else ""
+        detail_sections = _parse_h2_sections(detail_text) if detail_text else {}
+
+    # Extract Design Principles from project_summary
+    summary_sections = _parse_h2_sections(summary_text) if summary_text else {}
+    design_principles = summary_sections.get("Design Principles", "").strip()
+    interface_layers = summary_sections.get("Interface Layers", "").strip()
+
+    # Build Depends On / Enables from milestone index (prior to writing this one)
+    index = _load_milestone_index(root)
+
+    prior_number = milestone_number - 1
+    prior_entry = index.get(str(prior_number))
+    if prior_entry:
+        depends_on = f"M{prior_number} — {prior_entry['title']}"
+    else:
+        depends_on = "None (first milestone)"
+
+    next_number = milestone_number + 1
+    next_entry = index.get(str(next_number))
+    if next_entry:
+        enables = f"M{next_number} — {next_entry['title']}"
+    else:
+        enables = "None (last milestone)"
+
+    # Derive features governed from project_summary Planned Features or detail sections
+    planned_features_text = summary_sections.get("Planned Features", "").strip()
+    if not planned_features_text:
+        features_governed = "*(see project_summary.md)*"
+    else:
+        # Extract bullet lines mentioning the milestone
+        feature_lines = [
+            line for line in planned_features_text.splitlines()
+            if line.strip().startswith("-") or line.strip().startswith("*")
+        ]
+        features_governed = "\n".join(feature_lines[:10]) if feature_lines else planned_features_text[:500]
+
+    # Derive interface contract from detail sections
+    if detail_sections:
+        # Use first few section headings as interface summary
+        section_names = list(detail_sections.keys())[:5]
+        interface_contract = "\n".join(f"- {s}" for s in section_names) if section_names else "*(see project_detail.md)*"
+    else:
+        interface_contract = "*(see project_detail.md)*"
+
+    # Design principles relevant to this milestone (use all if no filtering logic)
+    relevant_principles = design_principles if design_principles else "*(see project_summary.md Design Principles)*"
+
+    # Build the knowledge file content
+    content = f"""# M{milestone_number} — {title}
+
+## Goal
+{description if description else "*(no description provided)*"}
+
+## Features Governed
+{features_governed}
+
+## Interface Contract
+{interface_contract}
+
+## Depends On
+{depends_on}
+
+## Enables
+{enables}
+
+## Design Principles Applicable
+{relevant_principles}
+"""
+
+    # Write file
+    milestones_path = _milestone_knowledge_path(root, milestone_number)
+    milestones_path.parent.mkdir(parents=True, exist_ok=True)
+    from extensions.github_planner.storage import _atomic_write
+    _atomic_write(milestones_path, content)
+
+    # Update milestone_index.json
+    from datetime import datetime, timezone
+    index[str(milestone_number)] = {
+        "title": title,
+        "path": f"milestones/M{milestone_number}.md",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_milestone_index(root, index)
+
+    # ── Bidirectional sync (#51) ──────────────────────────────────────────────
+    # 1. Update project_summary.md Milestones table row
+    _sync_milestone_to_project_summary(root, milestone_number, title, description)
+
+    # 2. Check project_detail.md for interface contract gaps (noted in _display only)
+    gaps = _check_detail_gaps(detail_sections, title)
+
+    # 3. Update Enables/Depends On in adjacent milestone files
+    _update_milestone_enables_depends(root, milestone_number)
+
+    display = f"✅ **M{milestone_number} knowledge file** written — {title}"
+    if gaps:
+        display += f"\n⚠️ Detail gaps: {', '.join(gaps)}"
+
+    return {
+        "milestone_number": milestone_number,
+        "path": str(milestones_path),
+        "_display": display,
+    }
+
+
+def _sync_milestone_to_project_summary(root: Path, milestone_number: int, title: str, description: str) -> None:
+    """Update the Milestones table row in project_summary.md for this milestone."""
+    docs_dir = _gh_planner_docs_dir(root)
+    summary_path = docs_dir / "project_summary.md"
+    if not summary_path.exists():
+        return
+
+    text = summary_path.read_text(encoding="utf-8")
+    # Look for a table row matching this milestone number
+    # Table rows look like: | M{n} | title | goal |
+    pattern = re.compile(
+        r"(\|\s*M" + str(milestone_number) + r"\s*\|[^\n]*\n)"
+    )
+    goal_sentence = description.split(".")[0].strip() if description else ""
+    new_row = f"| M{milestone_number} | {title} | {goal_sentence} |\n"
+
+    if pattern.search(text):
+        updated = pattern.sub(new_row, text)
+        if updated != text:
+            from extensions.github_planner.storage import _atomic_write
+            _atomic_write(summary_path, updated)
+            _PROJECT_DOCS_CACHE.pop(str(root), None)
+
+
+def _check_detail_gaps(detail_sections: dict, milestone_title: str) -> list[str]:
+    """Return section names from detail that might be relevant but missing content."""
+    gaps = []
+    if not detail_sections:
+        gaps.append("project_detail.md not found")
+    return gaps
+
+
+def _do_load_milestone_knowledge(milestone_number: int) -> dict:
+    """Load the knowledge file for a milestone."""
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+
+    path = _milestone_knowledge_path(root, milestone_number)
+    if not path.exists():
+        return {
+            "exists": False,
+            "milestone_number": milestone_number,
+            "_display": f"⚠️ M{milestone_number} knowledge not yet generated — call generate_milestone_knowledge({milestone_number})",
+        }
+
+    content = path.read_text(encoding="utf-8")
+    return {
+        "milestone_number": milestone_number,
+        "content": content,
+        "exists": True,
+        "_display": f"📄 Loaded M{milestone_number} knowledge",
+    }
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -3376,3 +3666,29 @@ def register(mcp) -> None:
         Updates both local front matter and GitHub. Idempotent — safe to call multiple times.
         """
         return _do_assign_milestone(slug, milestone_number)
+
+    @mcp.tool()
+    def generate_milestone_knowledge(milestone_number: int) -> dict:
+        """Generate a structured knowledge file for a milestone at hub_agents/milestones/M{n}.md.
+
+        Reads milestone details from _MILESTONE_CACHE and project docs from _PROJECT_DOCS_CACHE.
+        Writes a structured markdown file covering: Goal, Features Governed, Interface Contract,
+        Depends On, Enables, and Design Principles Applicable.
+
+        Also updates milestone_index.json, syncs project_summary.md Milestones table,
+        and updates Enables/Depends On links in adjacent milestone knowledge files.
+
+        milestone_number: GitHub milestone number (e.g. 1, 2, 3)
+        """
+        return _do_generate_milestone_knowledge(milestone_number)
+
+    @mcp.tool()
+    def load_milestone_knowledge(milestone_number: int) -> dict:
+        """Load the knowledge file for a milestone from hub_agents/milestones/M{n}.md.
+
+        Returns {milestone_number, content, exists, _display}.
+        If the file does not exist, returns exists=False with instructions to generate it.
+
+        milestone_number: GitHub milestone number (e.g. 1, 2, 3)
+        """
+        return _do_load_milestone_knowledge(milestone_number)

@@ -51,6 +51,11 @@ and gives Claude the repo's actual label and milestone names for planning (Step 
 If either call fails with 404 or auth error, surface it immediately — bad repo config
 should be caught here, not at submit time.
 
+**Milestone cache check (#49):** After `list_milestones()` completes, check `milestone_assign` preference via `read_preference("milestone_assign")`. If the preference is not `False` and `list_milestones()` returned 0 milestones, scan local issues (from `list_issues()`) for any that have a `milestone_number` set. If any are found, offer once per session:
+> "Some issues have milestone assignments but no milestones exist on GitHub — fetch them? (yes / skip)"
+- **yes** → call `list_milestones()` again (forces a fresh fetch); if still empty, note "No milestones found on GitHub — milestone assignments may be stale."
+- **skip** → proceed without milestones; do not ask again this session.
+
 ---
 
 ## Step 2 — Repo identification

@@ -1208,6 +1208,65 @@ def test_get_session_header_no_truncation_when_few_sections(workspace):
     assert "sections_truncated" not in result
 
 
+# ── load_project_docs warms section cache (#3 / GH #140) ──────────────────────
+
+def test_load_project_docs_warms_section_cache(workspace):
+    """load_project_docs(doc='all') pre-populates _sections so a subsequent
+    lookup_feature_section call returns a cache hit without re-reading disk."""
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project\nSummary text.")
+    detail_text = "## Authentication\nAuth rules.\n\n## Issue Tracking\nTracking rules."
+    (docs_dir / "project_detail.md").write_text(detail_text)
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_load_project_docs("all")
+        # Delete the file so any disk re-read would raise FileNotFoundError
+        (docs_dir / "project_detail.md").unlink()
+        # lookup_feature_section must serve from cache — no disk read
+        result = _do_lookup_feature_section("Authentication")
+
+    assert result["matched"] is True
+    assert "Auth rules" in result.get("section", "")
+
+
+def test_load_project_docs_populates_sections_cache_keys(workspace):
+    """_PROJECT_DOCS_CACHE[repo]['_sections'] is populated after load_project_docs."""
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project")
+    (docs_dir / "project_detail.md").write_text(
+        "## Feature A\nContent A.\n\n## Feature B\nContent B."
+    )
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_load_project_docs("all")
+        resolved = pg._resolve_repo(None) or "unknown"
+        entry = _PROJECT_DOCS_CACHE.get(resolved, {})
+
+    sections = entry.get("_sections")
+    assert sections is not None, "_sections key missing after load_project_docs"
+    assert "Feature A" in sections
+    assert "Feature B" in sections
+    assert entry.get("_sections_mtime") is not None
+
+
+def test_load_project_docs_summary_only_still_warms_sections(workspace):
+    """load_project_docs(doc='summary') reads detail too for section cache."""
+    docs_dir = _gh_planner_docs_dir(workspace)
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "project_summary.md").write_text("# My Project")
+    (docs_dir / "project_detail.md").write_text("## Dashboard\nDash content.")
+
+    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        _do_load_project_docs("summary")
+        # Delete detail file — lookup must still succeed via pre-warmed cache
+        (docs_dir / "project_detail.md").unlink()
+        result = _do_lookup_feature_section("Dashboard")
+
+    assert result["matched"] is True
+
+
 # ── _do_analyze_github_labels / _do_load_github_local_config (#81) ────────────
 
 def _make_mock_gh(labels=None, open_issues=None):

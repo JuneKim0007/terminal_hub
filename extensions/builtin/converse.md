@@ -32,7 +32,7 @@ Available plugins (N total):
 
 Plugin               Command                     What it does
 ─────────────────────────────────────────────────────────────────────
-GitHub Planner       /th:github-planner         Plan work, create and track GitHub issues
+GitHub Planner       /th:gh-plan                Plan work, create and track GitHub issues
 Plugin Creator       /th:create-plugin          Scaffold a new terminal-hub extension
 ```
 

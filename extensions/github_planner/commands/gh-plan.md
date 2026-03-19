@@ -1,5 +1,7 @@
 # /th:gh-plan — Integrated planning flow
 
+<!-- RULE: WORKSPACE ROOT — always call set_project_root(path=<cwd>) as the very first tool call so hub_agents/ is written to the user's project, not the MCP server's directory. -->
+
 <!-- RULE: after any draft_issue or submit_issue call, do not narrate the result.
      Continue the planning conversation. When all planned issues are created, say:
      "Let me know any plans for this!" -->
@@ -32,7 +34,8 @@ Sub-commands handle each step; this command composes them.
 
 ## Step 1 — Workspace + auth check
 
-Call `get_setup_status`.
+Call `set_project_root(path="<Claude's actual working directory>")` first — this ensures hub_agents/ is written to the user's project.
+Then call `get_setup_status`.
 - `initialised: false` → run the **setup sub-command** workflow (`/th:gh-plan-setup`)
 - `initialised: true` → continue
 
@@ -323,7 +326,7 @@ Generate based on size:
 
 ### 6f — Labels + milestone
 
-**Auto-assign labels** — check `label_auto_assign` preference (default `true`):
+**Auto-assign labels** — label cache is already warm from Step 1 — use cached label names (do NOT call `list_repo_labels()` again). Check `label_auto_assign` preference (default `true`):
 - If `true`/unset: infer from issue description (only use names in `_LABEL_CACHE` or `labels.json`):
   | Condition | Label |
   |-----------|-------|

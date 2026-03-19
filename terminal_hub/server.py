@@ -11,7 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from terminal_hub.config import WorkspaceMode, load_config, save_config
 from terminal_hub.env_store import read_env, write_env
 from extensions.github_planner.client import load_default_labels
-from terminal_hub.workspace import init_workspace, resolve_workspace_root
+from terminal_hub.workspace import init_workspace, resolve_workspace_root, set_active_project_root
 from terminal_hub.plugin_loader import discover_plugins, load_plugin, build_instructions
 
 # Re-export plugin helpers so tests can patch at terminal_hub.server.*
@@ -73,8 +73,14 @@ def create_server() -> FastMCP:
     # ── Workspace setup tools ─────────────────────────────────────────────────
 
     @mcp.tool()
-    def get_setup_status() -> dict:
-        """Check if this project has been initialised. Always call this first."""
+    def get_setup_status(project_root: str | None = None) -> dict:
+        """Check if this project has been initialised. Always call this first.
+
+        project_root: optional absolute path to the user's project directory.
+        Pass Claude's actual working directory to ensure hub_agents/ is created
+        in the correct location (not the MCP server's directory)."""
+        if project_root is not None:
+            set_active_project_root(project_root)
         root = get_workspace_root()
         hub_dir = root / "hub_agents"
         _G_INIT = "terminal-hub://workflow/init"
@@ -99,13 +105,16 @@ def create_server() -> FastMCP:
         return result
 
     @mcp.tool()
-    def setup_workspace(github_repo: str | None = None) -> dict:
+    def setup_workspace(github_repo: str | None = None, project_root: str | None = None) -> dict:
         """Initialise terminal-hub for this project.
 
         Creates hub_agents/, stores github_repo in hub_agents/.env if provided,
         and gitignores hub_agents/.
 
-        github_repo: optional 'owner/repo' — omit for local-only mode."""
+        github_repo: optional 'owner/repo' — omit for local-only mode.
+        project_root: optional absolute path to the user's project directory."""
+        if project_root is not None:
+            set_active_project_root(project_root)
         root = get_workspace_root()
 
         init_workspace(root)

@@ -242,94 +242,128 @@ Say: **"Let me know any plans for this!"**
 ## Step 6 — Issue creation
 
 After approval:
-1. For each planned issue: call `lookup_feature_section(feature="...")` if not already
-   done for that area. Use returned section + global_rules in the issue body.
 
-1b. **Build Planning Context block** — append to each issue body before calling `draft_issue`:
+### 6a — Classify each issue by size
 
-   ```markdown
-   ## Planning Context
-   **Milestone:** {Mx — Name} — *{what this milestone delivers}*
+Before writing anything, assign a size to each issue using the first matching rule:
 
-   **Other issues in this milestone:**
-   - #{slug} — {title} [{labels}]
-   *(none yet)*
+| Size | Signal | agent_workflow | AC bullets |
+|------|--------|----------------|------------|
+| **trivial** | `chore`/`docs`/`refactor` only; single-file, no logic change | omit entirely | 1 line |
+| **small** | Isolated bug fix or single-focus change | orientation step + 1–2 specific steps | 1–3 bullets |
+| **medium** | New capability, 2–5 files touched | orientation + 3–5 steps | 3–5 bullets |
+| **large** | Cross-cutting, new subsystem, multiple areas | orientation + 5+ steps | 5+ bullets |
 
-   **Interface layers affected:** {comma-separated layers, inferred from feature area + `## Interface Layers` in project_summary.md}
+If size is ambiguous, pick the smaller bucket — err on the side of less.
 
-   > Agents implementing this issue: read `## Interface Layers` in `project_summary.md` before touching any code.
-   ```
+### 6b — Feature section lookup (medium/large only)
 
-   Rules:
-   - If no milestone assigned → omit the Milestone + sibling-issues block entirely
-   - Siblings = all issues in `_ISSUE_LANDSCAPE` with matching `milestone_number`, excluding this issue itself
-   - If `## Interface Layers` is absent from project_summary.md → omit that line
-   - Keep this block concise — it is context for the implementing agent, not user-facing prose
+For **medium** and **large** issues: call `lookup_feature_section(feature="...")` if not already
+done for that area. Use returned section + global_rules in the issue body.
+Skip for trivial/small — the overhead isn't worth it.
 
-2. For each issue, generate `agent_workflow` steps — **always required, never omit**:
-   - Step 1 is always a **strategic orientation** (exact wording):
-     `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings first — read only the sections relevant to this issue's area, skip the rest. If no docs exist, list the files in the repo, filter by likely relevance to this issue, then read only what's needed. Stop reading once you have enough context to act. Then state your concrete plan: what you will change, where, in what order, what patterns to follow, and what risks to watch for."`
-   - Steps 2–N: concrete implementation steps specific to this issue — derive from the issue body, AC, and feature section
-   - Final step: `"Verify full test suite passes and all acceptance criteria are met"`
+### 6c — Planning Context block
 
-   **Do NOT prescribe which files to read — Step 1 lets the agent decide that itself. Every step after Step 1 must be specific to this issue.**
-2b. **Auto-assign labels** — check `label_auto_assign` preference (default `true`):
-   - If `true`/unset: infer labels from issue description using this table (only use names in `_LABEL_CACHE` or `labels.json`):
-     | Condition | Label |
-     |-----------|-------|
-     | Crash / incorrect behaviour / regression | `bug` |
-     | New user-visible capability | `feature` or `enhancement` |
-     | Code cleanup, no behaviour change | `refactor` or `chore` |
-     | Docs/comments only | `documentation` |
-     | Speed / memory / API call improvement | `performance` |
-     Also add an area label (`backend`, `frontend`, `auth`, `api`, etc.) if clearly identifiable.
-   - If `false`: leave labels empty; let user specify.
+Append to each issue body (**omit entirely for trivial issues**):
 
-2c. **Auto-assign milestone** — check `milestone_auto_assign` preference (default `true`):
-   - If `true`/unset: apply the first matching rule below (stop at first match):
-     1. Title/body references a version or sprint (e.g. `v2.0`, `Sprint 3`) → assign milestone whose name matches
-     2. Exactly one active milestone in `_MILESTONE_CACHE` → assign it silently
-     3. Multiple active milestones → ask user: "Which milestone? ({names}) / skip"
-     4. No milestones → leave unassigned (do NOT create one per issue)
-   - If `false`: no milestone assignment.
-   - Never auto-create a milestone for an individual issue — milestones are created in Step 2.5.
+**First issue in a milestone batch** (or no active milestone) — full block:
+```markdown
+## Planning Context
+**Milestone:** {Mx — Name} — *{what this milestone delivers}*
+
+**Sibling issues:** #{slug} — {title} [{labels}] · *(none yet)*
+
+**Interface layers:** {layers from `## Interface Layers` in project_summary.md}
+```
+
+**Subsequent issues in the same milestone batch** — slim reference:
+```markdown
+## Planning Context
+Milestone context same as #{first_slug_in_batch}. This issue: {one-sentence scope delta}.
+**Interface layers:** {layers if different, otherwise omit}
+```
+
+Rules:
+- Omit milestone lines if no milestone is assigned
+- Omit interface layers line if `## Interface Layers` absent from project_summary.md
+- Siblings come from `_ISSUE_LANDSCAPE` filtered by same `milestone_number`
+
+### 6d — AC format
+
+**AC bullets: verb-object, ≤10 words each. No prose.**
+- ✓ `"Submit creates a GitHub issue with correct labels"`
+- ✗ `"When the user clicks the submit button, a new issue should appear..."`
+
+### 6e — agent_workflow
+
+Generate based on size:
+
+- **trivial** → omit `agent_workflow` field entirely
+- **small** → orientation step only + 1–2 specific steps:
+  - Step 1: `"Skim the relevant file(s) for this change, check for existing patterns, make the fix."`
+  - Step 2–3: specific to this issue
+- **medium/large** → orientation step + issue-specific steps:
+  - Step 1: `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area. If no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
+  - Steps 2–N: specific to this issue (derived from body, AC, feature section)
+  - Final step: `"Verify full test suite passes and all AC are met"`
+
+**Do NOT prescribe which files to read. Do NOT use generic steps. Every step after Step 1 must be specific to this issue.**
+
+### 6f — Labels + milestone
+
+**Auto-assign labels** — check `label_auto_assign` preference (default `true`):
+- If `true`/unset: infer from issue description (only use names in `_LABEL_CACHE` or `labels.json`):
+  | Condition | Label |
+  |-----------|-------|
+  | Crash / regression | `bug` |
+  | New user-visible capability | `feature` or `enhancement` |
+  | Code cleanup, no behaviour change | `refactor` or `chore` |
+  | Docs/comments only | `documentation` |
+  | Speed / memory improvement | `performance` |
+  Add area label (`backend`, `frontend`, `auth`, `api`, etc.) if identifiable.
+- If `false`: leave empty.
+
+**Auto-assign milestone** — check `milestone_auto_assign` preference (default `true`):
+- If `true`/unset (stop at first match):
+  1. Title/body references a version or sprint → assign matching milestone
+  2. Exactly one active milestone in `_MILESTONE_CACHE` → assign silently
+  3. Multiple active milestones → ask: "Which milestone? ({names}) / skip"
+  4. No milestones → leave unassigned
+- Never auto-create a milestone for a single issue.
+
+### 6g — Draft, confirm, submit
 
 3. Call `draft_issue(title, body, labels, assignees, agent_workflow=[...], milestone_number=N_or_None)` for each — **silent**
-3. Show confirmation block before any GitHub call (#82):
+4. Show confirmation block:
    ```
    About to: Create {N} GitHub issues on {repo}
-     {issue-1-title} [{labels}]
-     {issue-2-title} [{labels}]
+     {issue-1-title} [{size}] [{labels}]
+     {issue-2-title} [{size}] [{labels}]
      ...
    Proceed? (yes / review first / cancel)
    ```
-   Wait for explicit "yes" before continuing.
-4. If yes: call `submit_issue(slug)` for each — **silent**
-5. **Auto-update project docs** — use the label-based decision table below.
-   Do **not** use LLM inference on title text; only labels are authoritative.
+   Wait for explicit "yes".
+5. Call `submit_issue(slug)` for each — **silent**
 
-   Before updating docs, check the `confirm_arch_changes` preference:
-   - If `confirm_arch_changes = true` (or unknown/unset): show a one-line preview and ask
-     "Update project notes to include this feature? (yes/no)" before calling any update tool.
-   - If `confirm_arch_changes = false`: update silently, no prompt needed.
+### 6h — Doc updates (medium/large only)
 
-   | Labels on the batch | Action |
-   |---------------------|--------|
-   | Any issue has `enhancement` or `feature` | (a) Call `update_project_detail_section(feature_name, content)` to merge a new or updated section. Include `**Milestone:** Mx — Name` at the top of the section content if milestones exist. (b) Call `update_project_summary_section(section_name="Planned Features", content=...)` to add/update rows in the Planned Features table (merge — do NOT replace existing rows). |
-   | Any issue has `architecture` | Update `project_summary.md` Design Principles section via `update_project_summary_section(section_name="Design Principles", content=...)`. |
-   | All labels are `bug`, `chore`, `refactor`, or `docs` | **No doc update** — zero extra API calls. |
-   | No labels set | Ask user: "This looks like a new feature — should I add it to the design dictionary? (yes/no)" — then follow appropriate row above. |
+Skip all doc updates for **trivial** and **small** issues.
 
-   `update_project_detail_section(feature_name, content)` merges a single H2 section
-   into `project_detail.md` without rewriting the rest of the file.
+For **medium/large**, check `confirm_arch_changes` preference first:
+- `true` or unset → show one-line preview, ask "Update project notes? (yes/no)"
+- `false` → update silently
 
-   **Planned Features table format** (used with `update_project_summary_section(section_name="Planned Features", ...)`):
-   ```
-   | # | Title | Milestone | Labels | Interface Layers |
-   |---|-------|-----------|--------|-----------------|
-   | #{N} | {title} | M2 — Posting | feature, backend | api, backend |
-   ```
-   Merge new rows into the existing table — do NOT replace rows from prior sessions.
+| Labels | Action |
+|--------|--------|
+| `enhancement` or `feature` | (a) `update_project_detail_section(feature_name, content)` — include `**Milestone:** Mx` at top. (b) `update_project_summary_section(section_name="Planned Features", content=...)` — merge rows, never replace. |
+| `architecture` | `update_project_summary_section(section_name="Design Principles", content=...)` |
+| `bug`, `chore`, `refactor`, `docs` only | No update. |
+| No labels | Ask: "Should I add this to the design notes? (yes/no)" |
+
+**Planned Features row format:**
+```
+| #{N} | {title} | M2 — Posting | feature, backend | api, backend |
+```
 6. **Offer implementation** — ask immediately after issues are submitted:
    > "Implement now using /th:gh-implementation? (yes / no)"
    - **yes** → call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line,

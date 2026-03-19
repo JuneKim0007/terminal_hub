@@ -432,7 +432,7 @@ def _do_draft_issue(
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
 
-    display = f"✓ {title}"
+    display = f"✅ **Drafted:** {title}"
     result = {
         "slug": slug,
         "title": title,
@@ -602,7 +602,7 @@ def _do_create_github_repo(name: str, description: str, private: bool) -> dict:
         "github_repo": full_name,
         "url": html_url,
         "private": private,
-        "_display": f"✓ GitHub repo created: {full_name} ({'private' if private else 'public'})",
+        "_display": f"✅ **Repo created:** `{full_name}` ({'private' if private else 'public'})",
     }
 
 
@@ -760,7 +760,7 @@ def _do_update_project_detail_section(
 
     return {"updated": True, "action": action, "feature": feature_name,
             "file": str(detail_path.relative_to(root)),
-            "_display": f"✓ Section '{feature_name}' {action} in project_detail.md"}
+            "_display": f"✅ **Updated** `project_detail.md` — {feature_name}"}
 
 
 def _do_update_project_summary_section(
@@ -830,7 +830,7 @@ def _do_update_project_summary_section(
 
     return {"updated": True, "action": action, "section": section_name,
             "file": str(summary_path.relative_to(root)),
-            "_display": f"✓ Section '{section_name}' {action} in project_summary.md"}
+            "_display": f"✅ **Updated** `project_summary.md` — {section_name}"}
 
 
 def _do_get_project_context(doc_key: str) -> dict:
@@ -2429,7 +2429,7 @@ def _do_unload_plugin(plugin: str) -> dict:
         "success": success,
         "cleared": cleared,
         "errors": errors,
-        "_display": "Unloading successful!" if success else f"Unload completed with {len(errors)} error(s): {errors}",
+        "_display": (f"🧹 **Cleared:** {', '.join(cleared)}" if cleared else "🧹 Nothing to clear") if success else f"⚠️ **Unload partial** — {len(errors)} error(s): {', '.join(errors)}",
     }
 
 
@@ -2627,7 +2627,7 @@ def _do_make_label(name: str, color: str, description: str = "") -> dict:
             "name": label["name"],
             "color": label["color"],
             "description": label.get("description", ""),
-            "_display": f"✓ Label '{name}' ready on {repo}",
+            "_display": f"✅ **Label ready:** `{name}` on {repo}",
         }
     except Exception as exc:
         return {"error": "make_label_failed", "message": str(exc)}
@@ -2686,7 +2686,7 @@ def _do_create_milestone(title: str, description: str = "", due_on: str | None =
             "number": entry["number"],
             "title": entry["title"],
             "description": entry["description"],
-            "_display": f"✓ Milestone M{entry['number']} — {entry['title']} created on {repo}",
+            "_display": f"✅ **Milestone M{entry['number']}:** {entry['title']} on {repo}",
         }
     except Exception as exc:
         return {"error": "create_milestone_failed", "message": str(exc)}

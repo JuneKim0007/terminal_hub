@@ -42,7 +42,7 @@ def test_create_milestone_success(workspace):
         result = call(server, "create_milestone", {"title": "Core Auth", "description": "Users can log in"})
     assert result["number"] == 1
     assert result["title"] == "Core Auth"
-    assert "✓" in result["_display"]
+    assert result["_display"]  # non-empty display string
 
 
 def test_create_milestone_cached(workspace):

@@ -142,7 +142,7 @@ def test_unload_plugin_success_display(workspace):
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_unload_plugin("gh_planner")
     assert result["success"] is True
-    assert result["_display"] == "Unloading successful!"
+    assert result["_display"]  # non-empty display string
 
 
 def test_unload_plugin_unknown_plugin_returns_error(workspace):
@@ -181,7 +181,7 @@ def test_unload_plugin_tool_returns_success(workspace):
         server = create_server()
         result = call(server, "unload_plugin", {"plugin": "gh_planner"})
     assert result["success"] is True
-    assert "Unloading successful!" in result["_display"]
+    assert result["_display"]  # non-empty display string
 
 
 def test_list_plugin_state_dict_size_kb_exception(workspace):

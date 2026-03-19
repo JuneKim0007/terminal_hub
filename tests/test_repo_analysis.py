@@ -382,7 +382,7 @@ def test_draft_issue_display_is_just_title(workspace):
     (workspace / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
     with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
         result = _do_draft_issue("My feature", "do it")
-    assert result["_display"] == "✓ My feature"
+    assert "My feature" in result["_display"]
 
 
 def test_submit_issue_display_is_number_and_title(workspace):

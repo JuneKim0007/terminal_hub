@@ -95,6 +95,10 @@ One H2 section per distinct feature area (e.g. "Issue Management", "Plugin Frame
 - Key functions/tools and their contracts (inputs → outputs)
 - Notable constraints or invariants
 
+### Available for Reuse
+- `symbol_name(params)` — `path/to/file.py` — one-line description
+*(populated from file_index[].exports during analysis — lists callable helpers, classes, and utilities agents should use instead of reimplementing)*
+
 ### Extension Guidelines
 - Patterns new features in this area must follow
 - Anti-patterns already observed — avoid these

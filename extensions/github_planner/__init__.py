@@ -725,6 +725,41 @@ def _render_summary_section(
     return ""
 
 
+def _format_reuse_block(files_in_area: list[dict]) -> str:
+    """Build ### Available for Reuse markdown from file_index entries."""
+    lines = []
+    for f in files_in_area:
+        path = f.get("path", "")
+        exports = f.get("exports", [])
+        module_doc = f.get("module_doc", "")
+        for export in exports:
+            if isinstance(export, str):
+                desc = module_doc.split("\n")[0][:80] if module_doc else "—"
+                lines.append(f"- `{export}` — `{path}` — {desc}")
+            elif isinstance(export, dict):
+                name = export.get("name", "")
+                sig = export.get("signature", name)
+                doc = export.get("doc", export.get("description", "—"))[:80]
+                lines.append(f"- `{sig}` — `{path}` — {doc}")
+    if not lines:
+        return ""
+    return "### Available for Reuse\n" + "\n".join(lines[:20])  # cap at 20
+
+
+def _preserve_reuse_block(existing_section: str, new_section: str) -> str:
+    """If new_section lacks ### Available for Reuse, inject it from existing."""
+    import re as _re
+    if "### Available for Reuse" in new_section:
+        return new_section
+    m = _re.search(r"(### Available for Reuse\n.*?)(?=###|\Z)", existing_section, _re.DOTALL)
+    if not m:
+        return new_section
+    reuse_block = m.group(1).rstrip() + "\n\n"
+    if "### Extension Guidelines" in new_section:
+        return new_section.replace("### Extension Guidelines", reuse_block + "### Extension Guidelines", 1)
+    return new_section + "\n" + reuse_block
+
+
 def _do_update_project_detail_section(
     feature_name: str,
     overview: str,
@@ -779,10 +814,12 @@ def _do_update_project_detail_section(
             break
 
     if start_idx is not None:
-        # Replace existing section
+        # Replace existing section — preserve Available for Reuse if new content omits it
         before = lines[:start_idx]
         after = lines[end_idx:] if end_idx is not None else []
-        new_content = "".join(before) + new_section + ("" if not after else "\n" + "".join(after))
+        existing_section_text = "".join(lines[start_idx:end_idx] if end_idx is not None else lines[start_idx:])
+        preserved_section = _preserve_reuse_block(existing_section_text, new_section)
+        new_content = "".join(before) + preserved_section + ("" if not after else "\n" + "".join(after))
         action = "replaced"
     else:
         # Append new section
@@ -1063,6 +1100,27 @@ def _gh_planner_docs_dir(root: Path) -> Path:
     return root / "hub_agents" / "extensions" / "gh_planner"
 
 
+def _docs_config_path(root: Path) -> Path:
+    return _gh_planner_docs_dir(root) / "docs_config.json"
+
+
+def _load_docs_config(root: Path) -> dict:
+    path = _docs_config_path(root)
+    if not path.exists():
+        return {"primary_reference": None, "other_references": [], "th_generated": True}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"primary_reference": None, "other_references": [], "th_generated": True}
+
+
+def _save_docs_config(root: Path, config: dict) -> None:
+    from extensions.github_planner.storage import _atomic_write
+    path = _docs_config_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(path, json.dumps(config, indent=2))
+
+
 def _resolve_repo(repo: str | None) -> str | None:
     """Return explicit repo or fall back to env / single cached entry.
 
@@ -1302,15 +1360,40 @@ def _do_load_project_docs(doc: str = "summary", repo: str | None = None, force_r
 
     _PROJECT_DOCS_CACHE[resolved] = entry
 
+    # Build result and check for connected primary reference (#164)
+    result: dict = {}
+    display_parts: list[str] = []
+    if doc in ("summary", "all"):
+        result["summary"] = summary
+        display_parts.append(f"project_summary.md ({_file_size('project_summary.md')})")
+    if doc in ("detail", "all"):
+        result["detail"] = detail
+        display_parts.append(f"project_detail.md ({_file_size('project_detail.md')})")
     if doc == "summary":
-        return {"summary": summary, "detail": None,
-                "_display": f"📄 Loaded: project_summary.md ({_file_size('project_summary.md')})"}
-    if doc == "detail":
-        return {"summary": None, "detail": detail,
-                "_display": f"📄 Loaded: project_detail.md ({_file_size('project_detail.md')})"}
-    return {"summary": summary, "detail": detail,
-            "_display": (f"📄 Loaded: project_summary.md ({_file_size('project_summary.md')}), "
-                         f"project_detail.md ({_file_size('project_detail.md')})")}
+        result["detail"] = None
+    elif doc == "detail":
+        result["summary"] = None
+
+    # Check for connected primary reference and merge into summary
+    docs_config = _load_docs_config(root)
+    primary = docs_config.get("primary_reference")
+    if primary and doc in ("summary", "all"):
+        ppath = root / primary["path"]
+        if ppath.exists():
+            primary_text = ppath.read_text(encoding="utf-8")
+            if result.get("summary"):
+                result["summary"] = (
+                    result["summary"]
+                    + f"\n\n---\n## Connected Reference: {primary['path']}\n\n"
+                    + primary_text[:3000]
+                )
+            else:
+                result["summary"] = primary_text
+            display_parts.append(f"`{primary['path']}` (primary ref)")
+
+    display = "📄 Loaded: " + ", ".join(display_parts) if display_parts else "📄 Loaded: (nothing)"
+    result["_display"] = display
+    return result
 
 
 def _do_docs_exist(repo: str | None = None) -> dict:
@@ -2113,6 +2196,114 @@ def _do_load_docs_strategy() -> dict:
         return {"strategy": None, "referred_docs": []}
 
 
+# ── Connected docs (#164) ─────────────────────────────────────────────────────
+
+_DOCS_NOISE_PATTERNS = {
+    "CHANGELOG", "CHANGELOG.md", "LICENSE", "LICENSE.md", "LICENCE",
+    "package-lock.json", "yarn.lock", "poetry.lock", "Pipfile.lock",
+}
+_DOCS_NOISE_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build"}
+
+
+def _do_search_project_docs() -> dict:
+    root = get_workspace_root()
+    candidates = []
+    noise_upper = {p.upper() for p in _DOCS_NOISE_PATTERNS}
+    for dirpath, dirnames, filenames in os.walk(root):
+        # prune noise dirs in-place
+        dirnames[:] = [d for d in dirnames if d not in _DOCS_NOISE_DIRS]
+        for fname in filenames:
+            if not fname.endswith(".md"):
+                continue
+            if fname in _DOCS_NOISE_PATTERNS:
+                continue
+            if fname.upper() in noise_upper:
+                continue
+            fpath = Path(dirpath) / fname
+            try:
+                text = fpath.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            # extract headings
+            headings = [l.lstrip("#").strip() for l in text.splitlines() if l.startswith("#")][:5]
+            size_kb = round(fpath.stat().st_size / 1024, 1)
+            rel = str(fpath.relative_to(root))
+            # score: bigger + more headings = more useful
+            score = size_kb + len(headings) * 0.5
+            candidates.append({"path": rel, "size_kb": size_kb, "headings": headings, "_score": score})
+    candidates.sort(key=lambda x: x["_score"], reverse=True)
+    for c in candidates:
+        del c["_score"]
+    display_lines = [f"  {c['path']} ({c['size_kb']}KB)" for c in candidates[:10]]
+    display = "Found " + str(len(candidates)) + " doc candidates:\n" + "\n".join(display_lines)
+    return {"candidates": candidates[:20], "total": len(candidates), "_display": display}
+
+
+def _do_connect_docs(primary: dict | None = None, others: list | None = None) -> dict:
+    root = get_workspace_root()
+    if err := ensure_initialized(root):
+        return err
+    others = others or []
+    # validate primary path exists
+    if primary:
+        p = root / primary.get("path", "")
+        if not p.exists():
+            return {
+                "error": "primary_not_found",
+                "path": str(primary.get("path")),
+                "_display": f"⚠️ **Not found:** `{primary.get('path')}`",
+            }
+    # validate others
+    for ref in others:
+        p = root / ref.get("path", "")
+        if not p.exists():
+            return {
+                "error": "ref_not_found",
+                "path": str(ref.get("path")),
+                "_display": f"⚠️ **Not found:** `{ref.get('path')}`",
+            }
+    config = _load_docs_config(root)
+    config["primary_reference"] = primary
+    config["other_references"] = others
+    _save_docs_config(root, config)
+    parts = []
+    if primary:
+        parts.append(f"primary: `{primary['path']}`")
+    if others:
+        parts.append(f"{len(others)} other ref(s)")
+    display = "✅ **Docs connected:** " + (", ".join(parts) if parts else "cleared")
+    return {"connected": True, "config": config, "_display": display}
+
+
+def _do_load_connected_docs(section: str | None = None) -> dict:
+    root = get_workspace_root()
+    config = _load_docs_config(root)
+    primary = config.get("primary_reference")
+    if not primary:
+        return {
+            "content": None,
+            "_display": "⚠️ No primary reference connected. Call connect_docs() first.",
+        }
+    path = root / primary["path"]
+    if not path.exists():
+        return {
+            "error": "not_found",
+            "path": primary["path"],
+            "_display": f"⚠️ Primary ref `{primary['path']}` not found on disk",
+        }
+    text = path.read_text(encoding="utf-8")
+    if section:
+        # extract matching H2 section
+        pattern = rf"(?m)^##\s+{re.escape(section)}.*?(?=^##\s|\Z)"
+        m = re.search(pattern, text, re.DOTALL | re.MULTILINE)
+        text = m.group(0) if m else text
+    size = len(text)
+    display = f"📄 **Loaded:** `{primary['path']}` ({size} chars)"
+    if section:
+        display += f" — section `{section}`"
+    return {"content": text, "path": primary["path"], "_display": display}
+
+
 # ── Label analysis (#81) ──────────────────────────────────────────────────────
 
 def _do_analyze_github_labels(refresh: bool = False) -> dict:
@@ -2504,6 +2695,7 @@ _CACHE_KEY_MAP: dict[str, tuple[dict | None, str | None]] = {
     "file_tree":                 (None, "file_tree.json"),
     "github_local_config":       (None, "github_local_config.json"),
     "docs_strategy":             (None, "docs_strategy.json"),
+    "docs_config":               (None, "docs_config.json"),
 }
 
 
@@ -3370,6 +3562,33 @@ def register(mcp) -> None:
         """Load the saved existing-docs strategy for this project (#84).
         Returns {strategy, referred_docs} or {strategy: null} if not set."""
         return _do_load_docs_strategy()
+
+    @mcp.tool()
+    def search_project_docs() -> dict:
+        """Search the project for useful .md documentation files to connect as references (#164).
+
+        Returns a ranked list of candidates with path, size_kb, and headings.
+        Use with connect_docs() to set a primary reference."""
+        return _do_search_project_docs()
+
+    @mcp.tool()
+    def connect_docs(primary: dict | None = None, others: list | None = None) -> dict:
+        """Connect existing project docs as primary/other references for planning and implementation (#164).
+
+        primary: dict with 'path' (relative to project root) and optional 'description'
+        others: list of dicts with 'path' and optional 'description'
+        Saved to hub_agents/extensions/gh_planner/docs_config.json.
+        The primary reference is automatically merged into load_project_docs() output."""
+        return _do_connect_docs(primary, others)
+
+    @mcp.tool()
+    def load_connected_docs(section: str | None = None) -> dict:
+        """Load the primary connected reference doc (or a specific section from it) (#164).
+
+        section: optional H2 heading name to extract a specific section.
+        Call connect_docs() first to set a primary reference.
+        Returns {content, path}."""
+        return _do_load_connected_docs(section)
 
     # ── Analyzer tool ─────────────────────────────────────────────────────────
 

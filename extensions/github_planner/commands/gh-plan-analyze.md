@@ -61,6 +61,8 @@ Repo analysis workflow:
 
 ## Design Principles
 - {Principle extracted from recurring code patterns}
+- File loading: lazy and partial — load a file only when decided relevant; fetch only the needed section, never the whole file
+- Task dispatch: file-location / scan / classification → lightweight model (Haiku) via dispatch_task; simple writes → Python MCP call directly; analysis / planning → standard model (Sonnet)
 
 ## Known Pitfalls
 - {Non-obvious constraint or gotcha}

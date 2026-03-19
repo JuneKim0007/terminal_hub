@@ -3,6 +3,16 @@
 <!-- RULE: after any implementation action, do not narrate results verbosely.
      Present diffs clearly, ask for acceptance, then proceed. -->
 
+<!-- RULE: FILE LOADING — lazy and partial. Never load a file as a routine step.
+     Only load when you have decided it is relevant to the current issue.
+     Fetch only the needed section (lookup_feature_section, not full file).
+     load_project_docs(summary) at Step 2 is the only unconditional load. -->
+
+<!-- RULE: TASK DISPATCH — match model to task weight.
+     File-location / scan / classification → dispatch_task (Haiku).
+     Simple writes to disk → Python MCP call directly.
+     Analysis / implementation planning → current model (Sonnet). -->
+
 <!-- RULE: for every yes/no or choice prompt shown to the user, call
      format_prompt(question, options, style) first and print _display verbatim.
      styles: "question" (default), "confirm", "warning", "switch", "error" -->

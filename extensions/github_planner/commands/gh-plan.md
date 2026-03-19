@@ -4,6 +4,18 @@
      Continue the planning conversation. When all planned issues are created, say:
      "Let me know any plans for this!" -->
 
+<!-- RULE: FILE LOADING — lazy and partial. Never load a file as a routine step.
+     Only load when you have decided it is relevant to the current task.
+     When you do load, fetch only the section you need (lookup_feature_section,
+     not the full file). load_project_docs is the exception — load summary at
+     Step 4 only; never load project_detail.md in full at any point. -->
+
+<!-- RULE: TASK DISPATCH — match model to task weight.
+     File-location / scan / classification → dispatch_task (Haiku).
+     Simple writes to disk → Python MCP call directly (no LLM needed).
+     Analysis / planning / issue body generation → current model (Sonnet).
+     Never use Sonnet for mechanical lookups that Haiku can handle. -->
+
 <!-- RULE: for every yes/no or choice prompt shown to the user, call
      format_prompt(question, options, style) first and print _display verbatim.
      styles: "question" (default), "confirm", "warning", "switch", "error" -->

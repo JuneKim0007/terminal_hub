@@ -1540,18 +1540,28 @@ def _file_tree_cache_path(root: Path) -> Path:
     return _gh_planner_docs_dir(root) / "file_tree.json"
 
 
-def _should_ignore(name: str) -> bool:
-    """Return True if directory/file name matches an ignore pattern."""
-    if name in _FILE_TREE_IGNORE:
+def _should_ignore(name: str, extra_exclude_dirs: frozenset[str] | None = None) -> bool:
+    """Return True if directory/file name matches an ignore pattern.
+
+    extra_exclude_dirs: additional names to ignore (from scan profile), merged with _FILE_TREE_IGNORE.
+    """
+    ignore_set = _FILE_TREE_IGNORE
+    if extra_exclude_dirs:
+        ignore_set = _FILE_TREE_IGNORE | extra_exclude_dirs
+    if name in ignore_set:
         return True
-    for pat in _FILE_TREE_IGNORE:
+    for pat in ignore_set:
         if pat.startswith("*") and name.endswith(pat[1:]):
             return True
     return False
 
 
-def _build_file_tree(root: Path) -> tuple[dict, list[str]]:
-    """Walk root directory, return (nested_tree, flat_index) excluding ignored paths."""
+def _build_file_tree(root: Path, extra_exclude_dirs: frozenset[str] | None = None) -> tuple[dict, list[str]]:
+    """Walk root directory, return (nested_tree, flat_index) excluding ignored paths.
+
+    extra_exclude_dirs: additional dir names to exclude (from scan profile exclude_dirs).
+    Merged with _FILE_TREE_IGNORE so built-in ignores always apply.
+    """
     flat: list[str] = []
 
     def _walk(directory: Path, rel_prefix: str) -> dict:
@@ -1561,7 +1571,7 @@ def _build_file_tree(root: Path) -> tuple[dict, list[str]]:
         except PermissionError:
             return node
         for entry in entries:
-            if _should_ignore(entry.name):
+            if _should_ignore(entry.name, extra_exclude_dirs):
                 continue
             rel = f"{rel_prefix}{entry.name}"
             if entry.is_dir():
@@ -1611,8 +1621,10 @@ def _do_get_file_tree(refresh: bool = False) -> dict:
         except (OSError, json.JSONDecodeError, KeyError, ValueError):
             pass
 
-    # Build fresh tree
-    tree, flat_index = _build_file_tree(root)
+    # Build fresh tree — merge profile exclude_dirs with built-in _FILE_TREE_IGNORE
+    profile = _load_scan_profile(root)
+    profile_exclude = frozenset(profile.get("exclude_dirs", []))
+    tree, flat_index = _build_file_tree(root, extra_exclude_dirs=profile_exclude)
     now = datetime.now(timezone.utc).isoformat()
     result = {
         "fetched_at": now,
@@ -1747,7 +1759,7 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
     }
 
     cap_warning = (
-        f"\n  ⚠ {omitted_files} files omitted (repo exceeds {_MAX_ANALYSIS_FILES}-file cap)"
+        f"\n  ⚠ {omitted_files} files omitted (repo exceeds {_max_files}-file cap)"
         if omitted_files > 0 else ""
     )
     return {

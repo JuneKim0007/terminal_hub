@@ -265,7 +265,11 @@ After approval:
 
 ### 6a — Classify each issue by size
 
-Before writing anything, assign a size to each issue using the first matching rule:
+**If `dispatch_task` tool is available** (plugin_customization loaded):
+  Call `dispatch_task(task_type="issue_classification", prompt="{title}\n\n{body excerpt}")`.
+  Use the returned `size` directly — skip the manual sizing table below.
+
+**Otherwise** (fallback): apply sizing rules manually using the first matching rule:
 
 | Size | Signal | agent_workflow | AC bullets |
 |------|--------|----------------|------------|
@@ -323,7 +327,7 @@ Generate based on size:
   - Step 1: `"Skim the relevant file(s) for this change, check for existing patterns, make the fix."`
   - Step 2–3: specific to this issue
 - **medium/large** → orientation step + issue-specific steps:
-  - Step 1: `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area. If no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
+  - Step 1: `"Orient yourself as an experienced developer picking up this task. If dispatch_task is available: call dispatch_task('structure_scan', file_tree_content) to get an area map, and call dispatch_task('file_location', issue_title + body) to get relevant files — use results to inform your concrete plan. Otherwise: if project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area; if no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
   - Steps 2–N: specific to this issue (derived from body, AC, feature section)
   - Final step: `"Verify full test suite passes and all AC are met"`
 

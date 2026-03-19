@@ -194,9 +194,9 @@
       ]
     },
     "gh-implementation": {
-      "description": "Implementation entry — unload analysis caches, keep project docs and issues",
-      "unload": ["analysis_cache", "project_docs_cache", "file_tree_cache", "session_header_cache", "label_cache", "milestone_cache", "analyzer_snapshot", "file_hashes", "file_tree"],
-      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
+      "description": "Switch to implementation — clear analysis/file-scan caches; keep project docs, labels, milestones (implementation needs them)",
+      "unload": ["analysis_cache", "file_tree_cache", "session_header_cache", "analyzer_snapshot", "file_hashes", "file_tree", "github_local_config"],
+      "keep": ["project_docs_cache", "label_cache", "milestone_cache", "repo_cache", "github_repo", "workspace_config", "preferences"]
     },
     "gh-implementation/implement": {
       "description": "Implement a single issue — no additional unloads",

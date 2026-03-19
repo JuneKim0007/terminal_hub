@@ -11,6 +11,8 @@ import pytest
 import extensions.github_planner as pg
 from extensions.github_planner import (
     _ANALYSIS_CACHE,
+    _LABEL_CACHE,
+    _LABEL_ANALYSIS_CACHE,
     _PROJECT_DOCS_CACHE,
     _SESSION_HEADER_CACHE,
     _do_analyze_repo_full,
@@ -52,10 +54,14 @@ def call(server, tool_name, args):
 def clear_caches():
     """Ensure caches are clean before and after each test."""
     _ANALYSIS_CACHE.clear()
+    _LABEL_CACHE.clear()
+    _LABEL_ANALYSIS_CACHE.clear()
     _PROJECT_DOCS_CACHE.clear()
     _SESSION_HEADER_CACHE.clear()
     yield
     _ANALYSIS_CACHE.clear()
+    _LABEL_CACHE.clear()
+    _LABEL_ANALYSIS_CACHE.clear()
     _PROJECT_DOCS_CACHE.clear()
     _SESSION_HEADER_CACHE.clear()
 

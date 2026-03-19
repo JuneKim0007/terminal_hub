@@ -5,9 +5,18 @@ import subprocess
 from pathlib import Path
 
 
+_ACTIVE_PROJECT_ROOT: Path | None = None
+
+
 def _cwd() -> Path:
     """Isolated so tests can patch it cleanly."""
     return Path.cwd()
+
+
+def set_active_project_root(path: str | Path) -> None:
+    """Set the active project root for this session (called from Claude's cwd)."""
+    global _ACTIVE_PROJECT_ROOT
+    _ACTIVE_PROJECT_ROOT = Path(path).resolve()
 
 
 def is_valid_project(path: Path) -> bool:
@@ -19,9 +28,12 @@ def resolve_workspace_root() -> Path:
     """Return the workspace root.
 
     Order:
-      1. PROJECT_ROOT env var (explicit override / test injection)
-      2. cwd
+      1. Explicitly set via set_active_project_root() (Claude passes its cwd)
+      2. PROJECT_ROOT env var (test injection)
+      3. cwd fallback
     """
+    if _ACTIVE_PROJECT_ROOT is not None:
+        return _ACTIVE_PROJECT_ROOT
     if root := os.environ.get("PROJECT_ROOT"):
         return Path(root)
     return _cwd()

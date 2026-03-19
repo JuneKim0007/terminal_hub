@@ -1,5 +1,7 @@
 # /th:gh-implementation — Issue Implementation Flow
 
+<!-- RULE: WORKSPACE ROOT — always call set_project_root(path=<cwd>) as the very first tool call so hub_agents/ is written to the user's project, not the MCP server's directory. -->
+
 <!-- RULE: after any implementation action, do not narrate results verbosely.
      Present diffs clearly, ask for acceptance, then proceed. -->
 
@@ -55,6 +57,7 @@ Do NOT show the switch offer again after the user has already said yes in this s
 
 ## Step 1 — Context switch (silent)
 
+Call `set_project_root(path="<Claude's actual working directory>")` first — this ensures hub_agents/ is written to the user's project.
 Call `apply_unload_policy(command="gh-implementation")`.
 Output `_display` verbatim as a **standalone line** — nothing before or after it on the same line.
 Do NOT bury it in a sentence. Example output line: `🧹 Cleared: analysis_cache, label_cache`

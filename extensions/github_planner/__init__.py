@@ -31,7 +31,7 @@ from terminal_hub.config import read_preference, write_preference
 from terminal_hub.env_store import read_env
 from terminal_hub.errors import msg
 from terminal_hub.slugify import slugify
-from terminal_hub.workspace import detect_repo, resolve_workspace_root
+from terminal_hub.workspace import detect_repo, resolve_workspace_root, set_active_project_root
 
 _PLUGIN_DIR = Path(__file__).parent
 _COMMANDS_DIR = _PLUGIN_DIR / "commands"
@@ -220,9 +220,13 @@ def _invalidate_repo_cache() -> None:
     _REPO_CACHE.clear()
 
 
-# Per-root label analysis cache — avoids re-fetching on every call (#81)
-# Key: str(root), Value: {active_labels, closed_labels, fetched_at}
-_LABEL_CACHE: dict[str, dict] = {}
+# Label cache — Key: "owner/repo" string, Value: list[{"name", "color", "description"}]
+# (raw list from gh.list_labels(), normalised to only these three keys)
+_LABEL_CACHE: dict[str, list[dict]] = {}
+
+# Full label-analysis cache — Key: "owner/repo" string, Value: classified result dict
+# Populated by _do_analyze_github_labels to avoid re-classifying on repeat calls
+_LABEL_ANALYSIS_CACHE: dict[str, dict] = {}
 
 _MILESTONE_CACHE: dict[str, list[dict]] = {}  # repo -> [{number, title, description}]
 
@@ -232,6 +236,22 @@ _GITHUB_DEFAULT_LABEL_NAMES = frozenset({
 })
 
 _LABEL_ACTIVE_DAYS = 30  # labels created within this many days are considered "active"
+
+
+def _get_cached_label_names(repo: str) -> list[str] | None:
+    """Return cached label names for repo, or None if not yet cached."""
+    cached = _LABEL_CACHE.get(repo)
+    if cached is None:
+        return None
+    return [lbl["name"] for lbl in cached]
+
+
+def _normalise_labels(raw_labels: list[dict]) -> list[dict]:
+    """Normalise raw GitHub label dicts to {name, color, description} shape."""
+    return [
+        {"name": lbl.get("name", ""), "color": lbl.get("color", ""), "description": lbl.get("description", "")}
+        for lbl in raw_labels
+    ]
 
 
 def _global_config_path(root: Path) -> Path:
@@ -880,7 +900,7 @@ def _do_run_analyzer() -> dict:
 
     # Warm label cache as a free side-effect of the fetch already done above
     if repo not in _LABEL_CACHE:
-        _LABEL_CACHE[repo] = labels
+        _LABEL_CACHE[repo] = _normalise_labels(labels)
 
     snapshot = process_snapshot(issues, labels, members, repo=repo)
     path = write_snapshot(root, snapshot)
@@ -2076,16 +2096,14 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
     if err := ensure_initialized(root):
         return err
 
-    repo = read_env(root).get("GITHUB_REPO", str(root))
-    root_key = repo
+    repo = read_env(root).get("GITHUB_REPO", "")
+    # Full analysis cache hit — return immediately without any API call
+    if not refresh and repo in _LABEL_ANALYSIS_CACHE:
+        return {**_LABEL_ANALYSIS_CACHE[repo], "cached": True}
     _cached_raw: list | None = None
-    if not refresh and root_key in _LABEL_CACHE:
-        cached = _LABEL_CACHE[root_key]
-        # Structured dict → full cache hit
-        if isinstance(cached, dict):
-            return {**{k: v for k, v in cached.items() if k != "_raw"}, "cached": True}
-        # Raw list (set by list_repo_labels/run_analyzer) → skip labels fetch
-        _cached_raw = cached
+    if not refresh and repo in _LABEL_CACHE:
+        # Use raw list from cache to skip the labels API fetch
+        _cached_raw = _LABEL_CACHE[repo]
 
     gh, error_message = get_github_client()
     if gh is None:
@@ -2169,13 +2187,15 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
     tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     import os as _os5; _os5.replace(tmp, config_path)
 
-    # Update in-memory cache — store _raw so list_repo_labels can extract it
-    _LABEL_CACHE[root_key] = {
+    # Update in-memory caches
+    # _LABEL_CACHE: unified raw list for list_repo_labels / run_analyzer consumers
+    _LABEL_CACHE[repo] = _normalise_labels(raw_labels)
+    # _LABEL_ANALYSIS_CACHE: full classification result for fast repeat calls
+    _LABEL_ANALYSIS_CACHE[repo] = {
         "active_labels": active_labels,
         "closed_labels": closed_labels,
         "total": len(raw_labels),
         "only_defaults": only_defaults,
-        "_raw": raw_labels,
     }
 
     n_active = len(active_labels)
@@ -2409,6 +2429,7 @@ def _do_unload_plugin(plugin: str) -> dict:
         (_FILE_TREE_CACHE, "_FILE_TREE_CACHE"),
         (_SESSION_HEADER_CACHE, "_SESSION_HEADER_CACHE"),
         (_LABEL_CACHE, "_LABEL_CACHE"),
+        (_LABEL_ANALYSIS_CACHE, "_LABEL_ANALYSIS_CACHE"),
     ]:
         if cache:
             cache.clear()
@@ -2443,6 +2464,7 @@ _CACHE_KEY_MAP: dict[str, tuple[dict | None, str | None]] = {
     "file_tree_cache":           (_FILE_TREE_CACHE,          None),
     "session_header_cache":      (_SESSION_HEADER_CACHE,    None),
     "label_cache":               (_LABEL_CACHE,             None),
+    "label_analysis_cache":      (_LABEL_ANALYSIS_CACHE,   None),
     "milestone_cache":           (_MILESTONE_CACHE,         None),
     "repo_cache":                (_REPO_CACHE,              None),
     "session_repo_confirmation": (_SESSION_REPO_CONFIRMED,  None),
@@ -2571,29 +2593,23 @@ def _do_list_repo_labels() -> dict:
         return err
     repo = read_env(root).get("GITHUB_REPO", "")
 
-    # Check cache — handle raw list (run_analyzer) or structured dict (analyze_github_labels)
+    # Check cache — unified list shape
     if repo in _LABEL_CACHE:
-        cached = _LABEL_CACHE[repo]
-        if isinstance(cached, list):
-            labels = cached
-        elif isinstance(cached, dict) and "_raw" in cached:
-            labels = cached["_raw"]
-        else:
-            labels = None
-        if labels is not None:
-            names = [l["name"] for l in labels]
-            display_lines = "\n".join(f"  • {l['name']} — {l.get('description', '')}" for l in labels)
-            return {
-                "labels": labels, "names": names, "count": len(labels), "cached": True,
-                "_display": f"{len(labels)} labels on {repo} [cached]:\n{display_lines}",
-            }
+        labels = _LABEL_CACHE[repo]
+        names = [lbl["name"] for lbl in labels]
+        display_lines = "\n".join(f"  • {lbl['name']} — {lbl.get('description', '')}" for lbl in labels)
+        return {
+            "labels": labels, "names": names, "count": len(labels), "cached": True,
+            "_display": f"{len(labels)} labels on {repo} [cached]:\n{display_lines}",
+        }
 
     gh, err = get_github_client()
     if gh is None:
         return err
     try:
         with gh:
-            labels = gh.list_labels()
+            raw = gh.list_labels()
+        labels = _normalise_labels(raw)
         _LABEL_CACHE[repo] = labels
         names = [l["name"] for l in labels]
         display_lines = "\n".join(f"  • {l['name']} — {l.get('description', '')}" for l in labels)
@@ -2621,8 +2637,9 @@ def _do_make_label(name: str, color: str, description: str = "") -> dict:
     try:
         with gh:
             label = gh.create_label(name, color, description)
-        # Invalidate label cache so next list_repo_labels re-fetches
+        # Invalidate label caches so next list_repo_labels/analyze_github_labels re-fetches
         _LABEL_CACHE.pop(repo, None)
+        _LABEL_ANALYSIS_CACHE.pop(repo, None)
         return {
             "name": label["name"],
             "color": label["color"],
@@ -2766,6 +2783,18 @@ def register(mcp) -> None:
     def workflow_auth() -> str:
         """Auth recovery guide — check_auth → gh auth login → verify_auth."""
         return _load_agent("gh-plan-auth.md")
+
+    # ── Workspace root override ───────────────────────────────────────────────
+
+    @mcp.tool()
+    def set_project_root(path: str) -> dict:
+        """Set the active project root so hub_agents/ is written to the user's project,
+        not the MCP server's directory.
+
+        MUST be the very first tool call in every /th: command.
+        path: Claude's actual working directory (absolute path)."""
+        set_active_project_root(path)
+        return {"root": str(path), "_display": f"📁 **Project root:** {path}"}
 
     # ── Session repo confirmation (#148) ──────────────────────────────────────
 

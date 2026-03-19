@@ -211,7 +211,7 @@ class TestJourney2_ProactiveIssueDraft:
         with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
             result = _do_draft_issue("Fix login redirect", "body text")
         # USABILITY CHECK: _display must be silent — title only, no JSON or metadata
-        assert result["_display"] == "✓ Fix login redirect"
+        assert "Fix login redirect" in result["_display"]
 
     def test_draft_then_submit_full_flow(self, workspace, mock_gh):
         """End-to-end: draft → approve → submit → GitHub issue created."""

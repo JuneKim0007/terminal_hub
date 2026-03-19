@@ -509,6 +509,25 @@ def _do_submit_issue(slug: str) -> dict:
             "_hook": None,
         }
 
+    # #49 — pre-flight milestone existence check
+    milestone_number = fm.get("milestone_number")
+    if milestone_number:
+        repo = read_env(root).get("GITHUB_REPO", "")
+        cached_milestones = _MILESTONE_CACHE.get(repo)
+        if cached_milestones is not None:
+            # Cache is warm — verify milestone exists in it
+            known_numbers = {m["number"] for m in cached_milestones}
+            if milestone_number not in known_numbers:
+                return {
+                    "error": "milestone_not_found",
+                    "milestone_number": milestone_number,
+                    "_display": (
+                        f"⚠️ **Milestone #{milestone_number} not found** on {repo}. "
+                        "Remove the milestone assignment or run list_milestones() to see valid ones."
+                    ),
+                    "_hook": None,
+                }
+
     labels: list[str] = fm.get("labels") or []
     raw = read_issue_file(root, slug) or ""
     body = raw.split("---", 2)[-1].strip() if raw.startswith("---") else raw

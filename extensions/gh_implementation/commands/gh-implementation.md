@@ -49,6 +49,10 @@ Call `apply_unload_policy(command="gh-implementation")`.
 Output `_display` verbatim as a **standalone line** — nothing before or after it on the same line.
 Do NOT bury it in a sentence. Example output line: `🧹 Cleared: analysis_cache, label_cache`
 
+**Repo confirmation (#148):** Call `confirm_session_repo()`.
+- `confirmed: true` → proceed silently
+- `confirmed: false` → print `_display` verbatim and ask "yes / change" (same flow as gh-plan Step 1)
+
 ---
 
 ## Step 2 — Read project context (silent)

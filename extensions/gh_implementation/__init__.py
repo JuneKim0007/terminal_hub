@@ -66,7 +66,7 @@ def _do_set_implementation_session_flag(key: str, value: bool, persist: bool = F
     root = get_workspace_root()
     flags = _get_flags(root)
     flags[key] = value
-    result = {"key": key, "value": value, "persisted": False, "_display": f"✓ {key} = {str(value).lower()}"}
+    result = {"key": key, "value": value, "persisted": False, "_display": f"✅ **Flag set:** `{key}` = {str(value).lower()}"}
     if persist:
         try:
             from terminal_hub.config import write_preference
@@ -119,7 +119,7 @@ def _do_fetch_github_issues(state: str = "open", limit: int = 30) -> dict:
     return {
         "fetched": n,
         "slugs": created,
-        "_display": f"✓ Fetched {n} issue(s) from GitHub → hub_agents/issues/",
+        "_display": f"✅ **Fetched** {n} issue(s) from GitHub",
     }
 
 
@@ -142,7 +142,7 @@ def _do_update_issue_frontmatter(slug: str, fields: dict[str, Any]) -> dict:
     fm.update(fields)
     updated = f"---\n{yaml.dump(fm, default_flow_style=False)}---{body}"
     _atomic_write(path, updated)
-    return {"slug": slug, "updated_fields": list(fields.keys()), "_display": f"✓ Updated front matter for #{slug}"}
+    return {"slug": slug, "updated_fields": list(fields.keys()), "_display": f"✅ **Updated** front matter for #{slug}"}
 
 
 def _do_close_github_issue(issue_number: int, comment: str | None = None) -> dict:
@@ -174,7 +174,7 @@ def _do_delete_local_issue(slug: str) -> dict:
     if not path.exists():
         return {"error": "not_found", "message": f"No local issue file for {slug!r}"}
     path.unlink()
-    return {"deleted": True, "file": f"hub_agents/issues/{slug}.md", "_display": f"✓ Deleted hub_agents/issues/{slug}.md"}
+    return {"deleted": True, "file": f"hub_agents/issues/{slug}.md", "_display": f"🗑 **Deleted** local issue #{slug}"}
 
 
 def register(mcp: FastMCP) -> None:

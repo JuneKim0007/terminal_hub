@@ -2,6 +2,12 @@
 
 <!-- RULE: WORKSPACE ROOT — always call set_project_root(path=<cwd>) as the very first tool call so hub_agents/ is written to the user's project, not the MCP server's directory. -->
 
+<!-- RULE: CONNECTED DOCS — after load_project_docs(), check if _display mentions a primary
+     ref (e.g. "`DESIGN.md` (primary ref)"). If yes, the primary reference content was
+     already merged into the summary — no extra load needed.
+     For other_references, use load_connected_docs(section="...") when the issue topic
+     matches a section heading in that reference doc. -->
+
 <!-- RULE: after any implementation action, do not narrate results verbosely.
      Present diffs clearly, ask for acceptance, then proceed. -->
 

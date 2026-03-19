@@ -23,11 +23,13 @@ Bootstrap a new project with terminal-hub workspace setup.
 4. Ask about project documentation:
    > "How should I learn about your project?
    > a) Analyze the repo — I'll scan your files and generate project notes
-   > b) You have existing docs — tell me where they are
+   > b) You have existing docs — connect them as references
    > c) Start fresh — I'll ask you some questions"
 
    - (a): Switch to /th:gh-plan-analyze
-   - (b): Ask for doc paths, call `connect_docs(primary=..., others=[...])` (if tool exists) or note paths in project summary
+   - (b): Connect existing docs — call `search_project_docs()` to find candidates, show the list,
+     ask user to pick primary (always-loaded into planning context) and any others (loaded on demand
+     by section), then call `connect_docs(primary={path, description}, others=[...])`
    - (c): Follow /th:gh-plan new-repo path (Step 2 project description flow)
 
 5. Confirm: "You're set up! Run /th:gh-plan to start planning issues."

@@ -2,6 +2,12 @@
 
 <!-- RULE: WORKSPACE ROOT — always call set_project_root(path=<cwd>) as the very first tool call so hub_agents/ is written to the user's project, not the MCP server's directory. -->
 
+<!-- RULE: CONNECTED DOCS — at Step 4, after load_project_docs(), check if _display mentions
+     a primary ref (e.g. "`DESIGN.md` (primary ref)"). If yes, the primary reference content
+     was already merged into the summary — no extra load needed.
+     For other_references, use load_connected_docs(section="...") when the user's topic
+     matches a section heading in that reference doc. -->
+
 <!-- RULE: after any draft_issue or submit_issue call, do not narrate the result.
      Continue the planning conversation. When all planned issues are created, say:
      "Let me know any plans for this!" -->
@@ -217,6 +223,10 @@ Call `get_session_header` (if available) or `docs_exist`.
 
 If re-using existing docs → skip to Step 5.
 If analyzing → run the **analyze sub-command** workflow (`/th:gh-plan-analyze`).
+
+Also check: does `load_project_docs` `_display` mention a primary reference? If yes, it was
+already loaded and merged into the summary. If the user asks about a topic matching an
+`other_reference`, call `load_connected_docs(section="...")` to fetch that section.
 
 ---
 

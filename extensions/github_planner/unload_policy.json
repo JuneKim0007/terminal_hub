@@ -13,6 +13,7 @@
     "file_tree":            "saved file tree from last analysis",
     "github_local_config":  "cached GitHub API responses for this session",
     "docs_strategy":             "how docs were generated last time",
+    "docs_config":               "connected primary and other reference docs",
     "session_repo_confirmation": "which repo was confirmed for this session",
     "github_repo":               "your linked GitHub repository",
     "workspace_config":     "workspace mode and settings",
@@ -146,7 +147,8 @@
         "file_hashes",
         "file_tree",
         "github_local_config",
-        "docs_strategy"
+        "docs_strategy",
+        "docs_config"
       ],
       "keep": [
         "github_repo",
@@ -196,7 +198,7 @@
     "gh-implementation": {
       "description": "Switch to implementation — clear analysis/file-scan caches; keep project docs, labels, milestones (implementation needs them)",
       "unload": ["analysis_cache", "file_tree_cache", "session_header_cache", "analyzer_snapshot", "file_hashes", "file_tree", "github_local_config"],
-      "keep": ["project_docs_cache", "label_cache", "milestone_cache", "repo_cache", "github_repo", "workspace_config", "preferences"]
+      "keep": ["project_docs_cache", "label_cache", "milestone_cache", "repo_cache", "github_repo", "workspace_config", "preferences", "docs_config"]
     },
     "gh-implementation/implement": {
       "description": "Implement a single issue — no additional unloads",

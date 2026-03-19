@@ -109,12 +109,18 @@ If issue has no `agent_workflow`, derive one from:
 - Matching feature section from project_detail.md
 - Design principles from project_summary.md
 
-First infer the issue's size from its labels and scope (trivial / small / medium / large — same rules as gh-plan Step 6a).
+First infer the issue's size from its labels and scope:
+
+**If `dispatch_task` tool is available** (plugin_customization loaded):
+  Call `dispatch_task(task_type="issue_classification", prompt="{title}\n\n{body excerpt}")`.
+  Use the returned `size` directly.
+
+**Otherwise** (fallback): infer size manually — trivial / small / medium / large — same rules as gh-plan Step 6a.
 
 - **trivial** → no workflow needed; just make the change
 - **small** → `"Skim the relevant file(s), check for existing patterns, make the fix."` + 1–2 specific steps
 - **medium/large** → orientation step:
-  `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area. If no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
+  `"Orient yourself as an experienced developer picking up this task. If dispatch_task is available: call dispatch_task('structure_scan', file_tree_content) to get an area map, and call dispatch_task('file_location', issue_title + body) to get relevant files — use results to inform your concrete plan. Otherwise: if project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area; if no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
   Then add issue-specific steps for 2–N.
 
 Do NOT prescribe which files to read — let the agent decide based on the issue.

@@ -56,7 +56,7 @@ Check `get_setup_status` result:
 When the user selects (b) from Step 2 — user wants a repo created, or `get_session_header` returns `{docs: false}` and no repo is configured:
 
 1. Ask conversationally (one message, keep it casual):
-   > "Tell me about your project idea — what are you building? Do you have any specific tech stacks in mind? (totally optional!)"
+   > "Tell me about your project idea — what are you building? Do you have any specific tech stacks in mind? (totally optional — or just tell me your general workflow!)"
 
 2. From the conversation, draft a minimal `project_summary.md` stub using this structured format:
 
@@ -92,24 +92,28 @@ When the user selects (b) from Step 2 — user wants a repo created, or `get_ses
 4. Wait for explicit confirmation before calling `update_project_description(content=...)`.
    If the user wants changes, revise the sketch and show it again. Do not rush to save.
 
-5. After saving, offer to create the GitHub repo (if not already done in Step 2):
-   > "Want me to create a GitHub repo for this? I'll use your project name and description.
-   > Should it be public or private? (or skip if you want to set that up yourself)"
+5. **Hot path — GitHub repo creation** (ask immediately after saving, before anything else):
+   > "Want me to create a GitHub repo for this now? I'll set it up, push an initial commit, and link it — you'll be ready to track issues straight away.
+   > **public / private / skip**"
 
-   - If user wants one created: call `create_github_repo(name=..., description=..., private=...)`
-     On success: repo is linked, call `set_preference("github_repo_connected", True)`
-   - If user skips: call `set_preference("github_repo_connected", False)` and continue
+   - **public** or **private** → run all of these in sequence:
+     1. `create_github_repo(name=<project-slug>, description=<one-line goal>, private=<bool>)`
+     2. `setup_workspace(github_repo=<owner/repo>)`
+     3. `set_preference("github_repo_connected", True)`
+     4. `set_session_repo(repo=<owner/repo>)` — lock for this session
+     5. `list_repo_labels()` + `list_milestones()` — warm caches
+     Then confirm: "✅ Repo created and linked — `<owner/repo>`"
+   - **skip** → call `set_preference("github_repo_connected", False)` and continue
 
-7. Ask once about confirmation preference:
    > "One quick thing — when I update your project design notes in the future (after new features or architecture changes), should I always ask you first, or just do it silently?
    > (always ask / just do it)"
 
    - "always ask" → call `set_preference("confirm_arch_changes", True)`
    - "just do it" → call `set_preference("confirm_arch_changes", False)`
 
-8. Ask: "Want me to break your first features into issues? (yes / describe features first)"
-9. On yes: continue to Step 5 (planning conversation) — skip analysis entirely.
-10. Issue creation uses standard Step 6 flow with confirmation hook (#82).
+7. Ask: "Want me to break your first features into issues? (yes / describe features first)"
+8. On yes: continue to Step 5 (planning conversation) — skip analysis entirely.
+9. Issue creation uses standard Step 6 flow with confirmation hook (#82).
 
 ---
 

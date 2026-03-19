@@ -267,10 +267,12 @@ After approval:
    - Keep this block concise — it is context for the implementing agent, not user-facing prose
 
 2. For each issue, generate `agent_workflow` steps — **always required, never omit**:
-   - Step 1: `"Scan all files and cache the project file structure"`
-   - Step 2: `"Build a temporary knowledge base — group relevant files (Group A) vs unrelated (Group B)"`
-   - Steps 3–N: specific to this issue's requirements
-   - Final step: `"Verify full test suite passes and acceptance criteria are met"`
+   - Step 1 is always a **strategic self-assessment** (exact wording):
+     `"Read project_summary.md (Interface Layers, Design Principles, Planned Features, Known Pitfalls) and load any relevant sections from project_detail.md for this issue's feature area. Then define your strategy: which specific files will you touch? which interface layers are in scope? which existing patterns must you follow? are there external libraries, APIs, or docs you need? Write out your approach before writing any code."`
+   - Steps 2–N: concrete implementation steps specific to this issue — derive from the issue body, AC, and feature section
+   - Final step: `"Verify full test suite passes and all acceptance criteria are met"`
+
+   **Do NOT use generic steps like "scan all files" or "build a knowledge base" — the self-assessment in Step 1 replaces these. Every step after Step 1 must be specific to this issue.**
 2b. **Auto-assign labels** — check `label_auto_assign` preference (default `true`):
    - If `true`/unset: infer labels from issue description using this table (only use names in `_LABEL_CACHE` or `labels.json`):
      | Condition | Label |

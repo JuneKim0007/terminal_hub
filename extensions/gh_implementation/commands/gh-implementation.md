@@ -96,10 +96,15 @@ If issue has no `agent_workflow`, derive one from:
 - Matching feature section from project_detail.md
 - Design principles from project_summary.md
 
-Step 1 is always a **strategic orientation**:
-1. `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings first — read only the sections relevant to this issue's area, skip the rest. If no docs exist, list the files in the repo, filter by likely relevance to this issue, then read only what's needed. Stop reading once you have enough context to act. Then state your concrete plan: what you will change, where, in what order, what patterns to follow, and what risks to watch for."`
+First infer the issue's size from its labels and scope (trivial / small / medium / large — same rules as gh-plan Step 6a).
 
-Then add issue-specific steps for 2–N. Do NOT prescribe which files to read — Step 1 lets the agent decide.
+- **trivial** → no workflow needed; just make the change
+- **small** → `"Skim the relevant file(s), check for existing patterns, make the fix."` + 1–2 specific steps
+- **medium/large** → orientation step:
+  `"Orient yourself as an experienced developer picking up this task. If project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area. If no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
+  Then add issue-specific steps for 2–N.
+
+Do NOT prescribe which files to read — let the agent decide based on the issue.
 
 Call `draft_issue` or update the issue file to persist the workflow before proceeding.
 

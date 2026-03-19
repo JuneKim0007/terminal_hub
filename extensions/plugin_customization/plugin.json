@@ -1,0 +1,9 @@
+{
+  "name": "plugin_customization",
+  "version": "1.0",
+  "entry": "extensions.plugin_customization",
+  "commands_dir": null,
+  "commands": [],
+  "description": "Model routing for terminal-hub — dispatches lightweight tasks (file location, classification, structure scan) to cheaper models via a user-editable plugin_config.json.",
+  "conversation_triggers": ["model routing", "plugin config", "dispatch task", "switch model"]
+}

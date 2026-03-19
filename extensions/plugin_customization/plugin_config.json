@@ -1,0 +1,13 @@
+{
+  "model_routing": {
+    "default": "claude-sonnet-4-6",
+    "tasks": {
+      "file_location":        "claude-haiku-4-5-20251001",
+      "issue_classification": "claude-haiku-4-5-20251001",
+      "structure_scan":       "claude-haiku-4-5-20251001",
+      "planning":             "claude-sonnet-4-6",
+      "implementation":       "claude-sonnet-4-6",
+      "architecture_review":  "claude-opus-4-6"
+    }
+  }
+}

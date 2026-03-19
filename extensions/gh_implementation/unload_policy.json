@@ -1,5 +1,5 @@
 {
-  "_comment": "gh_implementation unload policy. On entry: clears gh_planner heavy caches; preserves project docs. On exit: caller decides via apply_unload_policy.",
+  "_comment": "DOCUMENTATION ONLY — apply_unload_policy() reads from extensions/github_planner/unload_policy.json. This file documents intended policy for gh_implementation commands. Authoritative entries live in github_planner/unload_policy.json.",
   "cache_keys": {
     "analysis_cache":      {"description": "gh_planner in-memory repo analysis cache (_ANALYSIS_CACHE)"},
     "session_header_cache":{"description": "gh_planner session header cache (_SESSION_HEADER_CACHE)"},

@@ -912,8 +912,9 @@ class TestJourney9_EdgeCasesAndErrorPaths:
         assert "setup_workspace" in result["message"] or "owner/repo" in result["message"]
 
     def test_analyze_repo_full_reports_omitted_files(self, workspace):
-        """#60 — omitted_files count and _display warning when repo exceeds 200-file cap."""
-        tree = [{"path": f"file{i}.py", "size": 10, "sha": f"s{i}"} for i in range(300)]
+        """#60 — omitted_files count and _display warning when repo exceeds max_files cap."""
+        # Default scan profile max_files=300; create 400 to trigger omission
+        tree = [{"path": f"file{i}.py", "size": 10, "sha": f"s{i}"} for i in range(400)]
         gh = MagicMock()
         gh.__enter__ = lambda s: s
         gh.__exit__ = MagicMock(return_value=False)
@@ -925,7 +926,7 @@ class TestJourney9_EdgeCasesAndErrorPaths:
              patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             result = _do_analyze_repo_full("o/r")
 
-        assert result["omitted_files"] == 100
+        assert result["omitted_files"] == 100  # 400 - 300 (default max_files)
         assert "omitted" in result["_display"]
         assert "100" in result["_display"]
 

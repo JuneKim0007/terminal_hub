@@ -24,7 +24,13 @@ Call `get_setup_status`.
 - `initialised: false` → run the **setup sub-command** workflow (`/th:gh-plan-setup`)
 - `initialised: true` → continue
 
-If `github_repo` is set, call `list_repo_labels()` and `list_milestones()` silently.
+**Repo confirmation (#148):** If `github_repo` is set, call `confirm_session_repo()`.
+- `confirmed: true` → proceed silently (already confirmed this session)
+- `confirmed: false` → print `_display` verbatim, then ask user "yes / change":
+  - "yes" → call `set_session_repo(repo=...)` to lock it, then proceed
+  - "change" → ask "Which repo? (owner/repo)", then call `set_session_repo(repo=new_repo)`
+
+After confirmation: call `list_repo_labels()` and `list_milestones()` silently.
 This warms both caches so `submit_issue`/`assign_milestone` never make cold API calls,
 and gives Claude the repo's actual label and milestone names for planning (Step 5/6).
 If either call fails with 404 or auth error, surface it immediately — bad repo config

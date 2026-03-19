@@ -5,10 +5,17 @@
 Repo analysis workflow:
 
 1. Call `get_setup_status`. If not initialised, run setup first.
-2. Call `docs_exist`. If summary < 7 days old, ask: "Project notes exist ({N:.0f}h old). Re-analyze? (yes / use existing)"
-3. If analyzing:
-   a. Call `analyze_repo_full()` → announce: "Found {total_files} files, fetched {fetched} ({skipped_unchanged} unchanged)."
+2. **Scan profile check (#149):** Call `get_scan_profile_status()`. Print `_display` verbatim.
+   - `exists: true` → proceed (profile controls which files are analyzed)
+   - `needs_creation: true` → ask user *(yes / customize / skip)*:
+     - "yes" → call `create_scan_profile()` (default profile)
+     - "customize" → show default content, wait for edits, call `create_scan_profile(content=...)`
+     - "skip" → proceed without a profile (uses built-in extension filter)
+3. Call `docs_exist`. If summary < 7 days old, ask: "Project notes exist ({N:.0f}h old). Re-analyze? (yes / use existing)"
+4. If analyzing:
+   a. Call `analyze_repo_full()` → announce: "Found {total_files} files, fetched {fetched} ({skipped_unchanged} unchanged, {excluded_by_profile} excluded by profile)."
    b. **Existing docs detection** (#84): from `file_index`, identify doc-like .md files
+ from `file_index`, identify doc-like .md files
       (paths matching: README*, docs/*, DESIGN*, ARCHITECTURE*, SPEC*, CONTRIBUTING*, CHANGELOG*).
       If any found, present them:
       ```
@@ -29,7 +36,7 @@ Repo analysis workflow:
       Use `file_index[].exports`, `file_index[].headings`, `file_index[].module_doc` to derive
       content — never request raw file contents. Group files by feature area.
    d. Call `save_project_docs(summary_md, detail_md)`.
-4. Say: "Analysis complete. Let me know any plans for this!"
+5. Say: "Analysis complete. Let me know any plans for this!"
 
 ---
 

@@ -56,7 +56,7 @@ Check `get_setup_status` result:
 When the user selects (b) from Step 2 — user wants a repo created, or `get_session_header` returns `{docs: false}` and no repo is configured:
 
 1. Ask conversationally (one message, keep it casual):
-   > "Tell me about your project idea — what are you building? Do you have any specific tech stacks in mind? (totally optional — or just tell me your general workflow!)"
+   > "Tell me about your project idea — what are you building? Do you have any specific tech stacks in mind? (or just tell me your general workflow)"
 
 2. From the conversation, draft a minimal `project_summary.md` stub using this structured format:
 

@@ -96,10 +96,10 @@ If issue has no `agent_workflow`, derive one from:
 - Matching feature section from project_detail.md
 - Design principles from project_summary.md
 
-Steps 1–2 are always:
-1. "Scan all files and cache the project file structure"
-2. "Build a temporary knowledge base — group relevant files (Group A) vs unrelated (Group B)"
-Then add issue-specific steps.
+Step 1 is always a **strategic self-assessment**:
+1. `"Read project_summary.md (Interface Layers, Design Principles, Planned Features, Known Pitfalls) and load any relevant sections from project_detail.md for this issue's feature area. Then define your strategy: which specific files will you touch? which interface layers are in scope? which existing patterns must you follow? are there external libraries, APIs, or docs you need? Write out your approach before writing any code."`
+
+Then add issue-specific steps for 2–N. Do NOT use generic steps like "scan all files" — Step 1 handles orientation.
 
 Call `draft_issue` or update the issue file to persist the workflow before proceeding.
 
@@ -122,11 +122,10 @@ Run `git diff HEAD` (Bash tool), then present in two blocks — never dump raw p
 **Block 1 — Workflow summary** (what the agent did, one line per step completed):
 ```
 What was done:
-1. Scanned all files — identified N relevant files
-2. Built knowledge base — grouped X as relevant, Y as unrelated
-3. <specific action taken for this issue>
-4. Added/updated tests: <what was tested>
-5. Verified: N tests pass, coverage N%
+1. Strategy: read project_summary + project_detail/{area} — identified N files in scope across {layers}
+2. <specific action taken for this issue>
+3. Added/updated tests: <what was tested>
+4. Verified: N tests pass, coverage N%
 ```
 
 **Block 2 — Diff summary** (structured, not raw patch):

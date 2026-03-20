@@ -1,6 +1,6 @@
 # terminal-hub
 
-_**“Conversation is the flow”** _ is the core philosophy of this backend Claude layer.
+_**“Conversation is the flow”**_ is the core philosophy of this backend Claude layer.
 
 The project aims to simplify developer workflows by enabling conversation-driven automation, where tasks like planning, implementation, and tooling are handled through natural interaction instead of manual orchestration.
 

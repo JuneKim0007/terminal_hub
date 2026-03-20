@@ -1,6 +1,17 @@
 # terminal-hub
 
-An MCP server for Claude Code that pairs Python tools with conversational slash commands. Manages GitHub issues, analyzes repositories, and maintains persistent project context — all through natural conversation.
+_**“Conversation is the flow”** _ is the core philosophy of this backend Claude layer.
+
+The project aims to simplify developer workflows by enabling conversation-driven automation, where tasks like planning, implementation, and tooling are handled through natural interaction instead of manual orchestration.
+
+Terminal-hub so far provides a system where specialized components—such as a GitHub planner and an implementor—communicate bidirectionally to execute tasks efficiently. This conversational loop allows the system to dynamically plan, act, and refine outcomes with minimal user friction.
+
+The framework is designed to be highly OS-compatible and error-tolerant, relying primarily on Claude APIs and GitHub CLI commands and built-in Python framework to ensure portability across different environments and architectures. BUT full compatibility across all systems cannot be guaranteed.
+
+If you wish to run on a docker environment, it is recommended to run the framework using a minimal Python Docker image such as python:3.11-slim.
+
+Although the project is not yet published on PyPI or the Claude plugin marketplace, it can already be integrated into a Claude server with minimal setup.
+
 
 Ships with **github_planner** (issue management + repo analysis) and **plugin_creator** (conversational plugin scaffolding) as built-in extensions.
 

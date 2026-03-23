@@ -42,6 +42,15 @@ Sub-commands handle each step; this command composes them.
 
 Call `set_project_root(path="<Claude's actual working directory>")` first — this ensures hub_agents/ is written to the user's project.
 Then call `get_setup_status`.
+
+**Skill setup (once per session):** If `hub_agents/skills/` does not exist, prompt once:
+> "I can load a skills index for this project to guide my behaviour.
+> Do you have one? (point me to the path / create a starter for me / skip)"
+> - **point me to path** → call `connect_docs(skills="<path>")`
+> - **create a starter** → generate `hub_agents/skills/SKILLS.md` and call `connect_docs(skills="hub_agents/skills/SKILLS.md")`
+> - **skip** → proceed; only plugin-level skills (Tier 1) will be used
+
+**Persistent skills:** Call `_load_skill_registry` (triggered by `get_session_header` or `set_project_root`) — skills with `alwaysApply: true` (`SKILLS.md`, `tools-overview.md`) are automatically available.
 - `initialised: false` → run the **setup sub-command** workflow (`/th:gh-plan-setup`)
 - `initialised: true` → continue
 
@@ -218,52 +227,7 @@ When the user selects (b) from Step 2 — user wants a repo created, or `get_ses
 
 ## Step 2.5 — Milestone derivation (after project summary is saved)
 
-**Check `milestone_assign` preference first** via `read_preference("milestone_assign")`:
-- If `True`: skip the question, go directly to deriving and creating milestones
-- If `False`: skip milestones entirely this session
-- If unset (None): proceed with the question below
-
-**If unset**, derive 2–7 milestones from the saved project summary's feature groups.
-Milestone construction rules (apply these, do not invent new ones):
-- Each milestone covers a set of features that deliver user-visible value together
-- Name milestones descriptively: "Core Auth", "Posting & Feed" — not "Milestone 1"
-- Description = one sentence: what the user can do after this milestone ships
-- A simple app needs 2–3 milestones; a large app 5–7
-
-Show a compact table:
-```
-Proposed milestones:
-  M1 — Core Auth: users can sign up, log in, and reset their password
-  M2 — Posting: authenticated users can create, edit, and delete posts
-  M3 — Launch Polish: performance, error handling, deploy pipeline
-
-Create these on GitHub? (yes / no / yes, always create milestones)
-```
-
-- **"yes"** → call `create_milestone()` for each; cache results → then persist to project_summary.md (see below)
-- **"yes, always"** → call `create_milestone()` + `set_preference("milestone_assign", True)` → persist to project_summary.md
-- **"no"** → proceed without milestones; no further milestone prompts this session; call `set_preference("milestone_assign", False)`
-
-**After creating milestones**, call `update_project_summary_section(section_name="Milestones", content=...)` to persist the milestone table. Use this format for the content:
-```
-| # | Name | Delivers |
-|---|------|---------|
-| M1 | Core Auth | Users can sign up, log in, and reset their password |
-| M2 | Posting | Authenticated users can create, edit, and delete posts |
-| M3 | Launch Polish | Performance, error handling, and deploy pipeline complete |
-```
-This is the authoritative milestone reference for agents implementing issues — they MUST check this section before asking "which milestone does this belong to?".
-
-**Cache note:** Milestones are pre-fetched in Step 1 and live in `_MILESTONE_CACHE`. Do NOT call `list_milestones()` again — use the cached data for issue assignment.
-
-**Sequential planning preference:**
-Check `sequential_milestone_planning` preference via `read_preference("sequential_milestone_planning")`.
-- `True`: after submitting all issues for a milestone, automatically ask:
-  > "M{n} issues submitted. Implement now or plan M{n+1}? (implement / plan next / done)"
-  - "implement" → switch to /th:gh-implementation
-  - "plan next" → call `generate_milestone_knowledge(n+1)` then continue Step 5 for next milestone
-  - "done" → offer unload
-- `False` or unset: no prompt (existing behavior)
+<!-- SKILL: load_skill("milestones") — contains milestone derivation, auto-assignment, sequential planning rules -->
 
 **Interface Layers derivation (after milestones are saved):** Check if `## Interface Layers` already exists in project_summary.md. If absent, derive 2–5 architectural layers from the tech stack and feature groups. Show compact table:
 ```
@@ -355,125 +319,7 @@ Say: **"Let me know any plans for this!"**
 
 After approval:
 
-### 6a — Classify each issue by size
-
-**If `dispatch_task` tool is available** (plugin_customization loaded):
-  Call `dispatch_task(task_type="issue_classification", prompt="{title}\n\n{body excerpt}")`.
-  Use the returned `size` directly — skip the manual sizing table below.
-
-**Otherwise** (fallback): apply sizing rules manually using the first matching rule:
-
-| Size | Signal | agent_workflow | AC bullets |
-|------|--------|----------------|------------|
-| **trivial** | `chore`/`docs`/`refactor` only; single-file, no logic change | omit entirely | 1 line |
-| **small** | Isolated bug fix or single-focus change | orientation step + 1–2 specific steps | 1–3 bullets |
-| **medium** | New capability, 2–5 files touched | orientation + 3–5 steps | 3–5 bullets |
-| **large** | Cross-cutting, new subsystem, multiple areas | orientation + 5+ steps | 5+ bullets |
-
-If size is ambiguous, pick the smaller bucket — err on the side of less.
-
-### 6b — Feature section lookup (medium/large only)
-
-For **medium** and **large** issues with a milestone assigned:
-1. **First**, call `load_milestone_knowledge(milestone_number=N)` if the issue has a milestone.
-   - If the knowledge file exists: use its `## Interface Contract` section as the primary context for Planning Context (Step 6c). Skip `lookup_feature_section` for this issue — the knowledge file already contains the relevant contract.
-   - If no knowledge file exists (tool returns empty or error): fall back to `lookup_feature_section(feature="...")` for that area, using the returned section + global_rules in the issue body.
-
-For **medium** and **large** issues with **no milestone**: call `lookup_feature_section(feature="...")` if not already done for that area. Use returned section + global_rules in the issue body.
-
-Skip both for trivial/small — the overhead isn't worth it.
-
-### 6c — Planning Context block
-
-Append to each issue body (**omit entirely for trivial issues**):
-
-**When knowledge file was loaded (preferred path):**
-```markdown
-## Planning Context
-**Milestone:** M{n} — {title from knowledge file}
-**Goal:** {Goal section from knowledge file}
-**Interface contract:** {Interface Contract section from knowledge file}
-**Sibling issues:** #{slug} — {title} [{labels}] (from _ISSUE_LANDSCAPE filtered by same milestone_number)
-**Layers affected:** {layers listed in Interface Contract}
-```
-
-**When no knowledge file (fallback path):**
-
-First issue in a milestone batch (or no active milestone) — full block:
-```markdown
-## Planning Context
-**Milestone:** {Mx — Name} — *{what this milestone delivers}*
-
-**Sibling issues:** #{slug} — {title} [{labels}] · *(none yet)*
-
-**Interface layers:** {layers from `## Interface Layers` in project_summary.md}
-```
-
-Subsequent issues in the same milestone batch — slim reference:
-```markdown
-## Planning Context
-Milestone context same as #{first_slug_in_batch}. This issue: {one-sentence scope delta}.
-**Interface layers:** {layers if different, otherwise omit}
-```
-
-<!-- If knowledge file absent, use _MILESTONE_CACHE title + _ISSUE_LANDSCAPE for siblings. -->
-
-Rules:
-- Omit milestone lines if no milestone is assigned
-- Omit interface layers line if `## Interface Layers` absent from project_summary.md and no knowledge file loaded
-- Siblings come from `_ISSUE_LANDSCAPE` filtered by same `milestone_number`
-
-### 6d — AC format
-
-**AC bullets: verb-object, ≤10 words each. No prose.**
-- ✓ `"Submit creates a GitHub issue with correct labels"`
-- ✗ `"When the user clicks the submit button, a new issue should appear..."`
-
-### 6e — agent_workflow
-
-Generate based on size:
-
-- **trivial** → omit `agent_workflow` field entirely
-- **small** → orientation step only + 1–2 specific steps:
-  - Step 1: `"Skim the relevant file(s) for this change, check for existing patterns, make the fix."`
-  - Step 2–3: specific to this issue
-- **medium/large** → orientation step + issue-specific steps:
-  - Step 1: `"Orient yourself as an experienced developer picking up this task. If dispatch_task is available: call dispatch_task('structure_scan', file_tree_content) to get an area map, and call dispatch_task('file_location', issue_title + body) to get relevant files — use results to inform your concrete plan. Otherwise: if project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area; if no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
-  - Steps 2–N: specific to this issue (derived from body, AC, feature section)
-  - Final step: `"Verify full test suite passes and all AC are met"`
-
-**Do NOT prescribe which files to read. Do NOT use generic steps. Every step after Step 1 must be specific to this issue.**
-
-### 6f — Labels + milestone
-
-**Auto-assign labels** — label cache is already warm from Step 1 — use cached label names (do NOT call `list_repo_labels()` again). Check `label_auto_assign` preference (default `true`):
-- If `true`/unset: infer from issue title + body using these rules (apply all that match; only use names in `_LABEL_CACHE` or `labels.json`):
-  | Condition | Label |
-  |-----------|-------|
-  | Title/body contains "fix", "bug", "broken", "error", "crash", "regression" | `bug` |
-  | Contains "feat", "add", "implement", "create", "new" | `feature` or `enhancement` |
-  | Contains "refactor", "cleanup", "rename", "move", "reorganise" | `refactor` |
-  | Contains "test", "spec", "coverage" | `test` |
-  | Contains "doc", "readme", "changelog", "comment" | `documentation` |
-  | Contains "slow", "cache", "optimise", "perf", "performance" | `performance` |
-  | Backend files mentioned (*.py, routes, models, services) | `backend` |
-  | Frontend files mentioned (*.tsx, *.jsx, components) | `frontend` |
-  | Auth-related (login, token, OAuth, JWT) | `auth` |
-
-  Always assign at minimum: one **type label** (bug/feature/enhancement/refactor/chore/documentation/performance). Add **area label** (`backend`, `frontend`, `auth`, `api`, `ci`, etc.) if identifiable from title/body/files.
-
-  Show auto-assigned labels in the confirmation block: `[feat] Add OAuth refresh → M1 Core Auth [auto]`
-- If `false`: leave empty.
-
-**Auto-assign milestone** — check `milestone_auto_assign` preference (default `true`):
-- If `true`/unset (stop at first match):
-  1. Title/body references a version or sprint string → assign matching milestone from `_MILESTONE_CACHE`
-  2. Exactly one active milestone in `_MILESTONE_CACHE` → assign silently
-  3. Multiple active milestones → use `dispatch_task("issue_classification", issue_title + body)` if available to determine likely milestone from size + area; show: `[feat] Add OAuth refresh → M1 Core Auth [auto]` and let user override in edit phase
-  4. Multiple milestones, no dispatch_task → ask: "Which milestone? ({names}) / skip"
-  5. No milestones → leave unassigned
-- Never auto-create a milestone for a single issue.
-- **Do NOT auto-assign milestone when:** issue is a question/discussion/support request, labelled `wontfix`/`duplicate`/`invalid`, or is a tracking/epic issue spanning multiple deliverables.
+<!-- SKILL: load_skill("creating-issues") — contains sizing rules, AC format, agent_workflow generation, label assignment, Planning Context block format -->
 
 ### 6g — Draft, confirm, submit
 
@@ -491,23 +337,7 @@ Generate based on size:
 
 ### 6h — Doc updates (medium/large only)
 
-Skip all doc updates for **trivial** and **small** issues.
-
-For **medium/large**, check `confirm_arch_changes` preference first:
-- `true` or unset → show one-line preview, ask "Update project notes? (yes/no)"
-- `false` → update silently
-
-| Labels | Action |
-|--------|--------|
-| `enhancement` or `feature` | (a) `update_project_detail_section(feature_name, content)` — include `**Milestone:** Mx` at top. (b) `update_project_summary_section(section_name="Planned Features", content=...)` — merge rows, never replace. |
-| `architecture` | `update_project_summary_section(section_name="Design Principles", content=...)` |
-| `bug`, `chore`, `refactor`, `docs` only | No update. |
-| No labels | Ask: "Should I add this to the design notes? (yes/no)" |
-
-**Planned Features row format:**
-```
-| #{N} | {title} | M2 — Posting | feature, backend | api, backend |
-```
+<!-- SKILL: load_skill("design-principles") — contains doc update decision table and confirm_arch_changes behavior -->
 6. **Offer implementation** — ask immediately after issues are submitted:
    > "Implement now using /th:gh-implementation? (yes / no)"
    - **yes** → call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line,

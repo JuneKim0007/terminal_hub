@@ -68,6 +68,15 @@ Call `apply_unload_policy(command="gh-implementation")`.
 Output `_display` verbatim as a **standalone line** — nothing before or after it on the same line.
 Do NOT bury it in a sentence. Example output line: `🧹 Cleared: analysis_cache, label_cache`
 
+**Skill setup (once per session):** If `hub_agents/skills/` does not exist, prompt once:
+> "I can load a skills index for this project to guide my behaviour.
+> Do you have one? (point me to the path / create a starter for me / skip)"
+> - **point me to path** → call `connect_docs(skills="<path>")`
+> - **create a starter** → generate `hub_agents/skills/SKILLS.md` and call `connect_docs(skills="hub_agents/skills/SKILLS.md")`
+> - **skip** → proceed; only plugin-level skills (Tier 1) will be used
+
+**Persistent skills:** `set_project_root` triggers `_load_skill_registry` — skills with `alwaysApply: true` are auto-available.
+
 **Repo confirmation (#148):** Call `confirm_session_repo()`.
 - `confirmed: true` → proceed silently
 - `confirmed: false` → print `_display` verbatim and ask "yes / change" (same flow as gh-plan Step 1)
@@ -120,21 +129,7 @@ If issue has no `agent_workflow`, derive one from:
 - Matching feature section from project_detail.md
 - Design principles from project_summary.md
 
-First infer the issue's size from its labels and scope:
-
-**If `dispatch_task` tool is available** (plugin_customization loaded):
-  Call `dispatch_task(task_type="issue_classification", prompt="{title}\n\n{body excerpt}")`.
-  Use the returned `size` directly.
-
-**Otherwise** (fallback): infer size manually — trivial / small / medium / large — same rules as gh-plan Step 6a.
-
-- **trivial** → no workflow needed; just make the change
-- **small** → `"Skim the relevant file(s), check for existing patterns, make the fix."` + 1–2 specific steps
-- **medium/large** → orientation step:
-  `"Orient yourself as an experienced developer picking up this task. If dispatch_task is available: call dispatch_task('structure_scan', file_tree_content) to get an area map, and call dispatch_task('file_location', issue_title + body) to get relevant files — use results to inform your concrete plan. Otherwise: if project docs exist (project_summary.md, project_detail.md), scan their headings — read only sections relevant to this area; if no docs, list files and filter by relevance. Stop once you have enough context. State your concrete plan: what you'll change, where, in what order, and what to watch for."`
-  Then add issue-specific steps for 2–N.
-
-Do NOT prescribe which files to read — let the agent decide based on the issue.
+<!-- SKILL: load_skill("implementing") — contains workflow derivation rules per size (trivial/small/medium/large) -->
 
 Call `draft_issue` or update the issue file to persist the workflow before proceeding.
 
@@ -152,29 +147,9 @@ When implementation is complete → go to Step 7.
 
 ## Step 7 — Present changes
 
-Run `git diff HEAD` (Bash tool), then present in two blocks — never dump raw patch:
+Run `git diff HEAD` (Bash tool), then present changes to the user.
 
-**Block 1 — Workflow summary** (what the agent did, one line per step completed):
-```
-What was done:
-1. Strategy: read project_summary + project_detail/{area} — identified N files in scope across {layers}
-2. <specific action taken for this issue>
-3. Added/updated tests: <what was tested>
-4. Verified: N tests pass, coverage N%
-```
-
-**Block 2 — Diff summary** (structured, not raw patch):
-```
-Files changed:
-  M  src/auth.py        +24 / -3
-  A  tests/test_auth.py +41
-
-Key changes:
-- src/auth.py: <plain English description of change>
-- tests/test_auth.py: <plain English description>
-```
-
-If diff > 200 lines: show Block 1 + file list only, then ask "Show full diff? (yes / no)".
+<!-- SKILL: load_skill("implementing") — contains diff presentation format (Block 1 + Block 2) and >200 lines rule -->
 
 Ask: **"Accept these changes? (yes / review more / cancel)"**
 - "review more" → show specific file or hunk the user asks about
@@ -196,18 +171,9 @@ If accepted:
 ## Step 9 — Post-ship doc sync
 
 After pushing and closing, update project docs to reflect what was actually built.
-Read the closed issue's labels from its local file frontmatter, then apply this table:
+Read the closed issue's labels from its local file frontmatter.
 
-| Labels | Action |
-|--------|--------|
-| Any `enhancement` or `feature` | Call `update_project_detail_section(feature_name, content)` — merge/update the feature section to reflect what was shipped. Include `**Milestone:** Mx — Name` at the top if milestones are in use. |
-| Any `architecture` | Call `update_project_summary_section(section_name="Design Principles", content=...)` |
-| All `bug`, `chore`, `refactor`, or `docs` | **No doc update** — skip entirely |
-| No labels | Ask: "Should I update the design notes for this? (yes/no)" — then follow the appropriate row above |
-
-Before writing, check `confirm_arch_changes` preference:
-- `true` or unset → show a one-line preview and ask "Update project notes? (yes/no)" before calling any update tool
-- `false` → update silently
+<!-- SKILL: load_skill("design-principles") — contains doc update decision table, label → action mapping, confirm_arch_changes behavior -->
 
 ---
 

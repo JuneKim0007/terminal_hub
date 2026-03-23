@@ -2,7 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/terminal-hub.svg)](https://pypi.org/project/terminal-hub/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-free%20to%20use-lightgrey.svg)](LICENSE)
 
 _**”Conversation is the flow”**_ is the core philosophy of this backend Claude layer.
 
@@ -24,6 +24,10 @@ Ships with **github_planner** (issue management + repo analysis) and **plugin_cr
 ## The idea
 
 Most GitHub automation tools require you to manually invoke each step. terminal-hub flips this: you describe what you're planning, and the system handles the rest — workspace setup, repo analysis, context loading, issue creation, and cleanup — all in one flow.
+
+The deeper goal is to give Claude a **rich, structured context** so it can perform at a higher level. Rather than relying on Claude to infer project intent from raw code, terminal-hub maintains a living design dictionary (`project_summary.md`, `project_detail.md`), per-issue agent workflows, and a two-tier skill system — all loaded selectively so Claude always has exactly the right context for the task at hand.
+
+This is grounded in how Claude actually works best: detailed, step-by-step instructions with relevant context produce significantly better outcomes than vague prompts. terminal-hub is a framework for making that kind of context-richness systematic and automatic, rather than something each developer has to hand-craft for every session.
 
 ---
 

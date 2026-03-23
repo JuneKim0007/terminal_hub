@@ -15,12 +15,23 @@ Bootstrap a new project with terminal-hub workspace setup.
 2. Ask conversationally:
    > "What are you building? Give me a quick overview — what it does, any tech stack in mind, and roughly how big."
 
-3. From the answer, infer a project name and one-line goal. Show before saving:
-   > "Got it — here's what I have:
-   > **Name:** <inferred-name>
-   > **Goal:** <one-line description>
-   > Correct? (yes / tweak it)"
-   Wait for confirmation before proceeding.
+3. From the answer:
+   - **Classify** the project type (API backend / CLI tool / web app / data pipeline / library / MCP server)
+   - **If tech stack not mentioned**, suggest 2–3 sensible options with one-line rationale each; ask which to use and wait for the answer
+   - **Derive principles** by category, tailored to the type and stack — 4–6 specific, actionable rules (see `<!-- PRINCIPLE CATEGORIES -->` in gh-plan.md for per-type defaults)
+   - **Present** name, goal, and derived principles before saving anything:
+     > "Here's what I have:
+     > **Name:** <inferred-name>
+     > **Stack:** <stack>
+     > **Goal:** <one-line description>
+     >
+     > **Design Principles:**
+     > - <derived principle>
+     > - <derived principle>
+     > ...
+     >
+     > Looks right? (yes / tweak it)"
+   Wait for explicit confirmation before proceeding. Revise and re-present if the user wants changes.
 
 4. Ask:
    > "Keep it local, or push to GitHub too? (local / github)"

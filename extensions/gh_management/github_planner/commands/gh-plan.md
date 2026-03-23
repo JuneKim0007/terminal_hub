@@ -10,7 +10,7 @@
 
 <!-- RULE: after any draft_issue or submit_issue call, do not narrate the result.
      Continue the planning conversation. When all planned issues are created, say:
-     "Let me know any plans for this!" -->
+     "Issues drafted and submitted! Let me know if you'd like me to start implementing or if you want to change any issues!" -->
 
 <!-- RULE: FILE LOADING — lazy and partial. Never load a file as a routine step.
      Only load when you have decided it is relevant to the current task.
@@ -77,6 +77,49 @@ Check `get_setup_status` result:
 - **(b)**: → follow **New-repo path + repo creation** below
 - **(c)**: call `setup_workspace()` (local-only). Store `set_preference("github_repo_connected", False)`.
 
+<!-- PRINCIPLE CATEGORIES — reference for principle derivation in new-repo path Step 2c.
+     Not shown to users. Agents: pick only categories that apply; write specific rules, not placeholders.
+
+     API backend:
+       Architecture:    layered (routes → services → repositories → DB); no direct DB calls from routes
+       Performance:     lazy-load config + connections; never at import time; cache DB results keyed by (table, filter_hash), invalidate on write
+       Modularity:      each feature is a self-contained module (router + service + schema); shared utilities in /core — no circular imports
+       Testing:         coverage ≥ 80%; integration tests for all DB paths; no mocking the DB in integration tests
+       Conventions:     all public functions have type hints; errors returned as {error: str, detail: ...}; secrets via env vars only
+
+     CLI tool:
+       Architecture:    each command is a single-responsibility function; no business logic in CLI layer
+       Performance:     lazy I/O — open files only when needed; stream large outputs instead of buffering
+       State:           no mutable global state; pass context explicitly
+       Testing:         test command outputs via subprocess or invoke; cover exit codes 0/1/2
+       Conventions:     --help on every command; exit 0 = success, exit 1 = user error, exit 2 = internal error
+
+     Web app (full-stack):
+       Architecture:    component owns its data fetching; no prop drilling beyond 2 levels — use context or store
+       SSR/CSR:         data fetched server-side for SEO-critical pages; client-side for interactive widgets
+       Validation:      validate at API boundary; never trust client-supplied data
+       Testing:         unit test components in isolation; E2E for critical user journeys
+       Conventions:     co-locate styles with components; no inline styles in JSX
+
+     Data pipeline:
+       Architecture:    each stage is idempotent; pipelines are restartable from any checkpoint
+       Data integrity:  schema validated at ingestion boundary; no silent data loss — log + halt on schema mismatch
+       Performance:     process in chunks; never load full dataset into memory
+       Testing:         test each transform in isolation with fixture data; test full pipeline with small synthetic dataset
+
+     Library / SDK:
+       Architecture:    stable public API; internals may change freely
+       Side effects:    no side effects at import time; no global state mutations
+       Versioning:      semver — breaking changes only in major versions
+       Testing:         100% coverage of public API; document + test edge cases explicitly
+
+     MCP server / agent tooling:
+       Architecture:    each tool has one responsibility; no tool modifies state without returning confirmation
+       Performance:     lightweight tool calls in hot paths; avoid re-reading files already in context
+       Caching:         cache keys are deterministic strings; lookups return structured objects not raw strings; invalidate on mutation
+       Conventions:     every tool returns _display for UI rendering; errors returned as {error: str}, never raised raw
+-->
+
 ### New-repo path (#83)
 
 When the user selects (b) from Step 2 — user wants a repo created, or `get_session_header` returns `{docs: false}` and no repo is configured:
@@ -84,34 +127,64 @@ When the user selects (b) from Step 2 — user wants a repo created, or `get_ses
 1. Ask conversationally (one message, keep it casual):
    > "Tell me about your project idea — what are you building? Do you have any specific tech stacks in mind? (or just tell me your general workflow)"
 
-2. From the conversation, draft a minimal `project_summary.md` stub using this structured format:
+2. **Classify, derive, and confirm** — before drafting or saving anything:
+
+   **a. Classify project type** from the description — pick the closest:
+   - API backend (FastAPI / Express / Rails / Spring / etc.)
+   - CLI tool
+   - Web app (full-stack or frontend-only)
+   - Data pipeline / ETL
+   - Library / SDK
+   - MCP server / agent tooling
+   - Other — describe
+
+   **b. Tech stack** — if the user didn't mention one, suggest 2–3 sensible options with a one-line rationale each and ask which to use. Wait for their answer before deriving principles. If they did mention a stack, confirm it.
+
+   **c. Derive principles** by category, tailored to the classified type and confirmed stack. Use the `<!-- PRINCIPLE CATEGORIES -->` reference table in this file. Rules:
+   - Include only categories that apply to this project type (4–6 principles total — not a laundry list)
+   - Every principle must be **specific and actionable**, never boilerplate or placeholder text
+   - Express constraints as rules an implementing agent can apply: "cache DB results keyed by (table, filter_hash); invalidate on write" not "use caching"
+   - If a category has no strong opinion yet, omit it rather than filling it with generic text
+
+   **d. Present the derived stack + principles** to the user before saving anything:
+   > "Based on your description, here's what I'd build around:
+   >
+   > **Project type:** <classified type>
+   > **Stack:** <confirmed or suggested stack>
+   >
+   > **Design Principles:**
+   > Architecture:
+   > - <derived architecture principle>
+   >
+   > Performance:
+   > - <derived performance principle, if applicable>
+   >
+   > Testing:
+   > - <derived test policy>
+   >
+   > Conventions:
+   > - <derived convention>
+   >
+   > Does this match how you want to build? Confirm, edit, or add anything."
+
+   Wait for explicit confirmation or edits. Revise and re-present if needed. Do not call `update_project_description` until the user says it looks right.
+
+3. Draft the `project_summary.md` stub using the confirmed values:
 
    ```
-   **Tech Stack:** <stack, or "TBD" if not mentioned>
+   **Tech Stack:** <confirmed stack>
    **Goal:** <one-sentence goal>
    **Notes:** <any constraints, deployment targets, or "TBD">
 
    ## Design Principles
-   - <Architectural style — e.g. "layered: routes → services → storage">
-   - <Key convention — e.g. "all public functions must have type hints">
-   - <Non-negotiable rule — e.g. "no mutable global state outside MCP server init">
-   - <Test policy — e.g. "coverage ≥ 80%; no merging with failing tests">
+   - <derived architecture principle>
+   - <derived performance/caching principle, if applicable>
+   - <derived modularity principle, if applicable>
+   - <derived test policy>
+   - <derived convention>
    ```
 
-   If the user hasn't described conventions yet, use sensible defaults for their stack
-   and mark them `(default — update anytime)`. Agents implementing issues MUST read
-   Design Principles before touching any code.
-
-   If the user didn't mention a tech stack, suggest 2–3 sensible options that fit their idea alongside the sketch.
-
-3. Show the sketch before saving — keep it conversational:
-   > "Here's your project sketch:
-   >
-   > **Tech Stack:** FastAPI (Python), React (TBD)
-   > **Goal:** REST API backend with a frontend and local-first deployment
-   > **Notes:** Cloud deployment optional later
-   >
-   > Does this look right? You can confirm, add anything, or just keep chatting — I won't save until you say so."
+   Agents implementing issues MUST read Design Principles before touching any code.
 
    *(Note: when you call `update_project_description`, Claude Code will show the MCP tool call in its UI — that's normal and expected, not an error.)*
 
@@ -443,7 +516,7 @@ For **medium/large**, check `confirm_arch_changes` preference first:
    - **no** → ask: "Unload cached data to keep context lean? (yes/no)"
      - If yes: call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line.
      - If no: proceed.
-7. Say: **"Let me know any plans for this!"**
+7. Say: **"Issues drafted and submitted! Let me know if you'd like me to start implementing or if you want to change any issues!"**
 
 ---
 

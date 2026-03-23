@@ -13,14 +13,24 @@ Bootstrap a new project with terminal-hub workspace setup.
    - If not: continue
 
 2. Ask conversationally:
-   > "Let's set up your project. Do you have a GitHub repo connected already, or should I help you create one?"
-   > a) Yes, here's the repo: `owner/repo`
-   > b) Create one for me
-   > c) Skip — work locally for now
+   > "What are you building? Give me a quick overview — what it does, any tech stack in mind, and roughly how big."
 
-3. Call `setup_workspace(project_root=<cwd>, github_repo=<if provided>)`
+3. From the answer, infer a project name and one-line goal. Show before saving:
+   > "Got it — here's what I have:
+   > **Name:** <inferred-name>
+   > **Goal:** <one-line description>
+   > Correct? (yes / tweak it)"
+   Wait for confirmation before proceeding.
 
-4. Ask about project documentation:
+4. Ask:
+   > "Keep it local, or push to GitHub too? (local / github)"
+   - **local** → call `setup_workspace(project_root=<cwd>)`
+   - **github** → ask "Use an existing repo (`owner/repo`) or create a new one? (existing / new)"
+     - **existing** → call `setup_workspace(project_root=<cwd>, github_repo=<owner/repo>)`
+     - **new** → call `create_github_repo(name=<inferred-name>, description=<goal>, private=true)`,
+       then `setup_workspace(project_root=<cwd>, github_repo=<owner/repo>)`
+
+5. Ask about project documentation:
    > "How should I learn about your project?
    > a) Analyze the repo — I'll scan your files and generate project notes
    > b) You have existing docs — connect them as references
@@ -32,6 +42,6 @@ Bootstrap a new project with terminal-hub workspace setup.
      by section), then call `connect_docs(primary={path, description}, others=[...])`
    - (c): Follow /th:gh-plan new-repo path (Step 2 project description flow)
 
-5. Confirm: "You're set up! Run /th:gh-plan to start planning issues."
+6. Confirm: "You're set up! Run /th:gh-plan to start planning issues."
 
-6. Call `apply_unload_policy(command="init")` and print `_display` verbatim.
+7. Call `apply_unload_policy(command="init")` and print `_display` verbatim.

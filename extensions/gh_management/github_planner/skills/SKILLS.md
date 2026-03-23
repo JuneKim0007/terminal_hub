@@ -19,5 +19,8 @@ Always-loaded skills (index only — no heavy knowledge):
 | agent-workflow | agent-workflow-skill.md | false | Writing agent_workflow steps (zero-context rules) |
 | workflow | workflow-skill.md | false | Writing ## Workflow body section |
 | intent-expansion | intent-expansion-skill.md | false | Expanding vague intent before scanning |
+| create-skill | create-skill.md | false | Creating new skill files, skill authoring |
+
+
 
 Load on demand: `load_skill("name")` — only load when the skill is actually needed.

@@ -481,6 +481,7 @@ def _do_generate_issue_workflows(slug: str) -> dict:
     tmp.write_text(updated_front.rstrip() + workflow_body_section, encoding="utf-8")
     _os.replace(tmp, issue_path)
 
+    _silent_skill_detection(root)
     return {
         "slug": slug,
         "updated": True,
@@ -635,6 +636,8 @@ def _do_draft_issue(
         result["milestone_number"] = milestone_number
     if design_refs:
         result["design_refs"] = design_refs
+    # Silent skill detection — only surface when candidates found
+    _silent_skill_detection(root)
     return result
 
 
@@ -3511,6 +3514,247 @@ def _do_load_skill(name: str) -> dict:
     }
 
 
+# ── update_skill helpers ──────────────────────────────────────────────────────
+
+def _update_skills_registry(
+    root: Path,
+    name: str,
+    tier: str,
+    always_apply: bool,
+    triggers: list[str],
+) -> bool:
+    """Append a new skill row to the appropriate SKILLS.md registry atomically.
+
+    Refreshes _SKILL_REGISTRY in-memory cache after writing.
+    Returns True on success, False if the registry file doesn't exist.
+    """
+    from extensions.gh_management.github_planner.storage import _atomic_write
+
+    if tier == "plugin":
+        registry_path = Path(__file__).parent / "skills" / "SKILLS.md"
+    else:
+        registry_path = root / "hub_agents" / "skills" / "SKILLS.md"
+
+    if not registry_path.exists():
+        return False
+
+    text = registry_path.read_text(encoding="utf-8")
+    # Only add if not already present
+    if f"| {name} |" in text:
+        return True
+
+    # Find the last row of the on-demand table and append after it
+    new_row = f"| {name} | {name}.md | {str(always_apply).lower()} | {', '.join(triggers[:3])} |"
+    # Append before the "Load on demand" footer line if present
+    if "Load on demand:" in text:
+        text = text.replace("Load on demand:", f"{new_row}\n\nLoad on demand:")
+    else:
+        text = text.rstrip() + f"\n{new_row}\n"
+
+    _atomic_write(registry_path, text)
+
+    # Refresh in-memory cache
+    _SKILL_REGISTRY.pop(str(root), None)
+    return True
+
+
+def _do_update_skill_detection(root: Path) -> list[dict]:
+    """Scan for knowledge that should be extracted into skill files.
+
+    Scan 1: Command files — count non-skill-commented inline blocks > 50 lines.
+    Scan 2: Open issues — find domain keyword clusters (≥ 3 issues) with no skill.
+
+    Returns list of {source, candidate_description, domain}.
+    """
+    import re as _re
+    candidates = []
+    registry = _SKILL_REGISTRY.get(str(root)) or {}
+
+    # Scan 1: Command file bloat
+    commands_dirs = [
+        Path(__file__).parent.parent / "gh_implementation" / "commands",
+        Path(__file__).parent / "commands",
+    ]
+    for commands_dir in commands_dirs:
+        if not commands_dir.exists():
+            continue
+        for md_file in sorted(commands_dir.glob("*.md")):
+            text = md_file.read_text(encoding="utf-8")
+            # Split into blocks separated by SKILL comments or ---
+            blocks = _re.split(r"<!-- SKILL:.*?-->", text)
+            for block in blocks:
+                lines = [l for l in block.split("\n") if l.strip() and not l.strip().startswith("#")]
+                if len(lines) > 50:
+                    # Check if any skill covers this block's topics
+                    first_heading = _re.search(r"^#+\s+(.+)", block, _re.MULTILINE)
+                    topic = first_heading.group(1) if first_heading else "inline block"
+                    topic_lower = topic.lower()
+                    if not any(topic_lower in k or k in topic_lower for k in registry):
+                        candidates.append({
+                            "source": str(md_file.relative_to(Path(__file__).parent.parent.parent)),
+                            "candidate_description": f"Inline knowledge block: {topic} ({len(lines)} lines)",
+                            "domain": topic,
+                        })
+
+    # Scan 2: Issue domain keyword clusters
+    issues_dir = root / "hub_agents" / "issues"
+    if issues_dir.exists():
+        domain_counts: dict[str, int] = {}
+        for issue_file in issues_dir.glob("*.md"):
+            try:
+                text = issue_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for domain in ["auth", "crud", "search", "upload", "export", "notification", "payment", "analytics"]:
+                if domain in text.lower():
+                    domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+        for domain, count in domain_counts.items():
+            if count >= 3 and domain not in registry:
+                candidates.append({
+                    "source": "open issues",
+                    "candidate_description": f"Domain '{domain}' referenced in {count} issues but no skill exists",
+                    "domain": domain,
+                })
+
+    return candidates
+
+
+def _do_update_skill_create(
+    root: Path,
+    name: str,
+    description: str | None,
+    content_hints: list[str] | None,
+    source_doc: str | None,
+    dry_run: bool,
+) -> dict:
+    """Create a new skill file and update SKILLS.md registry.
+
+    If source_doc is provided, replaces the extracted block with a SKILL comment.
+    Returns {name, path, registry_updated, source_doc_updated, dry_run, _display}.
+    """
+    import re as _re_sk
+
+    skill_dir = Path(__file__).parent / "skills"
+    skill_path = skill_dir / f"{name}.md"
+
+    if not description:
+        description = f"Rules for {name}. Load when working on {name}-related tasks."
+
+    hints_text = ""
+    if content_hints:
+        hints_text = "\n".join(f"- {h}" for h in content_hints)
+
+    triggers = content_hints[:5] if content_hints else [name]
+    triggers_yaml = "[" + ", ".join(triggers) + "]"
+
+    skill_content = f"""---
+name: {name}
+description: {description}
+alwaysApply: false
+triggers: {triggers_yaml}
+---
+
+# {name}
+
+## When to Use
+
+- When working on {name}-related features
+- When implementing tasks tagged with: {', '.join(triggers[:3])}
+
+## When NOT to Use
+
+- For unrelated domains (use the relevant domain skill instead)
+- For trivial single-line changes
+
+## Rules / Knowledge
+
+{hints_text or f'<!-- Add rules for {name} here -->'}
+
+## Examples
+
+<!-- Add before/after or correct/incorrect examples here -->
+"""
+
+    source_doc_updated = None
+    if not dry_run:
+        from extensions.gh_management.github_planner.storage import _atomic_write
+        _atomic_write(skill_path, skill_content)
+        _update_skills_registry(root, name, "plugin", False, triggers)
+
+        # If source_doc provided, replace relevant block with SKILL comment
+        if source_doc:
+            source_path = Path(__file__).parent.parent.parent / source_doc
+            if source_path.exists():
+                source_text = source_path.read_text(encoding="utf-8")
+                # Replace first occurrence of a large content block with skill comment
+                replacement = f'\n<!-- SKILL: load_skill("{name}") — {description[:80]} -->\n'
+                # Simple heuristic: find a section heading that matches hints
+                for hint in (content_hints or []):
+                    pattern = _re_sk.compile(
+                        rf"(##\s+[^\n]*{_re_sk.escape(hint)}[^\n]*\n)(.{{50,}}?)(\n##|\Z)",
+                        _re_sk.IGNORECASE | _re_sk.DOTALL,
+                    )
+                    m = pattern.search(source_text)
+                    if m:
+                        from extensions.gh_management.github_planner.storage import _atomic_write as _aw
+                        source_text = source_text[:m.start(2)] + replacement + source_text[m.end(2):]
+                        _aw(source_path, source_text)
+                        source_doc_updated = source_doc
+                        break
+
+    return {
+        "name": name,
+        "path": str(skill_path.relative_to(Path(__file__).parent.parent.parent)),
+        "tier": "plugin",
+        "registry_updated": not dry_run,
+        "source_doc_updated": source_doc_updated,
+        "dry_run": dry_run,
+        "_display": f"{'[dry-run] ' if dry_run else ''}✅ **Skill created:** `{name}` — added to SKILLS.md registry",
+    }
+
+
+def _do_update_skill(
+    name: str | None,
+    description: str | None,
+    content_hints: list[str] | None,
+    source_doc: str | None,
+    dry_run: bool,
+) -> dict:
+    """MCP tool implementation for update_skill.
+
+    Detection mode (name=None): scan for candidates, return list.
+    Creation mode (name provided): create the skill file.
+    """
+    root = get_workspace_root()
+
+    if name is None:
+        # Detection mode
+        candidates = _do_update_skill_detection(root)
+        if not candidates:
+            return {"candidates": [], "message": "No skill candidates found — codebase is clean", "_display": ""}
+        return {
+            "candidates": candidates,
+            "message": f"Found {len(candidates)} skill candidate(s)",
+            "_display": f"🔍 **Skill candidates found:** {len(candidates)} — call update_skill(name=...) to create",
+        }
+    else:
+        # Creation mode
+        return _do_update_skill_create(root, name, description, content_hints, source_doc, dry_run)
+
+
+def _silent_skill_detection(root: Path) -> None:
+    """Run skill detection silently. No-op when no candidates found."""
+    try:
+        candidates = _do_update_skill_detection(root)
+        if candidates:
+            # Store candidates for next explicit update_skill() call
+            # (Don't prompt here — wait for explicit call or gh-plan Step 6 hook)
+            pass
+    except Exception:
+        pass
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -3961,6 +4205,29 @@ def register(mcp) -> None:
         Use findings to populate agent_workflow steps with explicit file and function references.
         """
         return _do_scan_issue_context(feature_areas)
+
+    @mcp.tool()
+    def update_skill(
+        name: str | None = None,
+        description: str | None = None,
+        content_hints: list[str] | None = None,
+        source_doc: str | None = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """Detect knowledge that should be a skill, or create a new skill file.
+
+        Detection mode (name=None): scans command files and open issues for
+        inline knowledge blocks > 50 lines or domain clusters with no skill.
+        Returns candidate list. Prompts user to create skill files.
+
+        Creation mode (name provided): creates skill file using create-skill.md
+        authoring rules, updates SKILLS.md registry, optionally extracts from
+        source_doc and replaces with <!-- SKILL: load_skill("name") --> comment.
+
+        Returns {name, path, registry_updated, source_doc_updated, dry_run, _display}
+        or {candidates, message} in detection mode.
+        """
+        return _do_update_skill(name, description, content_hints, source_doc, dry_run)
 
     # ── Efficient single-call repo analysis ────────────────────────────────────
 

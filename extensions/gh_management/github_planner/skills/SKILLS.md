@@ -23,6 +23,26 @@ Always-loaded skills (index only — no heavy knowledge):
 | create-user-readme-docs | create_user_readme_docs.md | false | Writing README.md, user docs, quickstart |
 | create-dev-readme-docs | create_dev_readme_docs.md | false | Writing CONTRIBUTING.md, dev docs, plugin authoring |
 
+## Commands (non-skill entry points)
+
+| Command | File | Notes |
+|---------|------|-------|
+| /th:gh-docs | commands/gh-docs.md | Post-implementation doc writer — create or update README.md + CONTRIBUTING.md, then PR or push. Lives in github_planner (no dedicated extension). |
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

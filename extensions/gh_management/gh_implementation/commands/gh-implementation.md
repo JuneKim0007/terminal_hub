@@ -185,6 +185,13 @@ local issue file per the `delete_local_issue_on_gh` flag (default: true).
 To override deletion for this issue only: `unload_active_issue(delete_file=False)`.
 To change the default for all future issues: use `/th:gh-implementation/session-knowledge`.
 
+**After cleanup:** call `list_issues`. If the result is empty (no remaining open issues), prompt:
+
+> "All issues are closed. Want me to write or update docs for users and devs? (`/th:gh-docs`)"
+
+- "yes" → invoke `/th:gh-docs`
+- "no" → end the session
+
 ---
 
 ## Sub-commands

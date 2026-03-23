@@ -46,6 +46,11 @@
       "command": "/th:current-stat",
       "aliases": ["status", "what's loaded", "show state", "current stat"],
       "use_when": "Quick snapshot of what caches and docs are currently loaded"
+    },
+    {
+      "command": "/th:gh-docs",
+      "aliases": ["write docs", "update docs", "generate docs", "docs for users", "docs for devs"],
+      "use_when": "Post-implementation — create or update README.md and CONTRIBUTING.md, then open a PR or push"
     }
   ],
   "unload_policy": {

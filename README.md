@@ -216,6 +216,17 @@ export GITHUB_TOKEN=ghp_...
 
 ---
 
+## Documentation
+
+Full user documentation is in [docs/user/](docs/user/):
+
+- [Installation](docs/user/installation.md) — install and configure terminal-hub
+- [Quick Start](docs/user/quick-start.md) — plan and implement your first issue in 5 minutes
+- [Slash Commands](docs/user/commands.md) — full reference for all `/th:` commands
+- [Configuration](docs/user/configuration.md) — environment variables and workspace layout
+
+---
+
 ## Requirements
 
 - Python 3.10+

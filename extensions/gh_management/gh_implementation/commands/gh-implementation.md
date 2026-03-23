@@ -183,7 +183,6 @@ Call `unload_active_issue()` — this is **mandatory**. It clears session state 
 local issue file per the `delete_local_issue_on_gh` flag (default: true).
 
 To override deletion for this issue only: `unload_active_issue(delete_file=False)`.
-To change the default for all future issues: use `/th:gh-implementation/session-knowledge`.
 
 **After cleanup:** call `list_issues`. If the result is empty (no remaining open issues), prompt:
 
@@ -199,4 +198,3 @@ To change the default for all future issues: use `/th:gh-implementation/session-
 | Command | Does |
 |---------|------|
 | `/th:gh-implementation/implement` | Run Steps 3–10 for a specific issue |
-| `/th:gh-implementation/session-knowledge` | View or change session flags |

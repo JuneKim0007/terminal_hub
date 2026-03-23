@@ -13,11 +13,6 @@
       "aliases": ["implement issue", "work on issue", "pick up issue"],
       "use_when": "Run the full implementation flow for a specific issue"
     },
-    {
-      "command": "/th:gh-implementation/session-knowledge",
-      "aliases": ["session config", "what is my session config", "change automatic to false", "session knowledge"],
-      "use_when": "View or change session-scoped behaviour flags (auto-push, auto-close, auto-delete local issues)"
-    }
   ],
   "interface": {
     "unloads_on_entry": ["gh_planner_analysis", "gh_planner_session_header", "gh_planner_file_tree"],

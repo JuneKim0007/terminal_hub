@@ -81,3 +81,7 @@ QUICKSTART.md        user-facing quick start
 
 See `README.md` → "Writing an extension" for the plugin API contract.
 See `extensions/github_planner/` as the reference implementation.
+
+For full detail:
+- [Adding a Plugin](docs/dev/adding-a-plugin.md) — complete step-by-step guide with working example
+- [Testing](docs/dev/testing.md) — test patterns, coverage gate, and how to run the test suite

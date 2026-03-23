@@ -21,6 +21,8 @@ Always-loaded skills (index only — no heavy knowledge):
 | intent-expansion | intent-expansion-skill.md | false | Expanding vague intent before scanning |
 | create-skill | create-skill.md | false | Creating new skill files, skill authoring |
 | create-user-readme-docs | create_user_readme_docs.md | false | Writing README.md, user docs, quickstart |
+| create-dev-readme-docs | create_dev_readme_docs.md | false | Writing CONTRIBUTING.md, dev docs, plugin authoring |
+
 
 
 

@@ -16,5 +16,8 @@ Always-loaded skills (index only — no heavy knowledge):
 | implementing | implementing.md | false | Implementing a GitHub issue |
 | design-principles | design-principles.md | false | Updating project docs after shipping |
 | repo-analysis | repo-analysis.md | false | Running the repo analyzer |
+| agent-workflow | agent-workflow-skill.md | false | Writing agent_workflow steps (zero-context rules) |
+| workflow | workflow-skill.md | false | Writing ## Workflow body section |
+| intent-expansion | intent-expansion-skill.md | false | Expanding vague intent before scanning |
 
 Load on demand: `load_skill("name")` — only load when the skill is actually needed.

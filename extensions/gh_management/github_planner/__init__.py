@@ -334,6 +334,13 @@ def _do_generate_issue_workflows(slug: str) -> dict:
         "verify: all tests pass, coverage ≥ 80%, acceptance criteria met",
     ]
 
+    # If intent-expansion skill is loaded, prepend expanded patterns hint
+    registry = _SKILL_REGISTRY.get(str(root)) or {}
+    if "intent-expansion" in registry:
+        workflow_steps = [
+            "expand-intent: apply intent-expansion skill — map to domain, apply conventions, filter by stack + design principles",
+        ] + workflow_steps
+
     agent_workflow_text = (
         f"Orient → read issue #{slug} carefully. "
         f"Change type: {change_type}. "

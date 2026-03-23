@@ -41,7 +41,7 @@ pyproject.toml
   → requires-python: ">=3.10"
   → dependencies: mcp>=1.0.0, httpx>=0.27.0, pyyaml>=6.0
   → entry_point: "terminal-hub = terminal_hub.__main__:main"
-  → license: MIT
+  → license: Custom — free to use, original work by JuneKim0007
   → PyPI: https://pypi.org/project/terminal-hub/
 ```
 
@@ -153,7 +153,7 @@ terminal-hub is a **medium project** (Python CLI + MCP server, 2 active plugins,
     See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, plugin authoring, and contribution guidelines.
 
 11. ## License
-    MIT — see [LICENSE](LICENSE).
+    See [LICENSE](LICENSE) — free to use, original work by JuneKim0007.
 ```
 
 ---
@@ -218,7 +218,7 @@ Link from README.md `## Slash Commands Reference` → `docs/user/commands.md` fo
 ```markdown
 [![PyPI version](https://img.shields.io/pypi/v/terminal-hub.svg)](https://pypi.org/project/terminal-hub/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-free%20to%20use-blue.svg)](LICENSE)
 [![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)]()
 ```
 

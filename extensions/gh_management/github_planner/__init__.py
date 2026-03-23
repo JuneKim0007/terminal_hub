@@ -2882,7 +2882,7 @@ def _do_apply_unload_policy(command: str) -> dict:
     # Command prompt path
     cmd_file = command.replace("/", "/") + ".md"
     cmd_path = _COMMANDS_DIR / cmd_file
-    prompt_line = f"  Prompt: extensions/github_planner/commands/{cmd_file}" if cmd_path.exists() else ""
+    prompt_line = f"  Prompt: extensions/gh_management/github_planner/commands/{cmd_file}" if cmd_path.exists() else ""
 
     unloaded_block = "\n".join(unloaded_lines) if unloaded_lines else "  (nothing to clear)"
     kept_block = "\n".join(kept_lines) if kept_lines else "  (none)"

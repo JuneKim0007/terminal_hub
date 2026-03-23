@@ -4,7 +4,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-free%20to%20use-lightgrey.svg)](LICENSE)
 
-_**”Conversation is the flow”**_ is the core philosophy of this backend Claude layer.
+**NOT YET DEPLOYED NEITHER ON MARKETPLACE OR PYPI!!**
+_**”Conversation is the flow”**_ is the design principle of this Claude layer.
 
 The project aims to simplify developer workflows by enabling conversation-driven automation, where tasks like planning, implementation, and tooling are handled through natural interaction instead of manual orchestration.
 

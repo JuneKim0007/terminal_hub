@@ -220,7 +220,7 @@ def test_register_mcp_write_plugin_file(tmp_path):
     ext_root = tmp_path / "extensions"
     ext_root.mkdir()
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
-    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path), \
          patch("extensions.plugin_creator._EXTENSIONS_ROOT", ext_root), \
          patch("extensions.plugin_creator._TESTS_ROOT", tmp_path / "tests"):
         server = create_server()
@@ -238,7 +238,7 @@ def test_register_mcp_write_test_file(tmp_path):
     tests_root = tmp_path / "tests"
     tests_root.mkdir()
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
-    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path), \
          patch("extensions.plugin_creator._TESTS_ROOT", tests_root):
         server = create_server()
         result = asyncio.run(server._tool_manager.call_tool(
@@ -255,7 +255,7 @@ def test_register_mcp_validate_plugin(tmp_path):
     ext_root = tmp_path / "extensions"
     ext_root.mkdir()
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
-    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path), \
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path), \
          patch("extensions.plugin_creator._EXTENSIONS_ROOT", ext_root):
         server = create_server()
         result = asyncio.run(server._tool_manager.call_tool(

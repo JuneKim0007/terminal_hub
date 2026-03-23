@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from terminal_hub.server import create_server
-from extensions.github_planner.storage import write_issue_file, STATUS_PENDING
+from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
 
 
 def call(server, tool_name, args):
@@ -34,10 +34,10 @@ def test_create_milestone_success(workspace):
     mock_gh.create_milestone.return_value = {
         "number": 1, "title": "Core Auth", "description": "Users can log in", "open_issues": 0
     }
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, None)), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, None)), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         result = call(server, "create_milestone", {"title": "Core Auth", "description": "Users can log in"})
     assert result["number"] == 1
@@ -47,16 +47,16 @@ def test_create_milestone_success(workspace):
 
 def test_create_milestone_cached(workspace):
     """Second create_milestone call with same title should NOT call API again if cached."""
-    from extensions.github_planner import _MILESTONE_CACHE
+    from extensions.gh_management.github_planner import _MILESTONE_CACHE
     _MILESTONE_CACHE["o/r"] = [{"number": 1, "title": "Core Auth", "description": "...", "open_issues": 0}]
 
     mock_gh = _mock_gh()
     mock_gh.create_milestone.return_value = {"number": 1, "title": "Core Auth", "description": "...", "open_issues": 0}
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, None)), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, None)), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         call(server, "create_milestone", {"title": "Core Auth"})
 
@@ -66,12 +66,12 @@ def test_create_milestone_cached(workspace):
 # ── list_milestones ───────────────────────────────────────────────────────────
 
 def test_list_milestones_uses_cache(workspace):
-    from extensions.github_planner import _MILESTONE_CACHE
+    from extensions.gh_management.github_planner import _MILESTONE_CACHE
     _MILESTONE_CACHE["o/r"] = [{"number": 1, "title": "M1", "description": "desc", "open_issues": 0}]
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         result = call(server, "list_milestones", {})
 
@@ -81,17 +81,17 @@ def test_list_milestones_uses_cache(workspace):
 
 
 def test_list_milestones_fetches_when_no_cache(workspace):
-    from extensions.github_planner import _MILESTONE_CACHE
+    from extensions.gh_management.github_planner import _MILESTONE_CACHE
     _MILESTONE_CACHE.clear()
     mock_gh = _mock_gh()
     mock_gh.list_milestones.return_value = [
         {"number": 1, "title": "M1", "description": "desc", "open_issues": 2}
     ]
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, None)), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, None)), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         result = call(server, "list_milestones", {})
 
@@ -103,7 +103,7 @@ def test_list_milestones_fetches_when_no_cache(workspace):
 # ── assign_milestone ──────────────────────────────────────────────────────────
 
 def test_assign_milestone_updates_frontmatter(workspace):
-    from extensions.github_planner import _MILESTONE_CACHE
+    from extensions.gh_management.github_planner import _MILESTONE_CACHE
     _MILESTONE_CACHE["o/r"] = [{"number": 2, "title": "Posting", "description": "...", "open_issues": 0}]
 
     write_issue_file(
@@ -111,9 +111,9 @@ def test_assign_milestone_updates_frontmatter(workspace):
         assignees=[], labels=[], created_at=date(2026, 3, 18), status=STATUS_PENDING,
     )
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         result = call(server, "assign_milestone", {"slug": "my-issue", "milestone_number": 2})
 
@@ -121,7 +121,7 @@ def test_assign_milestone_updates_frontmatter(workspace):
     assert result["milestone_title"] == "Posting"
     assert result["github_assigned"] is False  # no issue_number in front matter
 
-    from extensions.github_planner.storage import read_issue_frontmatter
+    from extensions.gh_management.github_planner.storage import read_issue_frontmatter
     fm = read_issue_frontmatter(workspace, "my-issue")
     assert fm["milestone_number"] == 2
     assert fm["milestone_title"] == "Posting"
@@ -129,9 +129,9 @@ def test_assign_milestone_updates_frontmatter(workspace):
 
 
 def test_assign_milestone_missing_issue_returns_error(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         result = call(server, "assign_milestone", {"slug": "no-such", "milestone_number": 1})
     assert result["error"] == "issue_not_found"
@@ -140,7 +140,7 @@ def test_assign_milestone_missing_issue_returns_error(workspace):
 # ── draft_issue with milestone_number ────────────────────────────────────────
 
 def test_draft_issue_with_milestone_stores_in_frontmatter(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "draft_issue", {
             "title": "Add login",
@@ -148,6 +148,6 @@ def test_draft_issue_with_milestone_stores_in_frontmatter(workspace):
             "milestone_number": 1,
         })
 
-    from extensions.github_planner.storage import read_issue_frontmatter
+    from extensions.gh_management.github_planner.storage import read_issue_frontmatter
     fm = read_issue_frontmatter(workspace, result["slug"])
     assert fm["milestone_number"] == 1

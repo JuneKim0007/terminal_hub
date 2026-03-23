@@ -2,7 +2,7 @@
   "name": "github_planner",
   "version": "1.1",
   "description": "GitHub issue planning, analysis, and project context management",
-  "entry": "extensions.github_planner",
+  "entry": "extensions.gh_management.github_planner",
   "entry_command": "gh-plan.md",
   "commands_dir": "commands",
   "commands": [

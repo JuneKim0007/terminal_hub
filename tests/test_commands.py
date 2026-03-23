@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 import pytest
-from extensions.github_planner.commands import endpoint, _CMDS
+from extensions.gh_management.github_planner.commands import endpoint, _CMDS
 
 
 def test_endpoint_returns_method_and_path():
@@ -35,7 +35,7 @@ def test_endpoint_path_is_formattable():
 
 
 def test_hub_commands_json_is_valid():
-    path = Path(__file__).parent.parent / "extensions" / "github_planner" / "hub_commands.json"
+    path = Path(__file__).parent.parent / "extensions" / "gh_management" / "github_planner" / "hub_commands.json"
     data = json.loads(path.read_text())
     assert "github" in data
     assert "gh_cli" in data

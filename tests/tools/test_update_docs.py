@@ -15,7 +15,7 @@ def workspace(tmp_path):
 
 
 def test_update_project_description_writes_file(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_description", {
             "title": "My Project",
@@ -31,14 +31,14 @@ def test_update_project_description_writes_file(workspace):
 
 
 def test_update_project_description_returns_relative_path(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_description", {"title": "X", "description": "desc"})
     assert "hub_agents/extensions/gh_planner/project_summary.md" in result["file"]
 
 
 def test_update_architecture_writes_file(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_architecture", {
             "overview": "Layered architecture with routes, services, and storage.",
@@ -54,7 +54,7 @@ def test_update_architecture_writes_file(workspace):
 
 
 def test_update_docs_overwrite_preserves_latest(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         call(server, "update_project_description", {"title": "V1", "description": "first"})
         call(server, "update_project_description", {"title": "V2", "description": "second"})
@@ -67,7 +67,7 @@ def test_update_docs_overwrite_preserves_latest(workspace):
 # ── set_preference ────────────────────────────────────────────────────────────
 
 def test_set_preference_confirm_arch_changes_true(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "set_preference", {"key": "confirm_arch_changes", "value": True})
     assert result["key"] == "confirm_arch_changes"
@@ -76,7 +76,7 @@ def test_set_preference_confirm_arch_changes_true(workspace):
 
 
 def test_set_preference_confirm_arch_changes_false(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "set_preference", {"key": "confirm_arch_changes", "value": False})
     assert result["value"] is False
@@ -85,14 +85,14 @@ def test_set_preference_confirm_arch_changes_false(workspace):
 
 def test_set_preference_persisted_to_config(workspace):
     from terminal_hub.config import read_preference
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         call(server, "set_preference", {"key": "confirm_arch_changes", "value": True})
     assert read_preference(workspace, "confirm_arch_changes") is True
 
 
 def test_set_preference_unknown_key_returns_error(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "set_preference", {"key": "nonexistent", "value": True})
     assert result["error"] == "unknown_preference"
@@ -100,7 +100,7 @@ def test_set_preference_unknown_key_returns_error(workspace):
 
 
 def test_set_preference_not_initialized_returns_needs_init(tmp_path):
-    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
         result = call(server, "set_preference", {"key": "confirm_arch_changes", "value": True})
     assert result["status"] == "needs_init"
@@ -109,11 +109,11 @@ def test_set_preference_not_initialized_returns_needs_init(tmp_path):
 # ── create_github_repo ────────────────────────────────────────────────────────
 
 def test_create_github_repo_success(workspace):
-    from extensions.github_planner.client import GitHubError
+    from extensions.gh_management.github_planner.client import GitHubError
     fake_response = {"full_name": "alice/my-app", "html_url": "https://github.com/alice/my-app"}
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.resolve_token", return_value=("tok", object())), \
-         patch("extensions.github_planner.create_user_repo", return_value=fake_response):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.resolve_token", return_value=("tok", object())), \
+         patch("extensions.gh_management.github_planner.create_user_repo", return_value=fake_response):
         server = create_server()
         result = call(server, "create_github_repo", {"name": "my-app", "description": "A test app", "private": False})
     assert result["success"] is True
@@ -125,8 +125,8 @@ def test_create_github_repo_no_auth_returns_error(workspace):
     from unittest.mock import MagicMock
     no_token_source = MagicMock()
     no_token_source.suggestion.return_value = "No auth."
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.resolve_token", return_value=(None, no_token_source)):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.resolve_token", return_value=(None, no_token_source)):
         server = create_server()
         result = call(server, "create_github_repo", {"name": "x", "description": "y", "private": True})
     assert result["error"] == "github_unavailable"
@@ -134,10 +134,10 @@ def test_create_github_repo_no_auth_returns_error(workspace):
 
 
 def test_create_github_repo_api_error_returns_error(workspace):
-    from extensions.github_planner.client import GitHubError
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.resolve_token", return_value=("tok", object())), \
-         patch("extensions.github_planner.create_user_repo", side_effect=GitHubError("name taken", error_code="validation_failed")):
+    from extensions.gh_management.github_planner.client import GitHubError
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.resolve_token", return_value=("tok", object())), \
+         patch("extensions.gh_management.github_planner.create_user_repo", side_effect=GitHubError("name taken", error_code="validation_failed")):
         server = create_server()
         result = call(server, "create_github_repo", {"name": "taken", "description": "d", "private": True})
     assert result["error"] == "validation_failed"
@@ -145,7 +145,7 @@ def test_create_github_repo_api_error_returns_error(workspace):
 
 
 def test_create_github_repo_not_initialized_returns_needs_init(tmp_path):
-    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
         result = call(server, "create_github_repo", {"name": "x", "description": "y", "private": True})
     assert result["status"] == "needs_init"
@@ -154,7 +154,7 @@ def test_create_github_repo_not_initialized_returns_needs_init(tmp_path):
 # ── update_project_summary_section ────────────────────────────────────────────
 
 def test_update_project_summary_section_creates_file(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
@@ -174,7 +174,7 @@ def test_update_project_summary_section_replaces_existing(workspace):
     (docs_dir / "project_summary.md").write_text(
         "# Project\n\n## Milestones\n\nOld content\n\n## Design Principles\n\n- principle\n"
     )
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
@@ -191,7 +191,7 @@ def test_update_project_summary_section_appends_new(workspace):
     docs_dir = workspace / "hub_agents" / "extensions" / "gh_planner"
     docs_dir.mkdir(parents=True)
     (docs_dir / "project_summary.md").write_text("# Project\n\n**Goal:** Build stuff\n")
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
@@ -204,7 +204,7 @@ def test_update_project_summary_section_appends_new(workspace):
 
 
 def test_update_project_summary_section_empty_name_returns_error(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "",
@@ -214,7 +214,7 @@ def test_update_project_summary_section_empty_name_returns_error(workspace):
 
 
 def test_update_project_summary_section_empty_content_returns_error(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "update_project_summary_section", {
             "section_name": "Milestones",
@@ -225,10 +225,10 @@ def test_update_project_summary_section_empty_content_returns_error(workspace):
 # ── apply_unload_policy enriched display (#138) ───────────────────────────────
 
 def test_apply_unload_policy_display_has_emoji_lines(workspace):
-    from extensions.github_planner import _ANALYSIS_CACHE
+    from extensions.gh_management.github_planner import _ANALYSIS_CACHE
     _ANALYSIS_CACHE["o/r"] = {"data": True}
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "gh-plan"})
 
@@ -243,7 +243,7 @@ def test_apply_unload_policy_display_has_emoji_lines(workspace):
 
 def test_read_doc_file_migrates_legacy_flat_path(workspace):
     """Legacy hub_agents/project_description.md is migrated to namespaced path on read."""
-    from extensions.github_planner.storage import read_doc_file, write_doc_file
+    from extensions.gh_management.github_planner.storage import read_doc_file, write_doc_file
     legacy = workspace / "hub_agents" / "project_description.md"
     legacy.parent.mkdir(parents=True, exist_ok=True)
     legacy.write_text("old content")

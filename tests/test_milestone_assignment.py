@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from terminal_hub.server import create_server
-from extensions.github_planner.storage import STATUS_PENDING, write_issue_file
+from extensions.gh_management.github_planner.storage import STATUS_PENDING, write_issue_file
 
 
 def call(server, tool_name, args):
@@ -32,7 +32,7 @@ def _mock_gh(number=42, url="https://github.com/o/r/issues/42"):
 
 def test_submit_with_missing_milestone_returns_error(workspace):
     """submit_issue returns milestone_not_found when milestone_number not in cache."""
-    from extensions.github_planner import _MILESTONE_CACHE
+    from extensions.gh_management.github_planner import _MILESTONE_CACHE
 
     # Cache is warm but milestone #5 is NOT in it
     _MILESTONE_CACHE["o/r"] = [{"number": 1, "title": "M1", "description": "", "open_issues": 0}]
@@ -44,10 +44,10 @@ def test_submit_with_missing_milestone_returns_error(workspace):
     )
 
     mock_gh = _mock_gh()
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, None)), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, None)), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         result = call(server, "submit_issue", {"slug": "5"})
 
@@ -66,7 +66,7 @@ def test_submit_with_missing_milestone_returns_error(workspace):
 
 def test_submit_with_valid_milestone_proceeds(workspace):
     """submit_issue proceeds normally when milestone is present in cache."""
-    from extensions.github_planner import _MILESTONE_CACHE
+    from extensions.gh_management.github_planner import _MILESTONE_CACHE
 
     # Milestone #2 IS in the cache
     _MILESTONE_CACHE["o/r"] = [{"number": 2, "title": "M2", "description": "", "open_issues": 0}]
@@ -78,10 +78,10 @@ def test_submit_with_valid_milestone_proceeds(workspace):
     )
 
     mock_gh = _mock_gh(number=10)
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, None)), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, None)), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         server = create_server()
         result = call(server, "submit_issue", {"slug": "10"})
 

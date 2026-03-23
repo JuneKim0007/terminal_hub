@@ -1,7 +1,7 @@
 """Shared pytest fixtures for the terminal-hub test suite."""
 import pytest
 
-from extensions.github_planner import (
+from extensions.gh_management.github_planner import (
     _ANALYSIS_CACHE,
     _FILE_TREE_CACHE,
     _LABEL_CACHE,
@@ -10,7 +10,7 @@ from extensions.github_planner import (
     _SESSION_HEADER_CACHE,
     _invalidate_repo_cache,
 )
-from extensions.github_planner.auth import invalidate_token_cache
+from extensions.gh_management.github_planner.auth import invalidate_token_cache
 
 
 @pytest.fixture(autouse=True)

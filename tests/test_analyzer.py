@@ -1,10 +1,10 @@
-"""Tests for extensions.github_planner.analyzer — pure functions and I/O helpers."""
+"""Tests for extensions.gh_management.github_planner.analyzer — pure functions and I/O helpers."""
 import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 import pytest
-from extensions.github_planner.analyzer import (
+from extensions.gh_management.github_planner.analyzer import (
     extract_label_patterns, extract_assignee_patterns, extract_body_structure,
     extract_title_prefixes, process_snapshot, load_snapshot, write_snapshot,
     snapshot_age_hours, summarize_for_prompt, _strip_code_blocks,
@@ -200,7 +200,7 @@ def test_summarize_for_prompt_partial_data():
 
 def test_summarize_for_prompt_exception_returns_empty():
     """summarize_for_prompt returns '' when an exception is raised (lines 185-186)."""
-    import extensions.github_planner.analyzer as ana
+    import extensions.gh_management.github_planner.analyzer as ana
     # Pass a snap that makes the function crash at repr/str step
     bad_snap = MagicMock()
     bad_snap.__bool__ = MagicMock(side_effect=RuntimeError("boom"))

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from extensions.github_planner import (
+from extensions.gh_management.github_planner import (
     _FILE_TREE_CACHE,
     _build_file_tree,
     _do_get_file_tree,
@@ -110,7 +110,7 @@ def test_build_file_tree_no_ignored_in_flat(populated):
 # ── _do_get_file_tree ─────────────────────────────────────────────────────────
 
 def test_do_get_file_tree_returns_tree(populated):
-    with patch("extensions.github_planner.get_workspace_root", return_value=populated):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=populated):
         result = _do_get_file_tree()
     assert "tree" in result
     assert "flat_index" in result
@@ -118,13 +118,13 @@ def test_do_get_file_tree_returns_tree(populated):
 
 
 def test_do_get_file_tree_writes_disk_cache(populated):
-    with patch("extensions.github_planner.get_workspace_root", return_value=populated):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=populated):
         _do_get_file_tree()
     assert _file_tree_cache_path(populated).exists()
 
 
 def test_do_get_file_tree_uses_memory_cache(populated):
-    with patch("extensions.github_planner.get_workspace_root", return_value=populated):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=populated):
         r1 = _do_get_file_tree()
         # Delete the disk cache — second call must still succeed from memory
         _file_tree_cache_path(populated).unlink()
@@ -133,7 +133,7 @@ def test_do_get_file_tree_uses_memory_cache(populated):
 
 
 def test_do_get_file_tree_refresh_bypasses_cache(populated):
-    with patch("extensions.github_planner.get_workspace_root", return_value=populated):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=populated):
         r1 = _do_get_file_tree()
         # Poison in-memory cache with a fake timestamp so we can detect if refresh ignores it
         _FILE_TREE_CACHE["fetched_at"] = "2000-01-01T00:00:00+00:00"
@@ -143,7 +143,7 @@ def test_do_get_file_tree_refresh_bypasses_cache(populated):
 
 
 def test_do_get_file_tree_reads_disk_cache_when_memory_empty(populated):
-    with patch("extensions.github_planner.get_workspace_root", return_value=populated):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=populated):
         r1 = _do_get_file_tree()
         _FILE_TREE_CACHE.clear()
         r2 = _do_get_file_tree()
@@ -153,7 +153,7 @@ def test_do_get_file_tree_reads_disk_cache_when_memory_empty(populated):
 # ── MCP tool registration ─────────────────────────────────────────────────────
 
 def test_get_file_tree_tool_registered(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
     names = {t.name for t in server._tool_manager.list_tools()}
     assert "get_file_tree" in names
@@ -162,7 +162,7 @@ def test_get_file_tree_tool_registered(workspace):
 def test_get_file_tree_tool_returns_tree(populated):
     (populated / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
     (populated / "hub_agents" / "config.yaml").write_text("mode: local\n")
-    with patch("extensions.github_planner.get_workspace_root", return_value=populated):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=populated):
         server = create_server()
         result = call(server, "get_file_tree", {})
     assert "flat_index" in result

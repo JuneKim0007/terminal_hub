@@ -50,8 +50,8 @@ Coverage gate: **80% minimum** (configured in `pyproject.toml`). The gate runs o
 
 - All tests live under `tests/`
 - Use `tmp_path` pytest fixture for isolated workspace setup
-- Patch `extensions.github_planner.get_workspace_root` for tests needing a workspace root
-- Patch `extensions.github_planner._get_github_client` for tests that would hit GitHub API
+- Patch `extensions.gh_management.github_planner.get_workspace_root` for tests needing a workspace root
+- Patch `extensions.gh_management.github_planner._get_github_client` for tests that would hit GitHub API
 - MCP tool tests use `server._tool_manager.call_tool(name, args)` via `asyncio.run()`
 - Clear module-level caches in `autouse` fixtures: `_ANALYSIS_CACHE`, `_PROJECT_DOCS_CACHE`, `_FILE_TREE_CACHE`, `_SESSION_HEADER_CACHE`
 

@@ -41,8 +41,8 @@ def _mock_gh():
 
 def test_run_analyzer_success_writes_snapshot(workspace):
     """Lines 294-341: successful run writes analyzer_snapshot.json."""
-    with patch("extensions.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -55,8 +55,8 @@ def test_run_analyzer_success_writes_snapshot(workspace):
 
 def test_run_analyzer_success_display_contains_repo(workspace):
     """Lines 326-335: display string mentions repo name."""
-    with patch("extensions.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -65,8 +65,8 @@ def test_run_analyzer_success_display_contains_repo(workspace):
 
 def test_run_analyzer_success_snapshot_file_in_result(workspace):
     """Lines 337-341: result contains snapshot_file path."""
-    with patch("extensions.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner._get_github_client", return_value=(_mock_gh(), "")), \
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -78,8 +78,8 @@ def test_run_analyzer_success_snapshot_file_in_result(workspace):
 
 def test_run_analyzer_no_auth_returns_error(workspace):
     """Lines 302-303: GitHub client unavailable → github_unavailable error."""
-    with patch("extensions.github_planner._get_github_client", return_value=(None, "No auth.")), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner._get_github_client", return_value=(None, "No auth.")), \
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -91,7 +91,7 @@ def test_run_analyzer_no_auth_returns_error(workspace):
 
 def test_run_analyzer_not_initialized_returns_needs_init(tmp_path):
     """Lines 297-299: hub_agents/ absent → needs_init status."""
-    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -105,8 +105,8 @@ def test_run_analyzer_github_api_error_returns_github_error(workspace):
     mock_gh = _mock_gh()
     mock_gh.list_issues.side_effect = Exception("API down")
 
-    with patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -119,8 +119,8 @@ def test_run_analyzer_github_list_labels_error_returns_github_error(workspace):
     mock_gh = _mock_gh()
     mock_gh.list_labels.side_effect = RuntimeError("labels endpoint down")
 
-    with patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "run_analyzer")
 
@@ -131,7 +131,7 @@ def test_run_analyzer_github_list_labels_error_returns_github_error(workspace):
 
 def test_run_analyzer_tool_is_registered(workspace):
     """Line 451: run_analyzer is available on the server tool list."""
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
     tool_names = [t.name for t in server._tool_manager.list_tools()]
     assert "run_analyzer" in tool_names
@@ -142,7 +142,7 @@ def test_run_analyzer_tool_is_registered(workspace):
 def test_load_snapshot_migrates_legacy_flat_path(tmp_path):
     """load_snapshot reads legacy hub_agents/analyzer_snapshot.json and moves it."""
     import json as json_mod
-    from extensions.github_planner.analyzer import load_snapshot, _snapshot_path
+    from extensions.gh_management.github_planner.analyzer import load_snapshot, _snapshot_path
     (tmp_path / "hub_agents").mkdir()
     old_path = tmp_path / "hub_agents" / "analyzer_snapshot.json"
     snap = {"analyzed_at": "2026-01-01T00:00:00+00:00", "repo": "o/r",
@@ -159,7 +159,7 @@ def test_load_snapshot_migrates_legacy_flat_path(tmp_path):
 def test_load_snapshot_uses_new_path_when_both_exist(tmp_path):
     """New path takes priority over legacy when both exist."""
     import json as json_mod
-    from extensions.github_planner.analyzer import load_snapshot, _snapshot_path
+    from extensions.gh_management.github_planner.analyzer import load_snapshot, _snapshot_path
     (tmp_path / "hub_agents").mkdir()
     new_path = _snapshot_path(tmp_path)
     new_path.parent.mkdir(parents=True)

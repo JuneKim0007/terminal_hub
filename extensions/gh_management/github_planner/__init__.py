@@ -296,6 +296,65 @@ def _do_verify_auth() -> dict:
     }
 
 
+def _do_scan_issue_context(feature_areas: list[str]) -> dict:
+    """Scan project_detail.md sections for code references relevant to feature_areas.
+
+    For each area, calls _do_lookup_feature_section and parses the returned section
+    text for function/class definitions, file path patterns, and warning comments.
+
+    Returns:
+        {
+          reusable: [{name, path, description}],
+          extend:   [{name, path, what}],
+          patterns: [str],
+          pitfalls: [str],
+          sections_scanned: [str],
+        }
+    """
+    import re as _re
+
+    findings: dict = {
+        "reusable": [],
+        "extend": [],
+        "patterns": [],
+        "pitfalls": [],
+        "sections_scanned": [],
+    }
+
+    for area in feature_areas:
+        result = _do_lookup_feature_section(area)
+        section_text: str = result.get("section") or ""
+        if not section_text:
+            continue
+
+        findings["sections_scanned"].append(result.get("feature") or area)
+
+        # Extract function/class definitions → reusable candidates
+        for m in _re.finditer(r"(?:def|class)\s+(\w+)", section_text):
+            name = m.group(1)
+            # Look for file path near this match
+            ctx_start = max(0, m.start() - 120)
+            ctx_end = min(len(section_text), m.end() + 120)
+            context = section_text[ctx_start:ctx_end]
+            path_m = _re.search(r"[\w./\-]+\.py", context)
+            path = path_m.group(0) if path_m else ""
+            findings["reusable"].append({"name": name, "path": path, "description": ""})
+
+        # Extract file path references (src/, tests/, extensions/)
+        for m in _re.finditer(r"(?:src|tests|extensions)/[\w./\-]+\.py", section_text):
+            path = m.group(0)
+            if not any(r.get("path") == path for r in findings["reusable"]):
+                findings["patterns"].append(f"See: {path}")
+
+        # Extract WARNING / NOTE / pitfall lines
+        for m in _re.finditer(r"(?:warning|note|pitfall|caution|watch)[:\s]+(.+)", section_text, _re.IGNORECASE):
+            pitfall = m.group(1).strip()[:200]
+            if pitfall:
+                findings["pitfalls"].append(pitfall)
+
+    return findings
+
+
 def _do_generate_issue_workflows(slug: str) -> dict:
     """Append agent + program workflow scaffolding to an existing issue file (#88).
 
@@ -341,6 +400,17 @@ def _do_generate_issue_workflows(slug: str) -> dict:
             "expand-intent: apply intent-expansion skill — map to domain, apply conventions, filter by stack + design principles",
         ] + workflow_steps
 
+    # Scan internal context: use title words as feature areas
+    import re as _re_wf
+    title_keywords = [w for w in _re_wf.split(r"[\s:/\-]+", title) if len(w) > 3]
+    context_findings = _do_scan_issue_context(title_keywords[:4])  # cap to 4 areas
+    affected_components_text = "<!-- Fill in: list files/modules that need to change -->"
+    if context_findings.get("reusable") or context_findings.get("patterns"):
+        refs = [f"- {r['name']} ({r['path']})" for r in context_findings["reusable"] if r.get("name")]
+        refs += [f"- {p}" for p in context_findings["patterns"]]
+        if refs:
+            affected_components_text = "\n".join(refs[:8])  # cap to 8 refs
+
     agent_workflow_text = (
         f"Orient → read issue #{slug} carefully. "
         f"Change type: {change_type}. "
@@ -378,7 +448,7 @@ def _do_generate_issue_workflows(slug: str) -> dict:
 **Change type:** {change_type}
 
 ### Affected components
-<!-- Fill in: list files/modules that need to change -->
+{affected_components_text}
 
 ### Test plan
 - [ ] Unit tests for new/changed logic
@@ -3875,6 +3945,22 @@ def register(mcp) -> None:
         rules for this feature before proceeding.
         """
         return _do_lookup_feature_section(feature, repo)
+
+    @mcp.tool()
+    def scan_issue_context(feature_areas: list[str]) -> dict:
+        """Scan project_detail.md sections for code references relevant to feature_areas.
+
+        For each area, looks up the matching section and parses it for function/class
+        definitions, file paths, and pitfall warnings.
+
+        Returns:
+          {reusable: [{name, path, description}], extend: [], patterns: [str],
+           pitfalls: [str], sections_scanned: [str]}
+
+        Call before drafting an issue when project_detail.md has relevant sections.
+        Use findings to populate agent_workflow steps with explicit file and function references.
+        """
+        return _do_scan_issue_context(feature_areas)
 
     # ── Efficient single-call repo analysis ────────────────────────────────────
 

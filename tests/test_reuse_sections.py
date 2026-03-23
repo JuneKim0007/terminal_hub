@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from extensions.github_planner import _format_reuse_block, _preserve_reuse_block
+from extensions.gh_management.github_planner import _format_reuse_block, _preserve_reuse_block
 
 
 # ── _format_reuse_block ───────────────────────────────────────────────────────

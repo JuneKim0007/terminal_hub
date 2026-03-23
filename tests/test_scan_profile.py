@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from extensions.github_planner import (
+from extensions.gh_management.github_planner import (
     _ANALYSIS_CACHE,
     _DEFAULT_SCAN_PROFILE,
     _FILE_TREE_CACHE,
@@ -129,9 +129,9 @@ def test_analyze_respects_max_files_from_profile(workspace):
     mock_gh.list_repo_tree.return_value = tree
     mock_gh.get_file_content.return_value = "def f(): pass"
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner._get_github_client", return_value=(mock_gh, "")), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner._get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         result = _do_analyze_repo_full("o/r")
 
     # total_files is the capped tree length (5), not the raw count
@@ -144,7 +144,7 @@ def test_analyze_respects_max_files_from_profile(workspace):
 
 def test_get_scan_profile_status_missing(workspace):
     """File absent → needs_creation: True."""
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_get_scan_profile_status()
 
     assert result["exists"] is False
@@ -160,7 +160,7 @@ def test_get_scan_profile_status_present(workspace):
     profile_path.parent.mkdir(parents=True, exist_ok=True)
     profile_path.write_text(yaml.dump(_DEFAULT_SCAN_PROFILE), encoding="utf-8")
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_get_scan_profile_status()
 
     assert result["exists"] is True
@@ -172,7 +172,7 @@ def test_get_scan_profile_status_present(workspace):
 
 def test_create_scan_profile_writes_default(workspace):
     """create_scan_profile(content=None) writes default yaml."""
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_create_scan_profile(content=None)
 
     assert result["created"] is True
@@ -185,7 +185,7 @@ def test_create_scan_profile_writes_default(workspace):
 def test_create_scan_profile_writes_custom(workspace):
     """create_scan_profile(content=...) writes the given content."""
     custom_yaml = "max_files: 99\ninclude_extensions: [.py]\nexclude_dirs: []\nexclude_patterns: []\n"
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_create_scan_profile(content=custom_yaml)
 
     assert result["created"] is True

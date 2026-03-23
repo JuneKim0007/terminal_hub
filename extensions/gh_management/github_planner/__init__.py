@@ -50,6 +50,7 @@ _ANALYSIS_CACHE: dict[str, dict] = {}
 # }
 
 _PROJECT_DOCS_CACHE: dict[str, dict] = {}
+_SKILL_REGISTRY: dict[str, dict] = {}
 # Key: "owner/repo"
 # {
 #   "summary":    str | None,
@@ -1199,11 +1200,11 @@ def _docs_config_path(root: Path) -> Path:
 def _load_docs_config(root: Path) -> dict:
     path = _docs_config_path(root)
     if not path.exists():
-        return {"primary_reference": None, "other_references": [], "th_generated": True}
+        return {"primary": "hub_agents/project_summary.md", "detail": "hub_agents/project_detail.md", "skills": None, "others": []}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return {"primary_reference": None, "other_references": [], "th_generated": True}
+        return {"primary": "hub_agents/project_summary.md", "detail": "hub_agents/project_detail.md", "skills": None, "others": []}
 
 
 def _save_docs_config(root: Path, config: dict) -> None:
@@ -1465,23 +1466,6 @@ def _do_load_project_docs(doc: str = "summary", repo: str | None = None, force_r
         result["detail"] = None
     elif doc == "detail":
         result["summary"] = None
-
-    # Check for connected primary reference and merge into summary
-    docs_config = _load_docs_config(root)
-    primary = docs_config.get("primary_reference")
-    if primary and doc in ("summary", "all"):
-        ppath = root / primary["path"]
-        if ppath.exists():
-            primary_text = ppath.read_text(encoding="utf-8")
-            if result.get("summary"):
-                result["summary"] = (
-                    result["summary"]
-                    + f"\n\n---\n## Connected Reference: {primary['path']}\n\n"
-                    + primary_text[:3000]
-                )
-            else:
-                result["summary"] = primary_text
-            display_parts.append(f"`{primary['path']}` (primary ref)")
 
     display = "📄 Loaded: " + ", ".join(display_parts) if display_parts else "📄 Loaded: (nothing)"
     result["_display"] = display
@@ -2337,69 +2321,77 @@ def _do_search_project_docs() -> dict:
     return {"candidates": candidates[:20], "total": len(candidates), "_display": display}
 
 
-def _do_connect_docs(primary: dict | None = None, others: list | None = None) -> dict:
+def _do_connect_docs(
+    primary: str | None = None,
+    detail: str | None = None,
+    skills: str | None = None,
+    others: list[str] | None = None,
+) -> dict:
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
     others = others or []
-    # validate primary path exists
-    if primary:
-        p = root / primary.get("path", "")
-        if not p.exists():
-            return {
-                "error": "primary_not_found",
-                "path": str(primary.get("path")),
-                "_display": f"⚠️ **Not found:** `{primary.get('path')}`",
-            }
-    # validate others
-    for ref in others:
-        p = root / ref.get("path", "")
+    # validate others paths exist
+    for ref_path in others:
+        p = root / ref_path
         if not p.exists():
             return {
                 "error": "ref_not_found",
-                "path": str(ref.get("path")),
-                "_display": f"⚠️ **Not found:** `{ref.get('path')}`",
+                "path": ref_path,
+                "_display": f"⚠️ **Not found:** `{ref_path}`",
             }
     config = _load_docs_config(root)
-    config["primary_reference"] = primary
-    config["other_references"] = others
+    config["primary"] = primary or "hub_agents/project_summary.md"
+    config["detail"] = detail or "hub_agents/project_detail.md"
+    config["skills"] = skills
+    config["others"] = others
     _save_docs_config(root, config)
     parts = []
-    if primary:
-        parts.append(f"primary: `{primary['path']}`")
+    if skills:
+        parts.append(f"skills: `{skills}`")
     if others:
         parts.append(f"{len(others)} other ref(s)")
-    display = "✅ **Docs connected:** " + (", ".join(parts) if parts else "cleared")
+    display = "✅ **Docs connected:** " + (", ".join(parts) if parts else "defaults configured")
     return {"connected": True, "config": config, "_display": display}
 
 
 def _do_load_connected_docs(section: str | None = None) -> dict:
     root = get_workspace_root()
     config = _load_docs_config(root)
-    primary = config.get("primary_reference")
-    if not primary:
+    others = config.get("others") or []
+    if not others:
         return {
             "content": None,
-            "_display": "⚠️ No primary reference connected. Call connect_docs() first.",
+            "_display": "⚠️ No reference docs connected. Call connect_docs(others=[...]) first.",
         }
-    path = root / primary["path"]
-    if not path.exists():
+    # Load the first matching doc (or all if no section filter)
+    texts = []
+    paths_loaded = []
+    for ref_path in others:
+        path = root / ref_path
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if section:
+            pattern = rf"(?m)^##\s+{re.escape(section)}.*?(?=^##\s|\Z)"
+            m = re.search(pattern, text, re.DOTALL | re.MULTILINE)
+            if m:
+                texts.append(m.group(0))
+                paths_loaded.append(ref_path)
+        else:
+            texts.append(text)
+            paths_loaded.append(ref_path)
+    if not texts:
         return {
-            "error": "not_found",
-            "path": primary["path"],
-            "_display": f"⚠️ Primary ref `{primary['path']}` not found on disk",
+            "content": None,
+            "_display": f"⚠️ No content found{f' for section `{section}`' if section else ''}",
         }
-    text = path.read_text(encoding="utf-8")
-    if section:
-        # extract matching H2 section
-        pattern = rf"(?m)^##\s+{re.escape(section)}.*?(?=^##\s|\Z)"
-        m = re.search(pattern, text, re.DOTALL | re.MULTILINE)
-        text = m.group(0) if m else text
-    size = len(text)
-    display = f"📄 **Loaded:** `{primary['path']}` ({size} chars)"
+    combined = "\n\n".join(texts)
+    size = len(combined)
+    display = f"📄 **Loaded:** {', '.join(f'`{p}`' for p in paths_loaded)} ({size} chars)"
     if section:
         display += f" — section `{section}`"
-    return {"content": text, "path": primary["path"], "_display": display}
+    return {"content": combined, "paths": paths_loaded, "_display": display}
 
 
 # ── Label analysis (#81) ──────────────────────────────────────────────────────
@@ -3368,6 +3360,80 @@ def _do_load_milestone_knowledge(milestone_number: int) -> dict:
     }
 
 
+# ── Skill registry helpers ────────────────────────────────────────────────────
+
+def _parse_skill_frontmatter(path: Path) -> dict:
+    """Parse YAML frontmatter from a skill .md file. Returns {} if no frontmatter."""
+    try:
+        text = path.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            return {}
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            return {}
+        return yaml.safe_load(parts[1]) or {}
+    except Exception:
+        return {}
+
+
+def _parse_skills_dir(skills_dir: Path, registry: dict, tier: str) -> None:
+    """Read each *.md file in skills_dir (excluding SKILLS.md), parse frontmatter, add to registry."""
+    if not skills_dir.exists():
+        return
+    for f in sorted(skills_dir.glob("*.md")):
+        if f.name == "SKILLS.md":
+            continue
+        fm = _parse_skill_frontmatter(f)
+        name = fm.get("name") or f.stem
+        # project (Tier 2) overrides plugin (Tier 1) on name collision
+        if name not in registry or tier == "project":
+            registry[name] = {
+                "path": str(f),
+                "alwaysApply": fm.get("alwaysApply", False),
+                "triggers": fm.get("triggers", []),
+                "tier": tier,
+            }
+
+
+def _load_skill_registry(root: Path) -> dict:
+    """Merge plugin-level Tier 1 and project-level Tier 2 skills into _SKILL_REGISTRY[root]."""
+    registry: dict = {}
+    # Tier 1: plugin skills (always available)
+    plugin_skills_dir = Path(__file__).parent / "skills"
+    _parse_skills_dir(plugin_skills_dir, registry, tier="plugin")
+    # Tier 2: project skills (from docs_config "skills" path)
+    config = _load_docs_config(root)
+    skills_index = config.get("skills")
+    if skills_index:
+        project_skills_path = root / skills_index
+        if project_skills_path.exists():
+            # Load all *.md siblings of SKILLS.md
+            _parse_skills_dir(project_skills_path.parent, registry, tier="project")
+    _SKILL_REGISTRY[str(root)] = registry
+    return registry
+
+
+def _do_load_skill(name: str) -> dict:
+    """Load a skill file from the registry by name."""
+    root = get_workspace_root()
+    registry = _SKILL_REGISTRY.get(str(root)) or _load_skill_registry(root)
+    entry = registry.get(name)
+    if not entry:
+        available = sorted(registry.keys())
+        return {
+            "error": "skill_not_found",
+            "message": f"No skill {name!r} in registry.",
+            "available": available,
+        }
+    content = Path(entry["path"]).read_text(encoding="utf-8")
+    return {
+        "name": name,
+        "content": content,
+        "tier": entry["tier"],
+        "_display": f"✅ **Skill loaded:** `{name}` ({entry['tier']})",
+    }
+
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def register(mcp) -> None:
@@ -3670,14 +3736,20 @@ def register(mcp) -> None:
         return _do_search_project_docs()
 
     @mcp.tool()
-    def connect_docs(primary: dict | None = None, others: list | None = None) -> dict:
-        """Connect existing project docs as primary/other references for planning and implementation (#164).
+    def connect_docs(
+        primary: str | None = None,
+        detail: str | None = None,
+        skills: str | None = None,
+        others: list[str] | None = None,
+    ) -> dict:
+        """Connect existing project docs as references for planning and implementation (#164).
 
-        primary: dict with 'path' (relative to project root) and optional 'description'
-        others: list of dicts with 'path' and optional 'description'
-        Saved to hub_agents/extensions/gh_planner/docs_config.json.
-        The primary reference is automatically merged into load_project_docs() output."""
-        return _do_connect_docs(primary, others)
+        primary: path (relative to project root) to the primary summary doc (default: hub_agents/project_summary.md)
+        detail: path to the detail doc (default: hub_agents/project_detail.md)
+        skills: path to a SKILLS.md index file for Tier 2 project skills
+        others: list of paths to additional reference docs
+        Saved to hub_agents/extensions/gh_planner/docs_config.json."""
+        return _do_connect_docs(primary, detail, skills, others)
 
     @mcp.tool()
     def load_connected_docs(section: str | None = None) -> dict:
@@ -3687,6 +3759,19 @@ def register(mcp) -> None:
         Call connect_docs() first to set a primary reference.
         Returns {content, path}."""
         return _do_load_connected_docs(section)
+
+    @mcp.tool()
+    def load_skill(name: str) -> dict:
+        """Load a skill file from the registry by name.
+
+        Searches Tier 1 (plugin skills at extensions/gh_management/github_planner/skills/)
+        and Tier 2 (project skills from docs_config["skills"] path).
+        Tier 2 overrides Tier 1 on name collision.
+
+        name: skill name (e.g. 'creating-issues', 'plugin-architecture')
+        Returns {name, content, tier, _display} or {error, available}.
+        """
+        return _do_load_skill(name)
 
     # ── Analyzer tool ─────────────────────────────────────────────────────────
 

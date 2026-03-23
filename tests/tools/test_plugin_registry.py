@@ -267,9 +267,9 @@ def test_sync_github_issues_tool_via_server(workspace):
     mock_gh.list_issues_all.return_value = []
 
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
         server = create_server()
         result = call(server, "sync_github_issues", {"state": "open"})
 
@@ -280,7 +280,7 @@ def test_sync_github_issues_tool_via_server(workspace):
 def test_list_pending_drafts_tool_via_server(workspace):
     """Call list_pending_drafts through the server to cover MCP wrapper."""
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "list_pending_drafts", {})
 
@@ -297,8 +297,8 @@ def test_analyze_github_labels_tool_via_server(workspace):
     mock_gh.list_issues.return_value = []
 
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")):
         server = create_server()
         result = call(server, "analyze_github_labels", {})
 
@@ -307,7 +307,7 @@ def test_analyze_github_labels_tool_via_server(workspace):
 
 def test_load_github_local_config_tool_via_server(workspace):
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "load_github_local_config", {})
 
@@ -318,9 +318,9 @@ def test_load_github_global_config_tool_via_server(workspace):
     from unittest.mock import MagicMock
     mock_source = MagicMock(); mock_source.value = "none"
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.resolve_token", return_value=(None, mock_source)), \
-         patch("extensions.github_planner.read_env", return_value={}):
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.resolve_token", return_value=(None, mock_source)), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={}):
         server = create_server()
         result = call(server, "load_github_global_config", {})
 
@@ -329,7 +329,7 @@ def test_load_github_global_config_tool_via_server(workspace):
 
 def test_save_github_local_config_tool_via_server(workspace):
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "save_github_local_config", {"data": {"default_branch": "main"}})
 
@@ -340,9 +340,9 @@ def test_get_github_config_tool_via_server(workspace):
     from unittest.mock import MagicMock
     mock_source = MagicMock(); mock_source.value = "none"
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.resolve_token", return_value=(None, mock_source)), \
-         patch("extensions.github_planner.read_env", return_value={}):
+         patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.resolve_token", return_value=(None, mock_source)), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={}):
         server = create_server()
         result = call(server, "get_github_config", {"scope": "both"})
 

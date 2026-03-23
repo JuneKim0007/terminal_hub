@@ -2,7 +2,7 @@
   "name": "gh_implementation",
   "version": "0.1",
   "description": "GitHub issue implementation — read issues, implement with agent workflow, review diffs, push and close",
-  "entry": "extensions.gh_implementation",
+  "entry": "extensions.gh_management.gh_implementation",
   "entry_command": "gh-implementation.md",
   "commands_dir": "commands",
   "commands": [

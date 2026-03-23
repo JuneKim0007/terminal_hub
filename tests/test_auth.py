@@ -1,7 +1,7 @@
 import subprocess
 from unittest.mock import patch
 import pytest
-from extensions.github_planner.auth import resolve_token, TokenSource, get_auth_options, invalidate_token_cache
+from extensions.gh_management.github_planner.auth import resolve_token, TokenSource, get_auth_options, invalidate_token_cache
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +73,7 @@ def test_token_source_suggestion_none():
 
 # ── verify_gh_cli_auth ────────────────────────────────────────────────────────
 
-from extensions.github_planner.auth import verify_gh_cli_auth
+from extensions.gh_management.github_planner.auth import verify_gh_cli_auth
 
 
 def test_verify_gh_cli_auth_success():

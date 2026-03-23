@@ -20,8 +20,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import extensions.github_planner as pg
-from extensions.github_planner import (
+import extensions.gh_management.github_planner as pg
+from extensions.gh_management.github_planner import (
     _ANALYSIS_CACHE,
     _PROJECT_DOCS_CACHE,
     _SESSION_HEADER_CACHE,
@@ -38,7 +38,7 @@ from extensions.github_planner import (
     _do_verify_auth,
     _gh_planner_docs_dir,
 )
-from extensions.github_planner.storage import (
+from extensions.gh_management.github_planner.storage import (
     IssueStatus,
     write_issue_file,
 )
@@ -125,7 +125,7 @@ class TestJourney1_FirstTimeSetup:
         """get_setup_status detects missing hub_agents/ and returns guidance."""
         server = create_server()
         with patch("terminal_hub.server.get_workspace_root", return_value=uninit_workspace), \
-             patch("extensions.github_planner.get_workspace_root", return_value=uninit_workspace):
+             patch("extensions.gh_management.github_planner.get_workspace_root", return_value=uninit_workspace):
             import asyncio
             result = asyncio.run(server._tool_manager.call_tool("get_setup_status", {}))
 
@@ -139,7 +139,7 @@ class TestJourney1_FirstTimeSetup:
         """Calling get_setup_status on an already-initialised workspace returns True."""
         server = create_server()
         with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+             patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             import asyncio
             result = asyncio.run(server._tool_manager.call_tool("get_setup_status", {}))
 
@@ -152,7 +152,7 @@ class TestJourney1_FirstTimeSetup:
         """check_auth returns authenticated=True when token resolves."""
         mock_source = MagicMock()
         mock_source.value = "env"
-        with patch("extensions.github_planner.resolve_token",
+        with patch("extensions.gh_management.github_planner.resolve_token",
                    return_value=("token123", mock_source)):
             result = _do_check_auth()
         assert result["authenticated"] is True
@@ -162,7 +162,7 @@ class TestJourney1_FirstTimeSetup:
         """check_auth returns guidance + options when no token is found."""
         mock_source = MagicMock()
         mock_source.suggestion.return_value = "Run gh auth login"
-        with patch("extensions.github_planner.resolve_token",
+        with patch("extensions.gh_management.github_planner.resolve_token",
                    return_value=(None, mock_source)):
             result = _do_check_auth()
         assert result["authenticated"] is False
@@ -171,7 +171,7 @@ class TestJourney1_FirstTimeSetup:
 
     def test_first_list_issues_returns_empty(self, workspace):
         """After setup, list_issues returns empty list — expected starting state."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_list_issues()
         assert result["issues"] == []
 
@@ -201,26 +201,26 @@ class TestJourney1_FirstTimeSetup:
 class TestJourney2_ProactiveIssueDraft:
 
     def test_draft_creates_local_file_with_pending_status(self, workspace):
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_draft_issue("Fix login redirect", "When you click login, nothing happens.")
         assert result["status"] == "pending"
         issue_file = workspace / "hub_agents" / "issues" / f"{result['slug']}.md"
         assert issue_file.exists()
 
     def test_draft_display_is_title_only(self, workspace):
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_draft_issue("Fix login redirect", "body text")
         # USABILITY CHECK: _display must be silent — title only, no JSON or metadata
         assert "Fix login redirect" in result["_display"]
 
     def test_draft_then_submit_full_flow(self, workspace, mock_gh):
         """End-to-end: draft → approve → submit → GitHub issue created."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             draft = _do_draft_issue("Fix login redirect", "Steps to repro", labels=["bug"])
         slug = draft["slug"]
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")):
             submitted = _do_submit_issue(slug)
 
         # USABILITY CHECK: confirmation shows number and title, not raw JSON
@@ -229,13 +229,13 @@ class TestJourney2_ProactiveIssueDraft:
         assert "url" in submitted
 
     def test_submit_without_draft_returns_not_found(self, workspace):
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_submit_issue("non-existent-slug")
         assert result["error"] in ("submit_failed", "not_found")
 
     def test_draft_empty_title_returns_error(self, workspace):
         """USABILITY: empty title should fail fast with a clear message, not create a file."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_draft_issue("", "some body")
         assert result["error"] == "draft_failed"
         # Verify no file was created
@@ -245,8 +245,8 @@ class TestJourney2_ProactiveIssueDraft:
     def test_submit_returns_guidance_when_no_auth(self, workspace):
         """USABILITY: when submit fails due to auth, user gets actionable guidance."""
         _seed_issue(workspace)
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_github_client", return_value=(None, "No token found.")):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.get_github_client", return_value=(None, "No token found.")):
             result = _do_submit_issue("fix-login-bug")
         assert result["error"] == "github_unavailable"
         assert "_guidance" in result
@@ -288,7 +288,7 @@ class TestJourney3_SessionResume:
         docs_dir.mkdir(parents=True)
         (docs_dir / "project_summary.md").write_text("# My Project\nA cool project.")
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             header = _do_get_session_header()
 
         assert header["docs"] is True
@@ -303,7 +303,7 @@ class TestJourney3_SessionResume:
         old_time = time.time() - (8 * 24 * 3600)  # 8 days ago
         os.utime(summary, (old_time, old_time))
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             header = _do_get_session_header()
 
         assert header["stale"] is True
@@ -313,7 +313,7 @@ class TestJourney3_SessionResume:
         for i in range(3):
             _seed_issue(workspace, slug=f"issue-{i}", title=f"Issue {i}")
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             compact = _do_list_issues(compact=True)
             full = _do_list_issues(compact=False)
 
@@ -341,7 +341,7 @@ class TestJourney3_SessionResume:
                 return func(*args, **kwargs)
             return wrapper
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             header = track(_do_get_session_header)()   # call 1
             issues = track(_do_list_issues)(compact=True)  # call 2
 
@@ -363,7 +363,7 @@ class TestJourney3_SessionResume:
                 disk_reads.append(str(self))
             return original_read(self, *args, **kwargs)
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
              patch.object(Path, "read_text", counting_read):
             _do_get_session_header()  # populates cache
             _do_get_session_header()  # should hit cache
@@ -380,16 +380,16 @@ class TestJourney3_SessionResume:
         old_time = time.time() - (8 * 24 * 3600)
         os.utime(summary, (old_time, old_time))
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             stale_header = _do_get_session_header()
         assert stale_header["stale"] is True  # pre-condition
 
         # Now save fresh docs — this must clear the session header cache
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             _do_save_project_docs("New Project", ["React"], repo="o/r")
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             fresh_header = _do_get_session_header()
         assert fresh_header["stale"] is False
         assert fresh_header["title"] == "New Project"
@@ -438,7 +438,7 @@ class TestJourney4_FullRepoAnalysis:
 
     def test_no_docs_triggers_analysis(self, workspace):
         """USABILITY: docs_exist returns False → Claude should proceed with analysis."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_docs_exist()
         assert result["summary_exists"] is False
 
@@ -448,9 +448,9 @@ class TestJourney4_FullRepoAnalysis:
         gh = self._mock_gh_for_tree(tree, content_fn=lambda p:
             "def foo(): pass\ndef bar(): pass" if p.endswith(".py") else f"# {p}\n"
         )
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner._get_github_client", return_value=(gh, "")), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner._get_github_client", return_value=(gh, "")), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             result = _do_analyze_repo_full("o/r")
 
         assert "file_index" in result
@@ -473,9 +473,9 @@ class TestJourney4_FullRepoAnalysis:
             outer_calls.append(1)
             return original(*args, **kwargs)
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner._get_github_client", return_value=(gh, "")), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner._get_github_client", return_value=(gh, "")), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             result = counting_analyze("o/r")
 
         # Exactly 1 invocation — no loop on the Python side
@@ -484,11 +484,11 @@ class TestJourney4_FullRepoAnalysis:
 
     def test_save_docs_then_header_reflects_fresh(self, workspace):
         """USABILITY: after save_project_docs, get_session_header shows docs=True."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             _do_save_project_docs("# My Project\nPython MCP server.", "detail text.", "o/r")
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             header = _do_get_session_header()
 
         assert header["docs"] is True
@@ -537,9 +537,9 @@ class TestJourney5_IncrementalReanalysis:
         gh.list_repo_tree.return_value = tree
         gh.get_file_content.return_value = "def new(): pass"
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner._get_github_client", return_value=(gh, "")), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner._get_github_client", return_value=(gh, "")), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             result = _do_analyze_repo_full("o/r")
 
         assert result["skipped_unchanged"] == 10
@@ -556,9 +556,9 @@ class TestJourney5_IncrementalReanalysis:
         gh.list_repo_tree.return_value = tree
         gh.get_file_content.return_value = "x = 1"
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner._get_github_client", return_value=(gh, "")), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner._get_github_client", return_value=(gh, "")), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             _do_analyze_repo_full("o/r")
 
         hashes_file = _gh_planner_docs_dir(workspace) / "file_hashes.json"
@@ -580,9 +580,9 @@ class TestJourney5_IncrementalReanalysis:
         gh.list_repo_tree.return_value = tree
         gh.get_file_content.return_value = "x = 1"
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner._get_github_client", return_value=(gh, "")), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner._get_github_client", return_value=(gh, "")), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             result = _do_analyze_repo_full("o/r")
 
         assert "1 unchanged" in result["_display"]
@@ -622,7 +622,7 @@ class TestJourney6_IssueTriage:
         _seed_issue(workspace, slug="draft-1", title="Draft one", status=IssueStatus.PENDING)
         _seed_issue(workspace, slug="open-1", title="Open one", status=IssueStatus.OPEN)
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_list_issues(compact=True)
 
         statuses = {i["status"] for i in result["issues"]}
@@ -633,7 +633,7 @@ class TestJourney6_IssueTriage:
         """USABILITY: context call returns full markdown so Claude can describe the issue."""
         _seed_issue(workspace, slug="fix-login-bug", title="Fix login bug",
                     body="When clicking login, the page redirects incorrectly.")
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_get_issue_context("fix-login-bug")
 
         assert "Fix login bug" in result["content"]
@@ -641,7 +641,7 @@ class TestJourney6_IssueTriage:
 
     def test_get_issue_context_not_found_returns_error(self, workspace):
         """USABILITY: missing slug returns clear error — no ambiguous None."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_get_issue_context("does-not-exist")
         assert result["error"] == "not_found"
 
@@ -650,27 +650,27 @@ class TestJourney6_IssueTriage:
         _seed_issue(workspace, slug="fix-login-bug", title="Fix login bug",
                     body="Steps to reproduce the login issue.")
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             compact = _do_list_issues(compact=True)
 
         assert any(i["status"] == "pending" for i in compact["issues"])
         slug = compact["issues"][0]["slug"]
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             context = _do_get_issue_context(slug)
         assert "content" in context
 
         mock_gh.create_issue.return_value = {
             "number": 42, "html_url": "https://github.com/o/r/issues/42"
         }
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")):
             submitted = _do_submit_issue(slug)
 
         assert submitted["issue_number"] == 42
 
         # After submit, local status should be "open"
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             updated = _do_list_issues(compact=True)
         assert updated["issues"][0]["status"] == "open"
 
@@ -704,8 +704,8 @@ class TestJourney7_AuthRecovery:
     def test_submit_failure_provides_guidance(self, workspace):
         """When GitHub is unavailable, the response includes _guidance for recovery."""
         _seed_issue(workspace)
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_github_client", return_value=(None, "Token expired.")):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.get_github_client", return_value=(None, "Token expired.")):
             result = _do_submit_issue("fix-login-bug")
 
         assert result["error"] == "github_unavailable"
@@ -714,14 +714,14 @@ class TestJourney7_AuthRecovery:
 
     def test_verify_auth_success_path(self):
         """verify_auth returns authenticated=True after gh auth login succeeds."""
-        with patch("extensions.github_planner.verify_gh_cli_auth", return_value=(True, "Logged in as user")):
+        with patch("extensions.gh_management.github_planner.verify_gh_cli_auth", return_value=(True, "Logged in as user")):
             result = _do_verify_auth()
         assert result["authenticated"] is True
         assert result["source"] == "gh_cli"
 
     def test_verify_auth_failure_path(self):
         """verify_auth returns guidance when gh auth login hasn't been run yet."""
-        with patch("extensions.github_planner.verify_gh_cli_auth", return_value=(False, "Not authenticated")):
+        with patch("extensions.gh_management.github_planner.verify_gh_cli_auth", return_value=(False, "Not authenticated")):
             result = _do_verify_auth()
         assert result["authenticated"] is False
         assert "_guidance" in result
@@ -904,8 +904,8 @@ class TestJourney9_EdgeCasesAndErrorPaths:
 
     def test_analyze_repo_full_no_repo_configured(self, workspace):
         """USABILITY: must return actionable error when GITHUB_REPO is not set."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.read_env", return_value={}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={}):
             result = _do_analyze_repo_full(None)
         assert result["error"] == "repo_required"
         # USABILITY CHECK: message tells user how to fix it
@@ -921,9 +921,9 @@ class TestJourney9_EdgeCasesAndErrorPaths:
         gh.list_repo_tree.return_value = tree
         gh.get_file_content.return_value = "x = 1"
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner._get_github_client", return_value=(gh, "")), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner._get_github_client", return_value=(gh, "")), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             result = _do_analyze_repo_full("o/r")
 
         assert result["omitted_files"] == 100  # 400 - 300 (default max_files)
@@ -939,9 +939,9 @@ class TestJourney9_EdgeCasesAndErrorPaths:
         gh.list_repo_tree.return_value = tree
         gh.get_file_content.return_value = "x = 1"
 
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner._get_github_client", return_value=(gh, "")), \
-             patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner._get_github_client", return_value=(gh, "")), \
+             patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
             result = _do_analyze_repo_full("o/r")
 
         assert result["omitted_files"] == 0
@@ -949,19 +949,19 @@ class TestJourney9_EdgeCasesAndErrorPaths:
 
     def test_draft_on_uninitialised_workspace_returns_needs_init(self, uninit_workspace):
         """USABILITY: clear error before any work is done."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=uninit_workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=uninit_workspace):
             result = _do_draft_issue("some title", "some body")
         assert result["status"] == "needs_init"
 
     def test_list_issues_on_uninitialised_workspace(self, uninit_workspace):
         """USABILITY: must return needs_init, not an empty list (confusing)."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=uninit_workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=uninit_workspace):
             result = _do_list_issues()
         assert result.get("status") == "needs_init"
 
     def test_get_issue_context_invalid_slug_characters(self, workspace):
         """BUGS: slug with path traversal chars should be rejected cleanly."""
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
             result = _do_get_issue_context("../../etc/passwd")
         assert result.get("error") in ("not_found",)
 
@@ -975,8 +975,8 @@ class TestJourney9_EdgeCasesAndErrorPaths:
     def test_submit_already_open_issue_returns_error(self, workspace, mock_gh):
         """#59 — submitting an already-open issue must return error, not create a duplicate."""
         _seed_issue(workspace, status=IssueStatus.OPEN)
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")):
             result = _do_submit_issue("fix-login-bug")
         assert result["error"] == "already_submitted"
         mock_gh.create_issue.assert_not_called()
@@ -984,8 +984,8 @@ class TestJourney9_EdgeCasesAndErrorPaths:
     def test_submit_already_closed_issue_returns_error(self, workspace, mock_gh):
         """#59 — closed issue must also be rejected without an API call."""
         _seed_issue(workspace, status=IssueStatus.CLOSED)
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")):
             result = _do_submit_issue("fix-login-bug")
         assert result["error"] == "already_closed"
         mock_gh.create_issue.assert_not_called()
@@ -993,8 +993,8 @@ class TestJourney9_EdgeCasesAndErrorPaths:
     def test_submit_pending_still_works_after_idempotency_guard(self, workspace, mock_gh):
         """#59 — guard must not block the normal pending→open flow."""
         _seed_issue(workspace, status=IssueStatus.PENDING)
-        with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-             patch("extensions.github_planner.get_github_client", return_value=(mock_gh, "")):
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+             patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")):
             result = _do_submit_issue("fix-login-bug")
         assert result["issue_number"] == 1
 
@@ -1048,7 +1048,7 @@ class TestJourney10_ToolRegistration:
         with tempfile.TemporaryDirectory() as d:
             workspace = Path(d)
             (workspace / "hub_agents" / "issues").mkdir(parents=True)
-            with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+            with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
                 result = asyncio.run(
                     server._tool_manager.call_tool("list_issues", {"compact": True})
                 )

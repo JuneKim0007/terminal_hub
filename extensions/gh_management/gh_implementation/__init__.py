@@ -13,8 +13,8 @@ from typing import Any
 import yaml
 from mcp.server.fastmcp import FastMCP
 
-from extensions.github_planner import get_github_client, get_workspace_root, ensure_initialized
-from extensions.github_planner.storage import (
+from extensions.gh_management.github_planner import get_github_client, get_workspace_root, ensure_initialized
+from extensions.gh_management.github_planner.storage import (
     _issues_dir, _atomic_write, validate_slug,
     read_issue_frontmatter, list_issue_files, IssueStatus, write_issue_file,
 )
@@ -28,6 +28,7 @@ _DEFAULT_FLAGS: dict[str, Any] = {
     "close_automatically_on_gh": True,
     "delete_local_issue_on_gh": True,
     "confirmed_auto_close_this_session": False,  # internal — True after "don't ask again"
+    "active_issue_slug": None,
 }
 
 _ALLOWED_SESSION_FLAGS = {"close_automatically_on_gh", "delete_local_issue_on_gh", "auto_switch_modes"}
@@ -50,6 +51,8 @@ def _do_get_implementation_session() -> dict:
         "    Push, close branch, and close GitHub issue automatically after accepting changes\n"
         f"  delete_local_issue_on_gh    {'true' if flags['delete_local_issue_on_gh'] else 'false'}"
         "    Delete hub_agents/issues/<slug>.md after GitHub issue is closed\n"
+        f"  active_issue_slug           {flags.get('active_issue_slug') or 'none'}"
+        "    Currently hooked issue — set automatically by load_active_issue\n"
         "────────────────────────────────────────\n"
         "Say \"change X to false\" or use /th:gh-implementation/session-knowledge to update."
     )
@@ -57,6 +60,50 @@ def _do_get_implementation_session() -> dict:
         "close_automatically_on_gh": flags["close_automatically_on_gh"],
         "delete_local_issue_on_gh": flags["delete_local_issue_on_gh"],
         "_display": display,
+    }
+
+
+def _do_load_active_issue(slug: str) -> dict:
+    try:
+        validate_slug(slug)
+    except ValueError as exc:
+        return {"error": "invalid_slug", "message": str(exc)}
+    root = get_workspace_root()
+    path = _issues_dir(root) / f"{slug}.md"
+    if not path.exists():
+        return {"error": "issue_not_found", "message": f"No issue file for slug {slug!r}"}
+    content = path.read_text(encoding="utf-8")
+    fm = read_issue_frontmatter(root, slug) or {}
+    _get_flags(root)["active_issue_slug"] = slug
+    return {
+        "slug": slug,
+        "content": content,
+        "title": fm.get("title", ""),
+        "labels": fm.get("labels", []),
+        "agent_workflow": fm.get("agent_workflow"),
+        "_display": f"✅ **Hooked:** issue #{slug} — {fm.get('title', '')} loaded into context",
+    }
+
+
+def _do_unload_active_issue(slug: str | None = None, delete_file: bool | None = None) -> dict:
+    root = get_workspace_root()
+    flags = _get_flags(root)
+    target_slug = slug or flags.get("active_issue_slug")
+    if not target_slug:
+        return {"unloaded": False, "message": "No active issue in session"}
+    flags.pop("active_issue_slug", None)
+    should_delete = delete_file if delete_file is not None else flags.get("delete_local_issue_on_gh", True)
+    deleted = False
+    if should_delete:
+        path = _issues_dir(root) / f"{target_slug}.md"
+        if path.exists():
+            path.unlink()
+            deleted = True
+    return {
+        "unloaded": True,
+        "slug": target_slug,
+        "file_deleted": deleted,
+        "_display": f"✅ **Unhooked:** issue #{target_slug} — context cleared{', file deleted' if deleted else ''}",
     }
 
 
@@ -240,3 +287,34 @@ def register(mcp: FastMCP) -> None:
         Returns {deleted, file}.
         """
         return _do_delete_local_issue(slug)
+
+    @mcp.tool()
+    def load_active_issue(slug: str) -> dict:
+        """Hook an issue into the active implementation session.
+
+        Reads hub_agents/issues/<slug>.md, injects full content into the response,
+        and sets active_issue_slug in session state.
+
+        Call this as the FIRST action in Step 4 of the implement flow — mandatory.
+        The returned content and agent_workflow are the authoritative issue context;
+        do not re-read the file separately.
+
+        slug: issue slug (e.g. '42')
+        Returns {slug, content, title, labels, agent_workflow, _display}.
+        """
+        return _do_load_active_issue(slug)
+
+    @mcp.tool()
+    def unload_active_issue(slug: str | None = None, delete_file: bool | None = None) -> dict:
+        """Unhook the active issue and clean up session state.
+
+        Clears active_issue_slug from session. Deletes the local issue file
+        according to the delete_local_issue_on_gh flag unless overridden.
+
+        Call this as the ONLY action in Step 10 of the implement flow — mandatory.
+
+        slug: override the active slug (default: use session-tracked slug)
+        delete_file: override the delete_local_issue_on_gh flag (True/False/None=use flag)
+        Returns {unloaded, slug, file_deleted, _display}.
+        """
+        return _do_unload_active_issue(slug, delete_file)

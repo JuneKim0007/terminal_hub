@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from extensions.github_planner import (
+from extensions.gh_management.github_planner import (
     _MILESTONE_CACHE,
     _PROJECT_DOCS_CACHE,
     _do_generate_milestone_knowledge,
@@ -50,10 +50,10 @@ def _setup_workspace_patches(workspace: Path, milestones=None, summary_text="", 
     }
 
     patches = [
-        patch("extensions.github_planner.get_workspace_root", return_value=workspace),
-        patch("extensions.github_planner.ensure_initialized", return_value=None),
-        patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": repo}),
-        patch("extensions.github_planner._resolve_repo", return_value=repo),
+        patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace),
+        patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None),
+        patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": repo}),
+        patch("extensions.gh_management.github_planner._resolve_repo", return_value=repo),
     ]
     return contextlib.ExitStack(), patches
 
@@ -68,10 +68,10 @@ def test_generate_creates_file_and_index(workspace):
     ]
     _PROJECT_DOCS_CACHE[repo] = {"summary": "", "detail": "", "loaded_at": 0.0}
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": repo}), \
-         patch("extensions.github_planner._resolve_repo", return_value=repo):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": repo}), \
+         patch("extensions.gh_management.github_planner._resolve_repo", return_value=repo):
 
         result = _do_generate_milestone_knowledge(1)
 
@@ -106,8 +106,8 @@ def test_load_returns_content_when_exists(workspace):
     path = _milestone_knowledge_path(workspace, 2)
     path.write_text("# M2 — Agent Routing\n\n## Goal\nTest goal.\n", encoding="utf-8")
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
 
         result = _do_load_milestone_knowledge(2)
 
@@ -119,8 +119,8 @@ def test_load_returns_content_when_exists(workspace):
 
 def test_load_returns_not_found_when_missing(workspace):
     """load_milestone_knowledge returns exists=False when file is absent."""
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
 
         result = _do_load_milestone_knowledge(99)
 
@@ -157,10 +157,10 @@ def test_generate_updates_enables_in_prior_milestone(workspace):
     ]
     _PROJECT_DOCS_CACHE[repo] = {"summary": "", "detail": "", "loaded_at": 0.0}
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": repo}), \
-         patch("extensions.github_planner._resolve_repo", return_value=repo):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": repo}), \
+         patch("extensions.gh_management.github_planner._resolve_repo", return_value=repo):
 
         result = _do_generate_milestone_knowledge(2)
 
@@ -191,10 +191,10 @@ def test_generate_sets_depends_on_from_prior(workspace):
     ]
     _PROJECT_DOCS_CACHE[repo] = {"summary": "", "detail": "", "loaded_at": 0.0}
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner.ensure_initialized", return_value=None), \
-         patch("extensions.github_planner.read_env", return_value={"GITHUB_REPO": repo}), \
-         patch("extensions.github_planner._resolve_repo", return_value=repo):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": repo}), \
+         patch("extensions.gh_management.github_planner._resolve_repo", return_value=repo):
 
         result = _do_generate_milestone_knowledge(2)
 

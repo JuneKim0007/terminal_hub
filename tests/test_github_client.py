@@ -1,7 +1,7 @@
 import pytest
 import httpx
 from unittest.mock import MagicMock, patch
-from extensions.github_planner.client import GitHubClient, GitHubError, parse_error, load_default_labels
+from extensions.gh_management.github_planner.client import GitHubClient, GitHubError, parse_error, load_default_labels
 
 
 # ── parse_error ───────────────────────────────────────────────────────────────
@@ -287,7 +287,7 @@ def test_create_label_returns_false_on_http_error():
     # On a non-200/201/422 status, GitHubError is raised
     resp = make_response(500, text="server error")
     with patch.object(client._client, "post", return_value=resp):
-        from extensions.github_planner.client import GitHubError
+        from extensions.gh_management.github_planner.client import GitHubError
         with pytest.raises(GitHubError):
             client.create_label("bad", "000000", "")
 
@@ -324,7 +324,7 @@ def test_ensure_labels_returns_error_for_unknown_label():
 
 
 def test_ensure_labels_returns_error_when_create_fails():
-    from extensions.github_planner.client import GitHubError
+    from extensions.gh_management.github_planner.client import GitHubError
     client = make_client()
     with patch.object(client, "get_labels", return_value=set()):
         with patch.object(client, "create_label", side_effect=GitHubError("create failed")):
@@ -337,7 +337,7 @@ def test_ensure_labels_returns_error_when_create_fails():
 
 def test_load_default_labels_returns_empty_list_when_file_missing():
     """Lines 24-25: OSError path — file not found → returns []."""
-    with patch("extensions.github_planner.client._LABELS_FILE") as mock_path:
+    with patch("extensions.gh_management.github_planner.client._LABELS_FILE") as mock_path:
         mock_path.read_text.side_effect = OSError("file not found")
         result = load_default_labels()
     assert result == []
@@ -345,7 +345,7 @@ def test_load_default_labels_returns_empty_list_when_file_missing():
 
 def test_load_default_labels_returns_empty_list_when_corrupt():
     """Lines 24-25: JSONDecodeError path — bad JSON → returns []."""
-    with patch("extensions.github_planner.client._LABELS_FILE") as mock_path:
+    with patch("extensions.gh_management.github_planner.client._LABELS_FILE") as mock_path:
         mock_path.read_text.return_value = "not valid json {"
         result = load_default_labels()
     assert result == []
@@ -456,7 +456,7 @@ def test_list_collaborators_returns_list_on_success():
 
 def test_url_returns_method_and_full_url():
     """_url() builds method + BASE_URL + formatted path."""
-    from extensions.github_planner.client import BASE_URL
+    from extensions.gh_management.github_planner.client import BASE_URL
     client = make_client()
     method, url = client._url("github", "list_labels")
     assert isinstance(method, str)

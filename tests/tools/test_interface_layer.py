@@ -6,10 +6,10 @@ from pathlib import Path
 def test_gh_implementation_cache_keys_subset_of_gh_planner():
     """All cache keys used by gh_implementation must be defined in gh_planner's policy."""
     planner_policy = json.loads(
-        (Path(__file__).parents[2] / "extensions/github_planner/unload_policy.json").read_text()
+        (Path(__file__).parents[2] / "extensions/gh_management/github_planner/unload_policy.json").read_text()
     )
     impl_policy = json.loads(
-        (Path(__file__).parents[2] / "extensions/gh_implementation/unload_policy.json").read_text()
+        (Path(__file__).parents[2] / "extensions/gh_management/gh_implementation/unload_policy.json").read_text()
     )
     planner_keys = set(planner_policy["cache_keys"].keys())
     for cmd_name, cmd_entry in impl_policy["commands"].items():
@@ -23,7 +23,7 @@ def test_gh_implementation_cache_keys_subset_of_gh_planner():
 def test_gh_planner_has_gh_implementation_commands():
     """apply_unload_policy must handle gh-implementation commands (defined in gh_planner policy)."""
     planner_policy = json.loads(
-        (Path(__file__).parents[2] / "extensions/github_planner/unload_policy.json").read_text()
+        (Path(__file__).parents[2] / "extensions/gh_management/github_planner/unload_policy.json").read_text()
     )
     assert "gh-implementation" in planner_policy["commands"]
     assert "gh-implementation/implement" in planner_policy["commands"]
@@ -32,7 +32,7 @@ def test_gh_planner_has_gh_implementation_commands():
 def test_description_json_interface_block_valid():
     """gh_implementation description.json must have a valid interface block."""
     desc = json.loads(
-        (Path(__file__).parents[2] / "extensions/gh_implementation/description.json").read_text()
+        (Path(__file__).parents[2] / "extensions/gh_management/gh_implementation/description.json").read_text()
     )
     assert "interface" in desc
     iface = desc["interface"]

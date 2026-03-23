@@ -22,7 +22,7 @@ def workspace(tmp_path):
 # ── unload_policy.json structure ──────────────────────────────────────────────
 
 def test_unload_policy_json_is_valid():
-    policy_path = Path(__file__).parent.parent.parent / "extensions" / "github_planner" / "unload_policy.json"
+    policy_path = Path(__file__).parent.parent.parent / "extensions" / "gh_management" / "github_planner" / "unload_policy.json"
     data = json.loads(policy_path.read_text())
     assert "commands" in data
     assert "cache_keys" in data
@@ -30,7 +30,7 @@ def test_unload_policy_json_is_valid():
 
 
 def test_every_command_has_unload_and_keep():
-    policy_path = Path(__file__).parent.parent.parent / "extensions" / "github_planner" / "unload_policy.json"
+    policy_path = Path(__file__).parent.parent.parent / "extensions" / "gh_management" / "github_planner" / "unload_policy.json"
     data = json.loads(policy_path.read_text())
     for name, entry in data["commands"].items():
         assert "unload" in entry, f"Command {name!r} missing 'unload'"
@@ -40,7 +40,7 @@ def test_every_command_has_unload_and_keep():
 
 
 def test_unload_keys_are_known_cache_keys():
-    policy_path = Path(__file__).parent.parent.parent / "extensions" / "github_planner" / "unload_policy.json"
+    policy_path = Path(__file__).parent.parent.parent / "extensions" / "gh_management" / "github_planner" / "unload_policy.json"
     data = json.loads(policy_path.read_text())
     known_keys = set(data["cache_keys"].keys())
     for name, entry in data["commands"].items():
@@ -49,7 +49,7 @@ def test_unload_keys_are_known_cache_keys():
 
 
 def test_github_planner_command_unloads_analysis_keeps_repo():
-    policy_path = Path(__file__).parent.parent.parent / "extensions" / "github_planner" / "unload_policy.json"
+    policy_path = Path(__file__).parent.parent.parent / "extensions" / "gh_management" / "github_planner" / "unload_policy.json"
     data = json.loads(policy_path.read_text())
     cmd = data["commands"]["gh-plan"]
     assert "analysis_cache" in cmd["unload"]
@@ -57,7 +57,7 @@ def test_github_planner_command_unloads_analysis_keeps_repo():
 
 
 def test_github_repo_creation_keeps_repo_cache():
-    policy_path = Path(__file__).parent.parent.parent / "extensions" / "github_planner" / "unload_policy.json"
+    policy_path = Path(__file__).parent.parent.parent / "extensions" / "gh_management" / "github_planner" / "unload_policy.json"
     data = json.loads(policy_path.read_text())
     cmd = data["commands"]["create-github-repo"]
     assert "repo_cache" in cmd["keep"]
@@ -67,7 +67,7 @@ def test_github_repo_creation_keeps_repo_cache():
 # ── apply_unload_policy MCP tool ──────────────────────────────────────────────
 
 def test_apply_unload_policy_success(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "gh-plan-list"})
     assert result["success"] is True
@@ -78,10 +78,10 @@ def test_apply_unload_policy_success(workspace):
 
 
 def test_apply_unload_policy_clears_in_memory_cache(workspace):
-    from extensions.github_planner import _ANALYSIS_CACHE
+    from extensions.gh_management.github_planner import _ANALYSIS_CACHE
     _ANALYSIS_CACHE["owner/repo"] = {"fake": True}
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         call(server, "apply_unload_policy", {"command": "gh-plan"})
 
@@ -94,7 +94,7 @@ def test_apply_unload_policy_deletes_disk_file(workspace):
     snapshot = docs_dir / "analyzer_snapshot.json"
     snapshot.write_text("{}")
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "gh-plan"})
 
@@ -103,10 +103,10 @@ def test_apply_unload_policy_deletes_disk_file(workspace):
 
 
 def test_apply_unload_policy_preserves_kept_cache(workspace):
-    from extensions.github_planner import _PROJECT_DOCS_CACHE
+    from extensions.gh_management.github_planner import _PROJECT_DOCS_CACHE
     _PROJECT_DOCS_CACHE["key"] = {"doc": "data"}
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         # create-issue only unloads session_header_cache, keeps project_docs_cache
         call(server, "apply_unload_policy", {"command": "gh-plan-create"})
@@ -117,7 +117,7 @@ def test_apply_unload_policy_preserves_kept_cache(workspace):
 
 
 def test_apply_unload_policy_unknown_command_returns_error(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "nonexistent-command"})
     assert result["error"] == "unknown_command"
@@ -125,22 +125,22 @@ def test_apply_unload_policy_unknown_command_returns_error(workspace):
 
 
 def test_apply_unload_policy_not_initialized_returns_needs_init(tmp_path):
-    with patch("extensions.github_planner.get_workspace_root", return_value=tmp_path):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "gh-plan"})
     assert result["status"] == "needs_init"
 
 
 def test_apply_unload_policy_display_contains_command(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "current-stat"})
     assert "current-stat" in result["_display"]
 
 
 def test_apply_unload_policy_policy_load_failure(workspace):
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
-         patch("extensions.github_planner._load_unload_policy", return_value={"error": "file missing", "commands": {}}):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner._load_unload_policy", return_value={"error": "file missing", "commands": {}}):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "gh-plan"})
     assert result["error"] == "policy_load_failed"
@@ -154,7 +154,7 @@ def test_apply_unload_policy_oserror_on_unlink(workspace):
     snapshot = docs_dir / "analyzer_snapshot.json"
     snapshot.write_text("{}")
 
-    with patch("extensions.github_planner.get_workspace_root", return_value=workspace), \
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
          patch("pathlib.Path.unlink", side_effect=OSError("permission denied")):
         server = create_server()
         result = call(server, "apply_unload_policy", {"command": "gh-plan"})

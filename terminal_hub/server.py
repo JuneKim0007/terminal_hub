@@ -10,12 +10,12 @@ from mcp.server.fastmcp import FastMCP
 
 from terminal_hub.config import WorkspaceMode, load_config, save_config
 from terminal_hub.env_store import read_env, write_env
-from extensions.github_planner.client import load_default_labels
+from extensions.gh_management.github_planner.client import load_default_labels
 from terminal_hub.workspace import init_workspace, resolve_workspace_root, set_active_project_root
 from terminal_hub.plugin_loader import discover_plugins, load_plugin, build_instructions
 
 # Re-export plugin helpers so tests can patch at terminal_hub.server.*
-from extensions.github_planner import (
+from extensions.gh_management.github_planner import (
     get_workspace_root,
     get_github_client,
     ensure_initialized,
@@ -23,7 +23,7 @@ from extensions.github_planner import (
     verify_gh_cli_auth,
     _invalidate_repo_cache,
 )
-from extensions.github_planner.storage import (
+from extensions.gh_management.github_planner.storage import (
     write_issue_file,
     write_doc_file,
 )
@@ -225,7 +225,7 @@ def create_server() -> FastMCP:
         items = []
 
         # Analyzer snapshot
-        from extensions.github_planner.analyzer import _snapshot_path, load_snapshot, snapshot_age_hours, summarize_for_prompt
+        from extensions.gh_management.github_planner.analyzer import _snapshot_path, load_snapshot, snapshot_age_hours, summarize_for_prompt
         snap_path = _snapshot_path(root)
         if snap_path.exists():
             snap = load_snapshot(root)
@@ -279,7 +279,7 @@ def create_server() -> FastMCP:
         # In-memory cache status from github_planner extension (#138)
         cache_status: dict[str, str] = {}
         try:
-            from extensions.github_planner import (
+            from extensions.gh_management.github_planner import (
                 _ANALYSIS_CACHE, _PROJECT_DOCS_CACHE, _FILE_TREE_CACHE,
                 _LABEL_CACHE, _MILESTONE_CACHE, _REPO_CACHE,
             )

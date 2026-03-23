@@ -33,7 +33,12 @@ def discover_plugins(plugins_dir: Path) -> list[dict]:
     manifests = []
     if not plugins_dir.exists():
         return manifests
-    for manifest_path in sorted(plugins_dir.glob("*/plugin.json")):
+    seen: set[Path] = set()
+    all_paths = sorted(plugins_dir.glob("*/plugin.json")) + sorted(plugins_dir.glob("*/*/plugin.json"))
+    for manifest_path in all_paths:
+        if manifest_path in seen:
+            continue
+        seen.add(manifest_path)
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:

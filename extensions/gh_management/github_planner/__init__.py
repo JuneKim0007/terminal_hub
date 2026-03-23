@@ -12,7 +12,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-from extensions.github_planner.storage import (
+from extensions.gh_management.github_planner.storage import (
     IssueStatus,
     list_issue_files,
     next_local_number,
@@ -25,8 +25,8 @@ from extensions.github_planner.storage import (
     write_doc_file,
     write_issue_file,
 )
-from extensions.github_planner.client import GitHubClient, GitHubError, create_user_repo, load_default_labels
-from extensions.github_planner.auth import get_auth_options, resolve_token, verify_gh_cli_auth
+from extensions.gh_management.github_planner.client import GitHubClient, GitHubError, create_user_repo, load_default_labels
+from extensions.gh_management.github_planner.auth import get_auth_options, resolve_token, verify_gh_cli_auth
 from terminal_hub.config import read_preference, write_preference
 from terminal_hub.env_store import read_env
 from terminal_hub.errors import msg
@@ -411,6 +411,89 @@ def _do_generate_issue_workflows(slug: str) -> dict:
     }
 
 
+def _extract_design_refs(
+    title: str,
+    labels: list[str],
+    resolved: str,
+) -> tuple[list[str], list[str]]:
+    """Extract matching design refs and rule bullets from loaded project docs.
+
+    Returns (refs, rules) where refs are 'file § section' strings and rules are
+    short principle bullets (≤12 words each). Returns ([], []) if cache is cold.
+    """
+    entry = _PROJECT_DOCS_CACHE.get(resolved)
+    if not entry:
+        return [], []
+
+    _STOPWORDS = {"fix", "feat", "add", "update", "the", "a", "an", "for", "in",
+                  "to", "of", "and", "or", "with", "from", "on", "at", "by", "is"}
+    raw_words = set((title + " " + " ".join(labels)).lower().replace("-", " ").replace(":", " ").split())
+    keywords = raw_words - _STOPWORDS
+
+    refs: list[str] = []
+    rules: list[str] = []
+
+    # --- project_summary.md: match Design Principles bullet lines ---
+    summary = entry.get("summary", "") or ""
+    if summary and keywords:
+        in_principles = False
+        matched_rules: list[str] = []
+        for line in summary.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("## design principles"):
+                in_principles = True
+                continue
+            if in_principles:
+                if stripped.startswith("## "):
+                    break
+                if stripped.startswith("- "):
+                    principle = stripped[2:]
+                    if any(kw in principle.lower() for kw in keywords):
+                        matched_rules.append(principle)
+        if matched_rules:
+            refs.append("project_summary.md § Design Principles")
+            for p in matched_rules[:5]:
+                words = p.split()
+                rules.append(" ".join(words[:12]) + ("…" if len(words) > 12 else ""))
+
+    # --- project_detail.md: match H2 section names ---
+    sections = entry.get("_sections") or {}
+    for section_name in sections:
+        section_lower = section_name.lower()
+        if any(kw in section_lower for kw in keywords):
+            ref = f"project_detail.md § {section_name}"
+            if ref not in refs:
+                refs.append(ref)
+
+    return refs[:6], rules[:5]
+
+
+def _format_design_context_display(refs: list[str], rules: list[str]) -> str:
+    """Build design context block for _display. Returns empty string if refs is empty."""
+    if not refs:
+        return ""
+    lines = ["\n\n→ Design refs"]
+    for ref in refs:
+        lines.append(f"   {ref}")
+    if rules:
+        lines.append("▸ Rules applied")
+        for rule in rules:
+            lines.append(f"   • {rule}")
+    return "\n".join(lines)
+
+
+def _format_design_context_body(refs: list[str], rules: list[str]) -> str:
+    """Build ## Design Context section for issue body. Returns empty string if refs is empty."""
+    if not refs:
+        return ""
+    ref_list = "\n".join(f"- `{r}`" for r in refs)
+    body = f"\n\n## Design Context\n\n{ref_list}"
+    if rules:
+        rule_list = "\n".join(f"- {r}" for r in rules)
+        body += f"\n\n**Relevant principles:**\n{rule_list}"
+    return body
+
+
 def _do_draft_issue(
     title: str,
     body: str,
@@ -433,6 +516,12 @@ def _do_draft_issue(
     labels = labels or []
     assignees = assignees or []
 
+    # Extract design refs from loaded project docs (no-op if cache is cold)
+    resolved = _resolve_repo(None) or "unknown"
+    design_refs, design_rules = _extract_design_refs(title, labels, resolved)
+    design_context_body = _format_design_context_body(design_refs, design_rules)
+    full_body = body + design_context_body
+
     slug = next_local_number(root)
 
     try:
@@ -440,7 +529,7 @@ def _do_draft_issue(
             root=root,
             slug=slug,
             title=title,
-            body=body,
+            body=full_body,
             assignees=assignees,
             labels=labels,
             created_at=date.today(),
@@ -448,11 +537,12 @@ def _do_draft_issue(
             note=note,
             agent_workflow=agent_workflow,
             milestone_number=milestone_number,
+            design_refs=design_refs or None,
         )
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
 
-    display = f"✅ **Drafted:** {title}"
+    display = f"✅ **Drafted:** {title}" + _format_design_context_display(design_refs, design_rules)
     result = {
         "slug": slug,
         "title": title,
@@ -465,6 +555,8 @@ def _do_draft_issue(
     }
     if milestone_number is not None:
         result["milestone_number"] = milestone_number
+    if design_refs:
+        result["design_refs"] = design_refs
     return result
 
 
@@ -932,7 +1024,7 @@ def _do_get_project_context(doc_key: str) -> dict:
 
 
 def _do_run_analyzer() -> dict:
-    from extensions.github_planner.analyzer import (
+    from extensions.gh_management.github_planner.analyzer import (
         process_snapshot, write_snapshot, summarize_for_prompt, snapshot_age_hours, load_snapshot
     )
     root = get_workspace_root()
@@ -1115,7 +1207,7 @@ def _load_docs_config(root: Path) -> dict:
 
 
 def _save_docs_config(root: Path, config: dict) -> None:
-    from extensions.github_planner.storage import _atomic_write
+    from extensions.gh_management.github_planner.storage import _atomic_write
     path = _docs_config_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, json.dumps(config, indent=2))
@@ -1210,7 +1302,7 @@ def _do_fetch_analysis_batch(repo: str | None = None, batch_size: int = 5) -> di
                 files_out.append({"path": path, "content": content, "is_markdown": is_md})
                 state["analyzed"].append({"path": path, "is_markdown": is_md})
             except Exception as exc:
-                from extensions.github_planner.client import GitHubError
+                from extensions.gh_management.github_planner.client import GitHubError
                 reason = getattr(exc, "error_code", "unknown")
                 state["skipped"].append({"path": path, "reason": reason})
 
@@ -1928,9 +2020,15 @@ def _do_list_issues(compact: bool = False) -> dict:
         if not issue.get("issue_number"):
             issue["local_only"] = True
     if compact:
-        issues = [{"slug": i["slug"], "title": i["title"], "status": i["status"],
-                   **({"local_only": True} if i.get("local_only") else {})}
-                  for i in issues]
+        compact_issues = []
+        for i in issues:
+            entry: dict = {"slug": i["slug"], "title": i["title"], "status": i["status"]}
+            if i.get("local_only"):
+                entry["local_only"] = True
+            if i.get("design_refs"):
+                entry["design_refs_count"] = len(i["design_refs"])
+            compact_issues.append(entry)
+        issues = compact_issues
     result: dict = {"issues": issues}
     # Hint to sync if cache is stale (#113)
     if _issues_cache_stale(root):
@@ -2959,7 +3057,7 @@ def _do_assign_milestone(slug: str, milestone_number: int) -> dict:
             return {"error": "assign_milestone_failed", "message": str(exc)}
 
     # Update local front matter
-    from extensions.github_planner.storage import _issues_dir, _atomic_write
+    from extensions.gh_management.github_planner.storage import _issues_dir, _atomic_write
     import yaml as _yaml
     path = _issues_dir(root) / f"{slug}.md"
     text = path.read_text(encoding="utf-8")
@@ -3007,7 +3105,7 @@ def _load_milestone_index(root: Path) -> dict:
 def _save_milestone_index(root: Path, index: dict) -> None:
     path = _milestone_index_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    from extensions.github_planner.storage import _atomic_write
+    from extensions.gh_management.github_planner.storage import _atomic_write
     _atomic_write(path, json.dumps(index, indent=2))
 
 
@@ -3047,7 +3145,7 @@ def _update_milestone_enables_depends(root: Path, new_number: int) -> None:
             if in_enables:
                 # Section was last in file
                 new_lines.append(f"{new_ref}\n")
-            from extensions.github_planner.storage import _atomic_write
+            from extensions.gh_management.github_planner.storage import _atomic_write
             _atomic_write(prior_path, "".join(new_lines))
 
     # Update next milestone (new_number + 1): set its Depends On to point to new_number
@@ -3075,7 +3173,7 @@ def _update_milestone_enables_depends(root: Path, new_number: int) -> None:
                     new_lines.append(line)
             if in_depends:
                 new_lines.append(f"{new_ref}\n")
-            from extensions.github_planner.storage import _atomic_write
+            from extensions.gh_management.github_planner.storage import _atomic_write
             _atomic_write(next_path, "".join(new_lines))
 
 
@@ -3182,7 +3280,7 @@ def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
     # Write file
     milestones_path = _milestone_knowledge_path(root, milestone_number)
     milestones_path.parent.mkdir(parents=True, exist_ok=True)
-    from extensions.github_planner.storage import _atomic_write
+    from extensions.gh_management.github_planner.storage import _atomic_write
     _atomic_write(milestones_path, content)
 
     # Update milestone_index.json
@@ -3234,7 +3332,7 @@ def _sync_milestone_to_project_summary(root: Path, milestone_number: int, title:
     if pattern.search(text):
         updated = pattern.sub(new_row, text)
         if updated != text:
-            from extensions.github_planner.storage import _atomic_write
+            from extensions.gh_management.github_planner.storage import _atomic_write
             _atomic_write(summary_path, updated)
             _PROJECT_DOCS_CACHE.pop(str(root), None)
 

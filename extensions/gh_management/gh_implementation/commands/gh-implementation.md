@@ -98,13 +98,18 @@ If no local issues:
 
 ## Step 4 — Load selected issue
 
-Read the chosen issue file. Check for `agent_workflow` in front matter.
+Call `load_active_issue(slug)` — this is **mandatory**. Do not read the issue file separately.
 
-- **`agent_workflow` present** → go to Step 6 (implement)
+- The returned `agent_workflow` field is the authoritative workflow (no frontmatter re-read needed)
+- The returned `content` is the full issue context — it is already in your context window
+- **`agent_workflow` present in return value** → go to Step 6 (implement)
 - **`agent_workflow` absent** → go to Step 5 (define workflow)
 
-Also check `project_detail.md` for any feature section matching this issue's area.
-Use `lookup_feature_section(feature="...")` if relevant.
+**Design refs:** If the loaded issue has `design_refs` in its frontmatter, use those as the
+lookup targets — call `lookup_feature_section(feature="<section>")` for each
+`project_detail.md § <section>` entry. Do **not** do a broad doc scan; the refs already
+identify the relevant sections. If no `design_refs` are present, fall back to checking
+`project_detail.md` for any feature section matching this issue's area.
 
 ---
 
@@ -208,8 +213,11 @@ Before writing, check `confirm_arch_changes` preference:
 
 ## Step 10 — Cleanup
 
-Ask: **"Remove local issue file hub_agents/issues/{slug}.md? (yes / no / yes, never ask again)"**
-- "yes, never ask again" → set `delete_local_issue_on_gh = false` in session (suppress future prompts)
+Call `unload_active_issue()` — this is **mandatory**. It clears session state and deletes the
+local issue file per the `delete_local_issue_on_gh` flag (default: true).
+
+To override deletion for this issue only: `unload_active_issue(delete_file=False)`.
+To change the default for all future issues: use `/th:gh-implementation/session-knowledge`.
 
 ---
 

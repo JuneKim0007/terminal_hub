@@ -315,6 +315,41 @@ Say: **"Let me know any plans for this!"**
 
 ---
 
+## Step 5.5 — Context Enrichment (runs before every `draft_issue` call)
+
+Before calling `draft_issue` for any issue, run the enrichment pipeline. Skip only for trivial issues (label: `chore` or `docs`, single-file change).
+
+**Phase 1 — Intent Expansion**
+- `load_skill("intent-expansion")` — expand the user's description using domain conventions
+- Map to domain (auth / crud / search / upload / ...), apply conventions, filter by stack + design principles
+- Produce: `{original, expanded, conventional_patterns, stack_filtered, design_constraints}`
+
+**Phase 2 — Internal Context Scan**
+- Call `scan_issue_context(feature_areas=[...])` with the feature areas from Phase 1
+- Finds reusable functions/classes, file references, patterns, and pitfalls in `project_detail.md`
+- Produce: `{reusable, extend, patterns, pitfalls, sections_scanned}`
+
+**Phase 3 — Knowledge Synthesis**
+- Merge `expanded_intent` + `context_findings` into a `knowledge_package`:
+  ```
+  {what_user_wants, conventional_patterns, reusable, extending, building_new, pitfalls, design_refs, milestone_context}
+  ```
+
+**Phase 4 — Write `## Workflow` section**
+- `load_skill("workflow")` — use `knowledge_package` to write the body section
+- Include: expanded intent, architecture layers, reuse/extend/new breakdown, design decisions, done-when criteria
+
+**Phase 5 — Write `agent_workflow` steps**
+- `load_skill("agent-workflow")` — use `knowledge_package` to write each step
+- Every step must name explicit file paths, function names, and conventions
+- The implementing Claude has zero context — embed everything it needs
+- Step format: `"[verb] [what] — [where exactly] — [what to know]"`
+- Pass the steps list to `draft_issue(agent_workflow=[...])`
+
+> **Extensibility:** To add a new thinking phase: create a skill file + add to SKILLS.md + reference here. No Python changes needed.
+
+---
+
 ## Step 6 — Issue creation
 
 After approval:

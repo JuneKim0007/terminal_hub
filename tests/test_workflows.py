@@ -1054,3 +1054,63 @@ class TestJourney10_ToolRegistration:
                 )
         # Should not raise — compact param must be accepted
         assert result is not None
+
+
+# ── scan_issue_context tests ──────────────────────────────────────────────────
+
+def test_scan_issue_context_with_detail_section():
+    """Scanner returns structured findings when a matching section exists."""
+    from extensions.gh_management.github_planner import _do_scan_issue_context
+
+    section_text = (
+        "## Auth\n\n"
+        "Handles JWT token generation. See `src/auth/service.py`.\n\n"
+        "```python\n"
+        "def create_token(user_id: int) -> str:\n"
+        "    pass\n\n"
+        "class TokenService:\n"
+        "    pass\n"
+        "```\n\n"
+        "Warning: calling TokenCache.clear() flushes all sessions.\n"
+    )
+    mock_result = {
+        "matched": True,
+        "feature": "Auth",
+        "section": section_text,
+        "global_rules": None,
+        "available_features": ["Auth"],
+    }
+    with patch("extensions.gh_management.github_planner._do_lookup_feature_section", return_value=mock_result):
+        findings = _do_scan_issue_context(["auth"])
+
+    assert findings["sections_scanned"] == ["Auth"]
+    reusable_names = [r["name"] for r in findings["reusable"]]
+    assert "create_token" in reusable_names
+    assert "TokenService" in reusable_names
+    assert any("src/auth/service.py" in r.get("path", "") or p.endswith("src/auth/service.py") for r in findings["reusable"] for p in [r.get("path", "")] if True) or any("src/auth/service.py" in p for p in findings["patterns"])
+    assert any("TokenCache" in pitfall for pitfall in findings["pitfalls"])
+
+
+def test_scan_issue_context_no_project_detail():
+    """Scanner returns empty lists gracefully when no section matches."""
+    from extensions.gh_management.github_planner import _do_scan_issue_context
+
+    mock_result = {"matched": False, "available_features": [], "global_rules": None}
+    with patch("extensions.gh_management.github_planner._do_lookup_feature_section", return_value=mock_result):
+        findings = _do_scan_issue_context(["auth"])
+
+    assert findings["reusable"] == []
+    assert findings["extend"] == []
+    assert findings["patterns"] == []
+    assert findings["pitfalls"] == []
+    assert findings["sections_scanned"] == []
+
+
+def test_scan_issue_context_empty_areas():
+    """Scanner returns empty findings when given an empty feature_areas list."""
+    from extensions.gh_management.github_planner import _do_scan_issue_context
+
+    findings = _do_scan_issue_context([])
+
+    assert findings["reusable"] == []
+    assert findings["sections_scanned"] == []

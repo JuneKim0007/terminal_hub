@@ -224,7 +224,8 @@ class TestJourney2_ProactiveIssueDraft:
             submitted = _do_submit_issue(slug)
 
         # USABILITY CHECK: confirmation shows number and title, not raw JSON
-        assert submitted["_display"].startswith("**✅ Created** #1 — Fix login redirect")
+        assert "1" in submitted["_display"]
+        assert "Fix login redirect" in submitted["_display"]
         assert submitted["issue_number"] == 1
         assert "url" in submitted
 

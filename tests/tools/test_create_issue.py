@@ -41,7 +41,7 @@ def test_draft_issue_returns_numeric_slug_and_preview(workspace):
         server = create_server()
         result = call(server, "draft_issue", {"title": "Add feature", "body": "Nice feature."})
     assert result["slug"] == "1"
-    assert "Nice feature" in result["preview_body"]
+    assert "Nice feature" in result["detail"]["preview_body"]
 
 
 def test_draft_issue_truncates_long_body_in_preview(workspace):
@@ -49,7 +49,7 @@ def test_draft_issue_truncates_long_body_in_preview(workspace):
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "draft_issue", {"title": "Big issue", "body": long_body})
-    assert len(result["preview_body"]) <= 304  # 300 + ellipsis
+    assert len(result["detail"]["preview_body"]) <= 304  # 300 + ellipsis
 
 
 def test_draft_issue_missing_title_returns_error(workspace):
@@ -86,8 +86,8 @@ def test_draft_issue_stores_labels_and_assignees(workspace):
             "title": "Tagged issue", "body": "body",
             "labels": ["bug"], "assignees": ["alice"],
         })
-    assert result["labels"] == ["bug"]
-    assert result["assignees"] == ["alice"]
+    assert result["detail"]["labels"] == ["bug"]
+    assert result["detail"]["assignees"] == ["alice"]
 
 
 def test_draft_issue_display_shows_title(workspace):

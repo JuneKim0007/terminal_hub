@@ -1216,3 +1216,179 @@ def test_creation_dry_run_does_not_write(tmp_path):
     assert result["dry_run"] is True
     assert result["registry_updated"] is False
     assert not skill_path.exists()
+
+
+# ── _silent_skill_detection integration ───────────────────────────────────────
+
+def test_draft_issue_calls_silent_skill_detection_without_error(workspace):
+    """draft_issue triggers _silent_skill_detection; no exception should escape."""
+    from extensions.gh_management.github_planner import _silent_skill_detection
+
+    called = []
+    orig = _silent_skill_detection
+
+    def spy(root):
+        called.append(root)
+        return orig(root)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner._silent_skill_detection", side_effect=spy):
+        result = _do_draft_issue("Detect me", "body text", [], [], None, None)
+
+    assert result.get("error") is None
+    assert len(called) == 1
+
+
+def test_generate_issue_workflows_calls_silent_skill_detection(workspace):
+    """generate_issue_workflows triggers _silent_skill_detection after writing workflow."""
+    from extensions.gh_management.github_planner import _do_generate_issue_workflows
+    from extensions.gh_management.github_planner.storage import write_issue_file
+
+    write_issue_file(
+        root=workspace, slug="1", title="Add login",
+        body="Implement login flow", assignees=[], labels=["enhancement"],
+        created_at=__import__("datetime").date.today(),
+    )
+
+    called = []
+
+    def spy(root):
+        called.append(root)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner._silent_skill_detection", side_effect=spy):
+        result = _do_generate_issue_workflows("1")
+
+    assert result.get("error") is None
+    assert len(called) == 1
+
+
+def test_silent_skill_detection_swallows_exceptions(tmp_path):
+    """_silent_skill_detection never raises — exceptions are silently caught."""
+    from extensions.gh_management.github_planner import _silent_skill_detection
+
+    with patch(
+        "extensions.gh_management.github_planner._do_update_skill_detection",
+        side_effect=RuntimeError("boom"),
+    ):
+        # Should not raise
+        _silent_skill_detection(tmp_path)
+
+
+# ── _do_update_skill_create with source_doc ───────────────────────────────────
+
+def test_creation_with_source_doc_replaces_block(tmp_path):
+    """source_doc provided and matching heading → block replaced with SKILL comment."""
+    import shutil
+    from extensions.gh_management.github_planner import _do_update_skill_create
+    from pathlib import Path
+
+    skills_dir = Path(__file__).parent.parent / "extensions" / "gh_management" / "github_planner" / "skills"
+    skill_path = skills_dir / "test-src-doc-skill.md"
+
+    # Create a fake source doc with a large matching section
+    fake_doc_content = (
+        "# Commands\n\n"
+        "## authentication rules\n\n"
+        + ("This is a big block of inline auth knowledge. " * 5) + "\n\n"
+        "## Something else\n\nOther content.\n"
+    )
+    # Write to a temp path within the project root simulation
+    fake_doc_rel = "fake_commands/auth-commands.md"
+    import extensions.gh_management.github_planner as _pg_mod
+    orig_parent = Path(_pg_mod.__file__).parent.parent.parent
+
+    fake_source_path = tmp_path / fake_doc_rel
+    fake_source_path.parent.mkdir(parents=True)
+    fake_source_path.write_text(fake_doc_content, encoding="utf-8")
+
+    # Patch Path(__file__).parent.parent.parent inside _do_update_skill_create
+    # by patching the source path resolution
+    original_func = _do_update_skill_create
+
+    try:
+        with patch(
+            "extensions.gh_management.github_planner.Path",
+            side_effect=lambda *a: _patched_path(tmp_path, orig_parent, *a),
+        ):
+            # Use a simpler approach: patch via monkeypatching the file path lookup
+            pass
+
+        # Direct approach: call with a real tmp source doc
+        # We need to put the fake doc relative to the plugin's parent parent parent
+        real_root = orig_parent
+        rel_from_real = "tests/_tmp_auth_skill_test.md"
+        real_source = real_root / rel_from_real
+        real_source.parent.mkdir(parents=True, exist_ok=True)
+        real_source.write_text(fake_doc_content, encoding="utf-8")
+
+        result = _do_update_skill_create(
+            root=tmp_path,
+            name="test-src-doc-skill",
+            description="Auth skill from source doc.",
+            content_hints=["authentication"],
+            source_doc=rel_from_real,
+            dry_run=False,
+        )
+
+        assert result["name"] == "test-src-doc-skill"
+        assert result["source_doc_updated"] == rel_from_real
+        # Source doc should now contain the SKILL comment
+        updated = real_source.read_text(encoding="utf-8")
+        assert 'load_skill("test-src-doc-skill")' in updated
+
+    finally:
+        if skill_path.exists():
+            skill_path.unlink()
+        if real_source.exists():
+            real_source.unlink()
+        # Clean up SKILLS.md
+        skills_md = skills_dir / "SKILLS.md"
+        if skills_md.exists():
+            text = skills_md.read_text()
+            lines = [l for l in text.split("\n") if "test-src-doc-skill" not in l]
+            skills_md.write_text("\n".join(lines))
+
+
+def _patched_path(tmp_path, orig_parent, *args):
+    """Helper — not used directly, kept for reference."""
+    from pathlib import Path
+    return Path(*args)
+
+
+def test_creation_with_source_doc_no_match_leaves_source_unchanged(tmp_path):
+    """source_doc with no matching section → source_doc_updated is None."""
+    import shutil
+    from extensions.gh_management.github_planner import _do_update_skill_create
+    from pathlib import Path
+
+    skills_dir = Path(__file__).parent.parent / "extensions" / "gh_management" / "github_planner" / "skills"
+    skill_path = skills_dir / "test-no-match-skill.md"
+
+    real_root = Path(__file__).parent.parent
+    rel_from_real = "tests/_tmp_no_match_test.md"
+    real_source = real_root / rel_from_real
+    real_source.write_text("# Doc\n\n## Unrelated\n\nShort text.\n", encoding="utf-8")
+
+    try:
+        result = _do_update_skill_create(
+            root=tmp_path,
+            name="test-no-match-skill",
+            description="No match skill.",
+            content_hints=["nonexistent-keyword-xyz"],
+            source_doc=rel_from_real,
+            dry_run=False,
+        )
+
+        assert result["source_doc_updated"] is None  # no match found
+
+    finally:
+        if skill_path.exists():
+            skill_path.unlink()
+        if real_source.exists():
+            real_source.unlink()
+        skills_md = skills_dir / "SKILLS.md"
+        if skills_md.exists():
+            text = skills_md.read_text()
+            lines = [l for l in text.split("\n") if "test-no-match-skill" not in l]
+            skills_md.write_text("\n".join(lines))

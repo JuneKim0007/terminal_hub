@@ -320,3 +320,136 @@ def test_load_skill_tier2_overrides_tier1(tmp_path):
     assert result.get("error") is None
     assert result["tier"] == "project"
     assert "Tier2 Version" in result["content"]
+
+
+# ── docs/user/ and docs/dev/ registration (#180) ─────────────────────────────
+
+_REAL_DOCS_ROOT = Path(__file__).parent.parent
+
+
+def _make_user_doc_workspace(workspace: Path) -> tuple[Path, Path]:
+    """Mirror docs/user/index.md and docs/dev/index.md into workspace."""
+    user_index = workspace / "docs" / "user" / "index.md"
+    dev_index = workspace / "docs" / "dev" / "index.md"
+    user_index.parent.mkdir(parents=True)
+    dev_index.parent.mkdir(parents=True)
+    user_index.write_text("# User Docs\n\n## Installation\nSee installation.md.\n\n## Quick Start\nRun `pip install terminal-hub`.", encoding="utf-8")
+    dev_index.write_text("# Developer Docs\n\n## Architecture\nLayered plugin system.\n\n## Adding a Plugin\nSee adding-a-plugin.md.", encoding="utf-8")
+    return user_index, dev_index
+
+
+def test_connect_docs_accepts_user_docs_path(workspace):
+    """connect_docs(others=['docs/user/index.md']) works when docs/user/index.md exists."""
+    _make_user_doc_workspace(workspace)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        result = _do_connect_docs(others=["docs/user/index.md"])
+
+    assert result.get("connected") is True
+    config = _load_docs_config(workspace)
+    assert "docs/user/index.md" in config["others"]
+
+
+def test_connect_docs_accepts_dev_docs_path(workspace):
+    """connect_docs(others=['docs/dev/index.md']) works when docs/dev/index.md exists."""
+    _make_user_doc_workspace(workspace)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        result = _do_connect_docs(others=["docs/dev/index.md"])
+
+    assert result.get("connected") is True
+    config = _load_docs_config(workspace)
+    assert "docs/dev/index.md" in config["others"]
+
+
+def test_connect_docs_registers_both_user_and_dev_docs(workspace):
+    """Both docs/user/index.md and docs/dev/index.md can be registered together."""
+    _make_user_doc_workspace(workspace)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        result = _do_connect_docs(others=["docs/user/index.md", "docs/dev/index.md"])
+
+    assert result.get("connected") is True
+    config = _load_docs_config(workspace)
+    assert "docs/user/index.md" in config["others"]
+    assert "docs/dev/index.md" in config["others"]
+    assert len(config["others"]) == 2
+
+
+def test_load_connected_docs_returns_user_doc_content(workspace):
+    """After registering docs/user/index.md, load_connected_docs returns its content."""
+    _make_user_doc_workspace(workspace)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        _do_connect_docs(others=["docs/user/index.md"])
+        result = _do_load_connected_docs()
+
+    assert result.get("content") is not None
+    assert "User Docs" in result["content"]
+    assert "docs/user/index.md" in result.get("paths", [])
+
+
+def test_load_connected_docs_returns_dev_doc_content(workspace):
+    """After registering docs/dev/index.md, load_connected_docs returns its content."""
+    _make_user_doc_workspace(workspace)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        _do_connect_docs(others=["docs/dev/index.md"])
+        result = _do_load_connected_docs()
+
+    assert result.get("content") is not None
+    assert "Developer Docs" in result["content"]
+    assert "docs/dev/index.md" in result.get("paths", [])
+
+
+def test_load_connected_docs_both_docs_combined(workspace):
+    """load_connected_docs returns combined content from both user and dev docs."""
+    _make_user_doc_workspace(workspace)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        _do_connect_docs(others=["docs/user/index.md", "docs/dev/index.md"])
+        result = _do_load_connected_docs()
+
+    assert "User Docs" in result["content"]
+    assert "Developer Docs" in result["content"]
+    assert len(result["paths"]) == 2
+
+
+def test_load_connected_docs_section_filter_user(workspace):
+    """load_connected_docs(section='Installation') extracts only that H2 section."""
+    _make_user_doc_workspace(workspace)
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        _do_connect_docs(others=["docs/user/index.md"])
+        result = _do_load_connected_docs(section="Installation")
+
+    assert result.get("content") is not None
+    assert "Installation" in result["content"]
+    assert "Quick Start" not in result["content"]
+
+
+def test_connect_docs_missing_user_docs_returns_error(workspace):
+    """connect_docs returns ref_not_found when docs/user/index.md does not exist."""
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None):
+        result = _do_connect_docs(others=["docs/user/index.md"])
+
+    assert result.get("error") == "ref_not_found"
+    assert "docs/user/index.md" in result.get("path", "")
+
+
+def test_real_user_docs_index_exists():
+    """docs/user/index.md is present in the actual project."""
+    assert (_REAL_DOCS_ROOT / "docs" / "user" / "index.md").exists()
+
+
+def test_real_dev_docs_index_exists():
+    """docs/dev/index.md is present in the actual project."""
+    assert (_REAL_DOCS_ROOT / "docs" / "dev" / "index.md").exists()

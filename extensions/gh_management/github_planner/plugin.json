@@ -13,7 +13,8 @@
     "gh-plan-unload.md",
     "gh-plan-setup.md",
     "gh-plan-auth.md",
-    "current-stat.md"
+    "current-stat.md",
+    "gh-docs.md"
   ],
   "requires_env": ["GITHUB_REPO"],
   "optional_env": ["GITHUB_TOKEN"],

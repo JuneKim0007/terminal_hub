@@ -32,6 +32,41 @@ This is grounded in how Claude actually works best: detailed, step-by-step instr
 
 ---
 
+## Design tradeoffs
+
+Some features were deliberately left out because the token cost outweighs the gain:
+
+- **Eager context loading** — loading all project docs at session start. Instead, terminal-hub loads only `project_summary.md` (≤500 tokens) upfront and fetches detail sections on demand via `lookup_feature_section`.
+- **Auto-analysis on every save** — watching for file changes and re-running repo analysis automatically. The overhead of continuous scanning is not worth it for most workflows; analysis runs on demand or when docs are >7 days stale.
+- **Full plugin registry dumps** — returning all plugin metadata to Claude on every command load. Only the relevant slice is returned; the rest stays on disk.
+
+The rule of thumb: every token Claude loads must earn its keep. If a piece of context isn't needed for the current task, it shouldn't be in the prompt.
+
+---
+
+## A note for new users — reading issues
+
+> **Before diving in, read the open issues on GitHub.**
+> terminal-hub uses itself to track its own development, so the issue list reflects real design decisions, known gaps, and planned improvements. At minimum, skim the open issues. The recommendation is to build a general understanding of the code flow before contributing — the architecture is intentional and issues explain the *why* behind it.
+
+---
+
+## Prompting tip
+
+If you're not a confident prompter, the most reliable thing you can do is explicitly tell the AI its core principle at the start of every session:
+
+> *"Remember: your core principle for this project is [X]. Always [Y] before [Z]."*
+
+With terminal-hub this is handled automatically — `project_summary.md` and the skills system inject your design principles into every relevant session so Claude never forgets them. Without a framework like this, you need to be intentional and explicit every time.
+
+---
+
+## Built with terminal-hub
+
+terminal-hub was developed using terminal-hub itself, alongside the [everything-claude-code](https://github.com/disler/everything-claude-code) plugin suite. Issues were planned with `/th:gh-plan`, implemented with `/th:gh-implementation`, reviewed with ECC's code-review and TDD skills, and docs generated with `/th:gh-docs`. The workflow described in this README is the one used to build it.
+
+---
+
 ## Quick start
 
 ```bash

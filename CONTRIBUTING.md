@@ -11,6 +11,7 @@
 | `pytest tests/tools/` | Run tool-specific tests only |
 | `terminal-hub install` | Register MCP server + copy slash commands to Claude Code |
 | `terminal-hub verify` | Confirm the server is registered globally |
+| `/th:gh-docs` | Create or update README.md + CONTRIBUTING.md, then open a PR or push |
 <!-- END AUTO-GENERATED -->
 
 ## Environment Variables
@@ -58,13 +59,18 @@ Coverage gate: **80% minimum** (configured in `pyproject.toml`). The gate runs o
 ## Project Structure
 
 ```
-terminal_hub/        core server + framework (no GitHub dependency)
-extensions/          bundled extensions (github_planner, plugin_creator)
-tests/               all tests (mirrors source layout)
-  tools/             MCP tool integration tests
-AGENT_WORKFLOW.md    agent execution guide for cleanup/refactor tasks
-TECH_STACK.md        architecture and design rationale
-QUICKSTART.md        user-facing quick start
+terminal_hub/           core server + framework (no GitHub dependency)
+extensions/             all plugins live here
+  gh_management/        GitHub management plugins
+    github_planner/     planning, analysis, issue management (~55 MCP tools)
+    gh_implementation/  issue implementation lifecycle (~10 tools)
+  plugin_creator/       conversational plugin scaffolding
+  plugin_customization/ model routing (dispatch_task)
+  builtin/              built-in slash commands (help, active, converse)
+tests/                  all tests (mirrors source layout)
+  tools/                MCP tool integration tests
+hub_agents/             runtime workspace state (gitignored, per-project)
+docs/                   user/ and dev/ documentation
 ```
 
 ## PR Checklist
@@ -80,7 +86,7 @@ QUICKSTART.md        user-facing quick start
 ## Extending terminal-hub
 
 See `README.md` → "Writing an extension" for the plugin API contract.
-See `extensions/github_planner/` as the reference implementation.
+See `extensions/gh_management/github_planner/` as the reference implementation.
 
 For full detail:
 - [Adding a Plugin](docs/dev/adding-a-plugin.md) — complete step-by-step guide with working example

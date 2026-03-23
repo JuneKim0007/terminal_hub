@@ -1,6 +1,10 @@
 # terminal-hub
 
-_**“Conversation is the flow”**_ is the core philosophy of this backend Claude layer.
+[![PyPI version](https://img.shields.io/pypi/v/terminal-hub.svg)](https://pypi.org/project/terminal-hub/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+_**”Conversation is the flow”**_ is the core philosophy of this backend Claude layer.
 
 The project aims to simplify developer workflows by enabling conversation-driven automation, where tasks like planning, implementation, and tooling are handled through natural interaction instead of manual orchestration.
 
@@ -36,7 +40,7 @@ terminal-hub install    # registers MCP server + installs slash commands
 ## The integrated flow
 
 ```
-/th:github-planner
+/th:gh-plan
 ```
 
 **This single command handles everything.** You don't need to call any other command manually. Here's what happens automatically:
@@ -74,20 +78,23 @@ All of the following happen **inside** `/th:github-planner`. You do not need to 
 
 ---
 
-## Sub-commands (for targeted use)
-
-If you only need one specific step, these work independently:
+## Slash commands reference
 
 | Command | Say | Does |
 |---------|-----|------|
-| `/th:github-planner/create-issue` | "create an issue" | Single guided issue with project context lookup |
-| `/th:github-planner/analyze` | "analyze my repo" | Build or refresh the design dictionary |
-| `/th:github-planner/list-issues` | "list issues" | Show tracked issues as a table |
-| `/th:github-planner/setup` | "set up github" | Configure workspace and GitHub repo |
-| `/th:github-planner/auth` | "fix auth" | Recover from GitHub auth failures |
-| `/th:github-planner/unload` | "unload" | Clear all caches manually |
+| `/th:gh-plan` | "let's plan" | Full planning flow — setup, analyze, create issues |
+| `/th:gh-plan-create` | "create an issue" | Single guided issue with project context lookup |
+| `/th:gh-plan-analyze` | "analyze my repo" | Build or refresh the design dictionary |
+| `/th:gh-plan-list` | "list issues" | Show tracked issues as a table |
+| `/th:gh-plan-setup` | "set up github" | Configure workspace and GitHub repo |
+| `/th:gh-plan-auth` | "fix auth" | Recover from GitHub auth failures |
+| `/th:gh-plan-settings` | "planner settings" | View or toggle planning preferences |
+| `/th:gh-plan-unload` | "unload" | Clear all caches manually |
+| `/th:gh-implementation` | "implement this issue" | Implement a tracked issue end-to-end |
+| `/th:gh-docs` | "write docs" | Create or update README.md + CONTRIBUTING.md, then PR or push |
+| `/th:current-stat` | "status" | Show what's currently loaded |
 
-For most workflows, **just use `/th:github-planner`** — it composes all of these.
+For most workflows, **just use `/th:gh-plan`** — it composes all of these.
 
 ---
 

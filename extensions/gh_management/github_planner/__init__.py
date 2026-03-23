@@ -621,16 +621,18 @@ def _do_draft_issue(
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
 
-    display = f"✅ **Drafted:** {title}" + _format_design_context_display(design_refs, design_rules)
+    display = f"📝 **Drafted:** {title} [slug: {slug}]" + _format_design_context_display(design_refs, design_rules)
     result = {
         "slug": slug,
         "title": title,
-        "preview_body": body[:300] + ("…" if len(body) > 300 else ""),
-        "labels": labels,
-        "assignees": assignees,
         "status": str(IssueStatus.PENDING),
-        "local_file": f"hub_agents/issues/{slug}.md",
         "_display": display,
+        "detail": {
+            "preview_body": body[:300] + ("…" if len(body) > 300 else ""),
+            "labels": labels,
+            "assignees": assignees,
+            "local_file": f"hub_agents/issues/{slug}.md",
+        },
     }
     if milestone_number is not None:
         result["milestone_number"] = milestone_number
@@ -733,13 +735,12 @@ def _do_submit_issue(slug: str) -> dict:
         github_url=result["html_url"],
     )
 
-    result_dict = {
+    return {
         "issue_number": result["number"],
         "url": result["html_url"],
         "slug": slug,
-        "local_file": f"hub_agents/issues/{slug}.md",
+        "_display": f"✅ **Submitted:** #{result['number']} — {fm['title']} — {result['html_url']}",
     }
-    return {**result_dict, "_display": f"**✅ Created** #{result['number']} — {fm['title']}\n{result['html_url']}"}
 
 
 def _do_get_issue_context(slug: str) -> dict:
@@ -3849,8 +3850,8 @@ def register(mcp) -> None:
     ) -> dict:
         """Save an issue draft locally as status=pending.
 
-        Returns {slug, title, preview_body, status} so Claude can show the user
-        a preview and ask for approval before calling submit_issue.
+        Returns {slug, title, status, _display, detail} — detail contains preview_body,
+        labels, assignees for use when needed without cluttering terminal output.
         Local-only users can stop here — the draft is cached in hub_agents/issues/.
 
         note: optional meta-note about user intent or experience level — stored in

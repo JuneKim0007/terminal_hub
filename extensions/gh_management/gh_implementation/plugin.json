@@ -7,8 +7,7 @@
   "commands_dir": "commands",
   "commands": [
     "gh-implementation.md",
-    "gh-implementation/implement.md",
-    "gh-implementation/session-knowledge.md"
+    "gh-implementation/implement.md"
   ],
   "requires_env": ["GITHUB_REPO"],
   "optional_env": ["GITHUB_TOKEN"],

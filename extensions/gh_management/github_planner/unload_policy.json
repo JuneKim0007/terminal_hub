@@ -1,26 +1,26 @@
 {
   "_comment": "Per-command cache lifecycle policy. unload[] items are cleared when the command completes. keep[] items survive unload. Persistent disk state (issues, project_summary.md, project_detail.md, config.yaml, .env) is never touched.",
   "cache_keys": {
-    "analysis_cache":       "repo file analysis used for smarter issue suggestions",
-    "project_docs_cache":   "your project summary and design notes",
-    "file_tree_cache":      "repo directory structure map",
+    "analysis_cache": "repo file analysis used for smarter issue suggestions",
+    "project_docs_cache": "your project summary and design notes",
+    "file_tree_cache": "repo directory structure map",
     "session_header_cache": "quick session status snapshot",
-    "label_cache":          "GitHub labels for this repo",
-    "milestone_cache":      "GitHub milestones for this repo",
-    "repo_cache":           "your linked repo name",
-    "analyzer_snapshot":    "saved analysis snapshot — which files were scanned",
-    "file_hashes":          "file content hashes to skip re-reading unchanged files",
-    "file_tree":            "saved file tree from last analysis",
-    "github_local_config":  "cached GitHub API responses for this session",
-    "docs_strategy":             "how docs were generated last time",
-    "docs_config":               "connected primary and other reference docs",
+    "label_cache": "GitHub labels for this repo",
+    "milestone_cache": "GitHub milestones for this repo",
+    "repo_cache": "your linked repo name",
+    "analyzer_snapshot": "saved analysis snapshot \u2014 which files were scanned",
+    "file_hashes": "file content hashes to skip re-reading unchanged files",
+    "file_tree": "saved file tree from last analysis",
+    "github_local_config": "cached GitHub API responses for this session",
+    "docs_strategy": "how docs were generated last time",
+    "docs_config": "connected primary and other reference docs",
     "session_repo_confirmation": "which repo was confirmed for this session",
-    "github_repo":               "your linked GitHub repository",
-    "workspace_config":     "workspace mode and settings",
-    "preferences":          "your saved preferences",
-    "project_summary":      "project goals, tech stack, and milestones",
-    "project_detail":       "per-feature design notes and conventions",
-    "issue_files":          "all your tracked issues"
+    "github_repo": "your linked GitHub repository",
+    "workspace_config": "workspace mode and settings",
+    "preferences": "your saved preferences",
+    "project_summary": "project goals, tech stack, and milestones",
+    "project_detail": "per-feature design notes and conventions",
+    "issue_files": "all your tracked issues"
   },
   "always_keep": [
     "workspace_config",
@@ -32,7 +32,7 @@
   ],
   "commands": {
     "gh-plan": {
-      "description": "Full integrated planning flow — heavy analysis + docs loaded",
+      "description": "Full integrated planning flow \u2014 heavy analysis + docs loaded",
       "unload": [
         "analysis_cache",
         "project_docs_cache",
@@ -53,7 +53,7 @@
       ]
     },
     "gh-plan-analyze": {
-      "description": "Repo analysis only — clears analysis artifacts, keeps docs",
+      "description": "Repo analysis only \u2014 clears analysis artifacts, keeps docs",
       "unload": [
         "analysis_cache",
         "file_tree_cache",
@@ -73,7 +73,7 @@
       ]
     },
     "gh-plan-create": {
-      "description": "Single issue creation — lightweight, only clear session header",
+      "description": "Single issue creation \u2014 lightweight, only clear session header",
       "unload": [
         "session_header_cache"
       ],
@@ -90,7 +90,7 @@
       ]
     },
     "gh-plan-list": {
-      "description": "Issue listing — nothing to unload, stateless read",
+      "description": "Issue listing \u2014 nothing to unload, stateless read",
       "unload": [],
       "keep": [
         "analysis_cache",
@@ -106,7 +106,7 @@
       ]
     },
     "gh-plan-setup": {
-      "description": "Workspace setup — clears repo cache so new repo is picked up",
+      "description": "Workspace setup \u2014 clears repo cache so new repo is picked up",
       "unload": [
         "repo_cache",
         "label_cache",
@@ -123,7 +123,7 @@
       ]
     },
     "gh-plan-auth": {
-      "description": "Auth recovery — no caches to clear",
+      "description": "Auth recovery \u2014 no caches to clear",
       "unload": [],
       "keep": [
         "repo_cache",
@@ -133,7 +133,7 @@
       ]
     },
     "gh-plan-unload": {
-      "description": "Manual full unload — clears everything except persistent config",
+      "description": "Manual full unload \u2014 clears everything except persistent config",
       "unload": [
         "analysis_cache",
         "project_docs_cache",
@@ -157,7 +157,7 @@
       ]
     },
     "gh-plan-settings": {
-      "description": "View/change planning preferences — keep all caches intact",
+      "description": "View/change planning preferences \u2014 keep all caches intact",
       "unload": [],
       "keep": [
         "repo_cache",
@@ -167,7 +167,7 @@
       ]
     },
     "create-github-repo": {
-      "description": "GitHub repo creation — keep repo_cache warm after linking",
+      "description": "GitHub repo creation \u2014 keep repo_cache warm after linking",
       "unload": [
         "label_cache",
         "github_local_config"
@@ -181,7 +181,7 @@
       ]
     },
     "current-stat": {
-      "description": "Status snapshot — read-only, nothing to unload",
+      "description": "Status snapshot \u2014 read-only, nothing to unload",
       "unload": [],
       "keep": [
         "analysis_cache",
@@ -196,24 +196,49 @@
       ]
     },
     "gh-implementation": {
-      "description": "Switch to implementation — clear analysis/file-scan caches; keep project docs, labels, milestones (implementation needs them)",
-      "unload": ["analysis_cache", "file_tree_cache", "session_header_cache", "analyzer_snapshot", "file_hashes", "file_tree", "github_local_config"],
-      "keep": ["project_docs_cache", "label_cache", "milestone_cache", "repo_cache", "github_repo", "workspace_config", "preferences", "docs_config"]
+      "description": "Switch to implementation \u2014 clear analysis/file-scan caches; keep project docs, labels, milestones (implementation needs them)",
+      "unload": [
+        "analysis_cache",
+        "file_tree_cache",
+        "session_header_cache",
+        "analyzer_snapshot",
+        "file_hashes",
+        "file_tree",
+        "github_local_config"
+      ],
+      "keep": [
+        "project_docs_cache",
+        "label_cache",
+        "milestone_cache",
+        "repo_cache",
+        "github_repo",
+        "workspace_config",
+        "preferences",
+        "docs_config"
+      ]
     },
     "gh-implementation/implement": {
-      "description": "Implement a single issue — no additional unloads",
+      "description": "Implement a single issue \u2014 no additional unloads",
       "unload": [],
-      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
-    },
-    "gh-implementation/session-knowledge": {
-      "description": "View/change session flags — keep everything",
-      "unload": [],
-      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences"]
+      "keep": [
+        "repo_cache",
+        "github_repo",
+        "workspace_config",
+        "preferences"
+      ]
     },
     "init": {
-      "description": "Project bootstrap — stateless operation, nothing to unload",
+      "description": "Project bootstrap \u2014 stateless operation, nothing to unload",
       "unload": [],
-      "keep": ["repo_cache", "github_repo", "workspace_config", "preferences", "project_summary", "project_detail", "issue_files"]
+      "keep": [
+        "repo_cache",
+        "github_repo",
+        "workspace_config",
+        "preferences",
+        "project_summary",
+        "project_detail",
+        "issue_files"
+      ]
     }
   }
 }

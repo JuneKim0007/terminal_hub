@@ -69,7 +69,6 @@ extensions/gh_management/gh_implementation/description.json
   → entry: /th:gh-implementation ("implement this issue", "work on an issue", "let's implement")
   → subcommands:
       /th:gh-implementation/implement        — "implement issue", "work on issue"
-      /th:gh-implementation/session-knowledge — "session config", "change automatic to false"
 
 Command files in commands/ (for full slash command list):
   extensions/gh_management/github_planner/commands/:
@@ -135,7 +134,6 @@ terminal-hub is a **medium project** (Python CLI + MCP server, 2 active plugins,
    | /th:gh-plan-setup | "set up github" | First-time setup or reconfigure |
    | /th:gh-plan-auth | "fix auth" | Fix GitHub authentication |
    | /th:gh-implementation | "implement this issue" | Implement a tracked issue end-to-end |
-   | /th:gh-implementation/session-knowledge | "session config" | View/change session flags |
    | /th:current-stat | "status" | Show what's currently loaded |
 
 8. ## Configuration  ← env vars table

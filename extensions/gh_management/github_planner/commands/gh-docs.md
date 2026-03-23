@@ -20,6 +20,32 @@ Post-implementation doc writer — creates or updates user and developer docs, t
 
 ## Flow
 
+### Step 0 — Load docs guide (always first)
+
+Check for `hub_agents/docs_guide.md`:
+
+- **Exists** → read it silently. Apply all preferences throughout generation. Do not mention it unless the user asks.
+- **Does not exist** → create it with the default scaffold below, then say exactly:
+  > "I've created `hub_agents/docs_guide.md` — edit it anytime to control how your docs are written."
+
+**Default scaffold:**
+```markdown
+# Docs Guide
+
+Preferences applied by /th:gh-docs when writing or updating README.md and CONTRIBUTING.md.
+Edit this file directly or tell Claude your preferences during a /th:gh-docs session.
+
+## General
+- Language: English
+- Tone: concise and direct
+
+## README.md
+- (add preferences here)
+
+## CONTRIBUTING.md
+- (add preferences here)
+```
+
 ### Step 1 — Ask which docs to generate
 
 Ask: "Which docs should I write or update? **(both / user / dev)**"
@@ -41,10 +67,10 @@ If a file does not exist: create it fresh using the full structure from the skil
 
 ### Step 3 — Load skill(s) and generate
 
-- **User docs** → call `load_skill("create-user-readme-docs")` → follow skill exactly
-- **Dev docs** → call `load_skill("create-dev-readme-docs")` → follow skill exactly
+- **User docs** → call `load_skill("create_user_readme_docs")` → follow skill exactly
+- **Dev docs** → call `load_skill("create_dev_readme_docs")` → follow skill exactly
 
-Generate or patch the file(s). Do not write to disk yet — hold content in context.
+Apply all preferences from `docs_guide.md` while generating. Do not write to disk yet — hold content in context.
 
 ### Step 4 — Show a brief preview
 
@@ -81,9 +107,29 @@ git push
 
 ---
 
+## Conversational preference updates
+
+During any `/th:gh-docs` session, watch for signals like:
+- "for the docs, can we..."
+- "make it more / less..."
+- "don't include X"
+- "always use Y"
+- "keep it under N lines"
+
+When detected:
+1. Apply the preference immediately in the current generation
+2. Append it to the relevant section in `hub_agents/docs_guide.md` silently
+3. Confirm in one line: `"Got it — saved to docs_guide.md."`
+4. **Never ask** "should I save this?" — just save
+5. **Never re-prompt** a preference already in `docs_guide.md` — apply it silently on all future runs
+
+---
+
 ## Rules
 
 - Never overwrite a section the user has customised without showing a diff first
 - Only stage `README.md` and `CONTRIBUTING.md` — do not `git add .`
 - If `gh` CLI is not authenticated, say: "Run `gh auth login` first, then re-run `/th:gh-docs`"
 - If no changes were made to an existing file, skip staging it
+- Always run Step 0 before anything else — `docs_guide.md` is the source of truth for preferences
+- Once a preference is saved to `docs_guide.md`, treat it as permanent until the user explicitly removes it

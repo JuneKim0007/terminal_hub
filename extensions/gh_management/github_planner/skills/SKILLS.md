@@ -28,6 +28,11 @@ Always-loaded skills (index only — no heavy knowledge):
 | Command | File | Notes |
 |---------|------|-------|
 | /th:gh-docs | commands/gh-docs.md | Post-implementation doc writer — create or update README.md + CONTRIBUTING.md, then PR or push. Lives in github_planner (no dedicated extension). |
+| /th:skill-map | commands/skill-map.md | Show all skills, which commands load them, alwaysApply status, triggers. Calls build_docs_map() + get_docs_map(view="skills"). |
+| /th:cmd-map | commands/cmd-map.md | Show all commands, skills they load, MCP tools they reference. Calls build_docs_map() + get_docs_map(view="commands"). |
+
+
+
 
 
 

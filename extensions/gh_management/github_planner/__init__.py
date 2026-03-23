@@ -3446,13 +3446,14 @@ def _do_load_milestone_knowledge(milestone_number: int) -> dict:
 def _parse_skill_frontmatter(path: Path) -> dict:
     """Parse YAML frontmatter from a skill .md file. Returns {} if no frontmatter."""
     try:
+        import yaml as _yaml
         text = path.read_text(encoding="utf-8")
         if not text.startswith("---"):
             return {}
         parts = text.split("---", 2)
         if len(parts) < 3:
             return {}
-        return yaml.safe_load(parts[1]) or {}
+        return _yaml.safe_load(parts[1]) or {}
     except Exception:
         return {}
 
@@ -3754,6 +3755,94 @@ def _silent_skill_detection(root: Path) -> None:
             pass
     except Exception:
         pass
+
+
+# ── docs_map helpers ──────────────────────────────────────────────────────────
+
+def _do_build_docs_map() -> dict:
+    """Scan plugin skills + command files, build docs_map.json in the plugin directory."""
+    from extensions.gh_management.github_planner.storage import _atomic_write
+
+    skills_dir = _PLUGIN_DIR / "skills"
+    skill_ref = re.compile(r'load_skill\(["\']([^"\']+)["\']\)')
+    tool_ref = re.compile(r'`([a-z][a-z_]{2,})\s*\(')
+
+    # 1. Parse all skills
+    skills_data: dict[str, dict] = {}
+    for f in sorted(skills_dir.glob("*.md")):
+        if f.name == "SKILLS.md":
+            continue
+        fm = _parse_skill_frontmatter(f)
+        name = fm.get("name") or f.stem
+        skills_data[name] = {
+            "file": f"skills/{f.name}",
+            "alwaysApply": fm.get("alwaysApply", False),
+            "triggers": fm.get("triggers", []),
+            "used_by_commands": [],
+        }
+
+    # 2. Parse all commands — extract skill refs and tool mentions
+    commands_data: dict[str, dict] = {}
+    for f in sorted(_COMMANDS_DIR.glob("*.md")):
+        text = f.read_text(encoding="utf-8")
+        skills_loaded = sorted(set(skill_ref.findall(text)))
+        tools_referenced = sorted(set(tool_ref.findall(text)))
+        entry_match = re.search(r"^# (/th:[^\s\n]+)", text, re.MULTILINE)
+        entry_point = entry_match.group(1) if entry_match else f.stem
+        commands_data[f.name] = {
+            "entry_point": entry_point,
+            "loads_skills": skills_loaded,
+            "tools_referenced": tools_referenced,
+        }
+        for skill_name in skills_loaded:
+            if skill_name in skills_data and f.name not in skills_data[skill_name]["used_by_commands"]:
+                skills_data[skill_name]["used_by_commands"].append(f.name)
+
+    docs_map = {"skills": skills_data, "commands": commands_data}
+    map_path = _PLUGIN_DIR / "docs_map.json"
+    _atomic_write(map_path, json.dumps(docs_map, indent=2))
+
+    return {
+        "skills": skills_data,
+        "commands": commands_data,
+        "_display": f"✅ **docs_map.json built** — {len(skills_data)} skills, {len(commands_data)} commands",
+    }
+
+
+def _do_get_docs_map(view: str) -> dict:
+    """Read docs_map.json and return a formatted table for the requested view."""
+    map_path = _PLUGIN_DIR / "docs_map.json"
+    if map_path.exists():
+        data: dict = json.loads(map_path.read_text(encoding="utf-8"))
+    else:
+        result = _do_build_docs_map()
+        data = {"skills": result["skills"], "commands": result["commands"]}
+
+    if view == "skills":
+        lines = ["**Skill Map** — all skills and where they are loaded\n"]
+        lines.append(f"{'Skill':<32} {'Used by':<30} {'Always':<8} Triggers")
+        lines.append("─" * 100)
+        for name, info in sorted(data["skills"].items()):
+            used = ", ".join(info["used_by_commands"]) or "(none)"
+            always = "yes" if info["alwaysApply"] else "no"
+            triggers = ", ".join(info["triggers"][:3]) if info["triggers"] else "—"
+            if len(used) > 28:
+                used = used[:25] + "..."
+            lines.append(f"{name:<32} {used:<30} {always:<8} {triggers}")
+        display = "\n".join(lines)
+    else:
+        lines = ["**Command Map** — commands and their skill + tool dependencies\n"]
+        lines.append(f"{'Command':<28} {'Skills loaded':<38} Tools referenced")
+        lines.append("─" * 100)
+        for name, info in sorted(data["commands"].items()):
+            skills = ", ".join(info["loads_skills"]) or "(none)"
+            tools = ", ".join(info["tools_referenced"][:5]) or "(none)"
+            if len(skills) > 36:
+                skills = skills[:33] + "..."
+            lines.append(f"{name:<28} {skills:<38} {tools}")
+        display = "\n".join(lines)
+
+    return {"view": view, "data": data, "_display": display}
 
 
 # ── Plugin registration ───────────────────────────────────────────────────────
@@ -4455,3 +4544,26 @@ def register(mcp) -> None:
         milestone_number: GitHub milestone number (e.g. 1, 2, 3)
         """
         return _do_load_milestone_knowledge(milestone_number)
+
+    @mcp.tool()
+    def build_docs_map() -> dict:
+        """Scan plugin skills and command files, build docs_map.json in the plugin directory.
+
+        Extracts: skill metadata (alwaysApply, triggers), which commands load each skill
+        (via load_skill() calls), and which MCP tools each command references.
+        Writes results to extensions/gh_management/github_planner/docs_map.json.
+        Returns {skills, commands, _display}.
+        """
+        return _do_build_docs_map()
+
+    @mcp.tool()
+    def get_docs_map(view: str = "skills") -> dict:
+        """Read docs_map.json and return a formatted table.
+
+        Rebuilds docs_map.json automatically if not present.
+
+        view: "skills" — shows all skills, which commands load them, alwaysApply, triggers
+              "commands" — shows all commands, skills they load, MCP tools they reference
+        Returns {view, data, _display}.
+        """
+        return _do_get_docs_map(view)

@@ -14,7 +14,9 @@
     "gh-plan-setup.md",
     "gh-plan-auth.md",
     "current-stat.md",
-    "gh-docs.md"
+    "gh-docs.md",
+    "skill-map.md",
+    "cmd-map.md"
   ],
   "requires_env": ["GITHUB_REPO"],
   "optional_env": ["GITHUB_TOKEN"],

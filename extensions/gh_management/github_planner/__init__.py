@@ -239,6 +239,18 @@ _LABEL_ANALYSIS_CACHE: dict[str, dict] = {}
 
 _MILESTONE_CACHE: dict[str, list[dict]] = {}  # repo -> [{number, title, description}]
 
+# Cycling color palette for milestone labels (m1, m2, …)
+_MILESTONE_LABEL_PALETTE = [
+    "0075ca",  # blue
+    "e4e669",  # yellow
+    "d93f0b",  # orange-red
+    "0e8a16",  # green
+    "5319e7",  # purple
+    "f9d0c4",  # pink
+    "c5def5",  # light blue
+    "bfd4f2",  # periwinkle
+]
+
 _GITHUB_DEFAULT_LABEL_NAMES = frozenset({
     "bug", "documentation", "duplicate", "enhancement", "good first issue",
     "help wanted", "invalid", "question", "wontfix",
@@ -3079,6 +3091,77 @@ def _do_make_label(name: str, color: str, description: str = "") -> dict:
         return {"error": "make_label_failed", "message": str(exc)}
 
 
+# ── Milestone label helpers ───────────────────────────────────────────────────
+
+def _milestone_label_color(number: int) -> str:
+    """Return a hex color (no #) for milestone label m{number}, cycling through the palette."""
+    return _MILESTONE_LABEL_PALETTE[(number - 1) % len(_MILESTONE_LABEL_PALETTE)]
+
+
+def _ensure_milestone_label(number: int, title: str) -> None:
+    """Idempotently create or update the m{N} label on GitHub and sync labels.json.
+
+    Called after every milestone create/list so the label always reflects the
+    current milestone title.  Errors are swallowed — label creation is best-effort.
+    """
+    root = get_workspace_root()
+    label_name = f"m{number}"
+    color = _milestone_label_color(number)
+    description = title
+
+    # 1. Create or update label on GitHub
+    gh, err = get_github_client()
+    if gh is None:
+        return  # no GitHub client — skip silently
+    repo = read_env(root).get("GITHUB_REPO", "")
+    try:
+        with gh:
+            existing_labels = gh.get_labels()
+            if label_name in existing_labels:
+                gh.update_label(label_name, description)
+            else:
+                gh.create_label(label_name, color, description)
+        # Invalidate label cache so next list_repo_labels sees the new label
+        _LABEL_CACHE.pop(repo, None)
+        _LABEL_ANALYSIS_CACHE.pop(repo, None)
+    except Exception:
+        pass  # best-effort
+
+    # 2. Sync to labels.json so ensure_labels() can bootstrap it in other repos
+    labels_file = _PLUGIN_DIR / "labels.json"
+    try:
+        existing: list[dict] = json.loads(labels_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        existing = []
+
+    entry = {"name": label_name, "color": color, "description": description}
+    updated = False
+    for i, lbl in enumerate(existing):
+        if lbl.get("name") == label_name:
+            if lbl.get("description") != description or lbl.get("color") != color:
+                existing[i] = entry
+                updated = True
+            break
+    else:
+        existing.append(entry)
+        updated = True
+
+    if updated:
+        try:
+            labels_file.write_text(
+                json.dumps(existing, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass  # best-effort
+
+
+def _ensure_milestone_labels_for_all(milestones: list[dict]) -> None:
+    """Call _ensure_milestone_label for every milestone in the list."""
+    for m in milestones:
+        _ensure_milestone_label(m["number"], m["title"])
+
+
 # ── Milestone tools ───────────────────────────────────────────────────────────
 
 def _do_list_milestones(state: str = "open") -> dict:
@@ -3101,6 +3184,7 @@ def _do_list_milestones(state: str = "open") -> dict:
                "description": m.get("description", ""),
                "open_issues": m.get("open_issues", 0)} for m in raw]
         _MILESTONE_CACHE[repo] = ms
+        _ensure_milestone_labels_for_all(ms)
         lines = "\n".join(f"  M{m['number']} — {m['title']}: {m['description']}" for m in ms)
         return {"milestones": ms, "count": len(ms), "cached": False,
                 "_display": f"{len(ms)} milestones on {repo}:\n{lines}"}
@@ -3128,6 +3212,8 @@ def _do_create_milestone(title: str, description: str = "", due_on: str | None =
         cache = _MILESTONE_CACHE.setdefault(repo, [])
         if not any(x["number"] == entry["number"] for x in cache):
             cache.append(entry)
+        # Auto-create/update the milestone label (m{N}) — integrated flow
+        _ensure_milestone_label(entry["number"], entry["title"])
         return {
             "number": entry["number"],
             "title": entry["title"],
@@ -4547,11 +4633,15 @@ def register(mcp) -> None:
     def create_milestone(title: str, description: str = "", due_on: str | None = None) -> dict:
         """Create a GitHub milestone (idempotent — returns existing if title already taken).
 
-        Use descriptive phase titles, not generic ones:
-          Good: "Core Auth", "Posting & Feed", "Launch Polish"
-          Bad:  "Milestone 1", "Phase A"
+        **Convention:** Only create a milestone when a coherent group of related features
+        warrants a named release phase — typically >= 3 issues with a shared theme.
+        Name pattern: descriptive theme (e.g. "Core Auth", "Posting & Feed", "Launch Polish").
+        Avoid generic names like "Milestone 1" or "Phase A".
 
-        title: short descriptive name (e.g. "Core Auth")
+        **Auto-label:** After creation, a milestone label `m{N}` is automatically created
+        on GitHub and synced to labels.json so issues can be tagged by milestone.
+
+        title: short descriptive theme (e.g. "Core Auth")
         description: one sentence — what the user can do after this milestone ships
         due_on: optional ISO 8601 date string (e.g. '2026-04-01T00:00:00Z')
         """

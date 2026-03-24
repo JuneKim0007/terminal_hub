@@ -3,6 +3,14 @@
 Registers all GitHub-specific MCP tools and resources.
 Call register(mcp) from create_server() to activate.
 """
+from terminal_hub.constants import (
+    FILE_TREE_TTL,
+    ISSUES_SYNC_TTL,
+    SECONDS_PER_HOUR,
+    ANALYSIS_BATCH_SIZE,
+    ANALYSIS_BATCH_SIZE_MIN,
+    ANALYSIS_BATCH_SIZE_MAX,
+)
 import ast
 import hashlib
 import json
@@ -67,7 +75,7 @@ _FILE_TREE_CACHE: dict = {}
 #   "root":       str,
 # }
 
-_FILE_TREE_TTL = 3600  # seconds
+_FILE_TREE_TTL = FILE_TREE_TTL
 
 _FILE_TREE_IGNORE = frozenset({
     ".git", "__pycache__", "venv", ".venv", "node_modules",
@@ -1358,13 +1366,13 @@ def _do_start_repo_analysis(repo: str | None = None) -> dict:
     }
 
 
-def _do_fetch_analysis_batch(repo: str | None = None, batch_size: int = 5) -> dict:
+def _do_fetch_analysis_batch(repo: str | None = None, batch_size: int = ANALYSIS_BATCH_SIZE) -> dict:
     resolved = _resolve_repo(repo)
     if not resolved or resolved not in _ANALYSIS_CACHE:
         return {"error": "analysis_not_started", "message": "Call start_repo_analysis first.", "_hook": None}
 
     state = _ANALYSIS_CACHE[resolved]
-    batch_size = max(1, min(batch_size, 20))
+    batch_size = max(ANALYSIS_BATCH_SIZE_MIN, min(batch_size, ANALYSIS_BATCH_SIZE_MAX))
 
     gh, err = _get_github_client()
     if gh is None:
@@ -1563,7 +1571,7 @@ def _do_docs_exist(repo: str | None = None) -> dict:
     detail_exists = detail_path.exists()
     age_hours: float | None = None
     if summary_exists:
-        age_hours = (time.time() - summary_path.stat().st_mtime) / 3600
+        age_hours = (time.time() - summary_path.stat().st_mtime) / SECONDS_PER_HOUR
 
     # Parse sections and populate _PROJECT_DOCS_CACHE so the immediately-following
     # lookup_feature_section() call gets a cache hit (zero extra disk reads).
@@ -2043,7 +2051,7 @@ def _do_get_session_header() -> dict:
         _SESSION_HEADER_CACHE[root_key] = result
         return result
 
-    age_h = (time.time() - summary_path.stat().st_mtime) / 3600
+    age_h = (time.time() - summary_path.stat().st_mtime) / SECONDS_PER_HOUR
     text = summary_path.read_text(encoding="utf-8")
     # Prefer **Goal:** line (new structured format); fall back to H1 heading (legacy)
     _goal_m = re.search(r"\*\*Goal:\*\*\s*(.+)", text)
@@ -2124,7 +2132,7 @@ def _do_list_pending_drafts() -> dict:
 
 # ── GitHub issues sync (#113) ─────────────────────────────────────────────────
 
-_ISSUES_SYNC_TTL = 3600  # seconds — cache considered stale after 1 hour
+_ISSUES_SYNC_TTL = ISSUES_SYNC_TTL
 
 
 def _check_suggest_unload() -> str | None:
@@ -2871,11 +2879,30 @@ _CACHE_KEY_MAP: dict[str, tuple[dict | None, str | None]] = {
 
 
 def _load_unload_policy() -> dict:
-    """Load and return the full unload_policy.json contents."""
+    """Load and return the full unload_policy.json contents.
+
+    Warns if the policy references cache keys not present in _CACHE_KEY_MAP,
+    so contributors catch stale references early.
+    """
     try:
-        return json.loads(_UNLOAD_POLICY_PATH.read_text(encoding="utf-8"))
+        policy = json.loads(_UNLOAD_POLICY_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return {"error": str(exc), "commands": {}}
+
+    # Startup validation — catch unknown cache keys before they silently no-op.
+    # known_keys includes both in-memory caches (_CACHE_KEY_MAP) and policy-defined
+    # keys like issue_files/project_summary/project_detail that are disk-persistent
+    # and intentionally absent from _CACHE_KEY_MAP.
+    known_keys = set(_CACHE_KEY_MAP.keys()) | set(policy.get("cache_keys", {}).keys())
+    for cmd_name, cmd_policy in policy.get("commands", {}).items():
+        for key in cmd_policy.get("unload", []) + cmd_policy.get("keep", []):
+            if key not in known_keys:
+                import warnings
+                warnings.warn(
+                    f"unload_policy.json: command {cmd_name!r} references unknown cache key {key!r}",
+                    stacklevel=2,
+                )
+    return policy
 
 
 def _do_apply_unload_policy(command: str) -> dict:

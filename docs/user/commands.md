@@ -38,6 +38,19 @@ End-to-end issue implementation flow. Loads issue context and agent workflow, im
 
 ---
 
+## Community Standards
+
+### `/th:gh-auxiliaries`
+**Say:** "community standards", "code of conduct", "security policy"
+
+Generates GitHub community standard files on demand. Never auto-triggered — always requires explicit invocation.
+
+| Sub-command | Does |
+|-------------|------|
+| `/th:gh-auxiliaries/code-of-conduct` | Generate `CODE_OF_CONDUCT.md` with template selection and metadata injection |
+
+---
+
 ## Documentation
 
 ### `/th:gh-docs`

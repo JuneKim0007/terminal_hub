@@ -383,3 +383,237 @@ def test_load_plugin_registry_unfiltered_still_works(workspace):
 
     assert len(result["plugins"]) >= 1
     assert "unidentified" in result
+
+
+# ── plugin_customization: dispatch_task + config tools (#178) ─────────────────
+
+import sys
+from unittest.mock import MagicMock
+
+from extensions.plugin_customization import (
+    _do_dispatch_task,
+    _do_get_plugin_config,
+    _do_list_task_types,
+    _do_set_model_for_task,
+    _load_config,
+    _save_config,
+)
+from terminal_hub.constants import MODEL_HAIKU, MODEL_SONNET
+
+
+def test_dispatch_task_import_error():
+    """ImportError → error dict with missing_dependency code."""
+    saved = sys.modules.get("anthropic")
+    sys.modules["anthropic"] = None  # type: ignore[assignment]
+    try:
+        result = _do_dispatch_task("file_location", "find auth module")
+    finally:
+        if saved is None:
+            sys.modules.pop("anthropic", None)
+        else:
+            sys.modules["anthropic"] = saved
+
+    assert result["error"] == "missing_dependency"
+    assert "anthropic" in result["message"]
+
+
+def test_dispatch_task_api_exception():
+    """API exception → error dict with api_error code."""
+    mock_anthropic = MagicMock()
+    mock_client = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    mock_client.messages.create.side_effect = RuntimeError("connection refused")
+
+    with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
+        result = _do_dispatch_task("file_location", "find auth module")
+
+    assert result["error"] == "api_error"
+    assert "connection refused" in result["message"]
+
+
+def test_dispatch_task_file_location_json_parse():
+    """file_location with valid JSON array → result['files'] promoted."""
+    mock_anthropic = MagicMock()
+    mock_client = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text='["/src/auth.py", "/tests/test_auth.py"]')]
+    mock_client.messages.create.return_value = mock_message
+
+    with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
+        result = _do_dispatch_task("file_location", "find auth")
+
+    assert result["task_type"] == "file_location"
+    assert result["files"] == ["/src/auth.py", "/tests/test_auth.py"]
+    assert isinstance(result["result"], list)
+
+
+def test_dispatch_task_issue_classification_json_parse():
+    """issue_classification with valid JSON → size/reason promoted."""
+    mock_anthropic = MagicMock()
+    mock_client = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text='{"size": "small", "reason": "single file change"}')]
+    mock_client.messages.create.return_value = mock_message
+
+    with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
+        result = _do_dispatch_task("issue_classification", "classify this issue")
+
+    assert result["size"] == "small"
+    assert result["reason"] == "single file change"
+
+
+def test_dispatch_task_structure_scan_json_parse():
+    """structure_scan with valid JSON array → areas promoted."""
+    mock_anthropic = MagicMock()
+    mock_client = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text='[{"dir": "src", "purpose": "main source"}]')]
+    mock_client.messages.create.return_value = mock_message
+
+    with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
+        result = _do_dispatch_task("structure_scan", "scan the tree")
+
+    assert result["areas"] == [{"dir": "src", "purpose": "main source"}]
+
+
+def test_dispatch_task_json_parse_failure_returns_raw():
+    """If JSON parse fails for structured task, result is the raw string."""
+    mock_anthropic = MagicMock()
+    mock_client = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text="not json at all")]
+    mock_client.messages.create.return_value = mock_message
+
+    with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
+        result = _do_dispatch_task("file_location", "find something")
+
+    assert result["result"] == "not json at all"
+    assert "files" not in result
+
+
+def test_dispatch_task_with_context_prepends_context():
+    """context is prepended to prompt before API call."""
+    mock_anthropic = MagicMock()
+    mock_client = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text="[]")]
+    mock_client.messages.create.return_value = mock_message
+
+    with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
+        _do_dispatch_task("file_location", "find auth", context="project has src/")
+
+    call_args = mock_client.messages.create.call_args
+    sent_prompt = call_args[1]["messages"][0]["content"]
+    assert "project has src/" in sent_prompt
+    assert "find auth" in sent_prompt
+
+
+def test_dispatch_task_unknown_type_uses_default_system():
+    """Unknown task_type uses _DEFAULT_SYSTEM prompt and no key promotion."""
+    mock_anthropic = MagicMock()
+    mock_client = MagicMock()
+    mock_anthropic.Anthropic.return_value = mock_client
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text="some answer")]
+    mock_client.messages.create.return_value = mock_message
+
+    with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
+        result = _do_dispatch_task("custom_task", "do something custom")
+
+    assert result["result"] == "some answer"
+    assert "files" not in result
+    assert "size" not in result
+    assert "areas" not in result
+
+
+def test_save_config_round_trip(tmp_path):
+    """_save_config writes to hub_agents override path; _load_config reads it back."""
+    cfg_in = {"model_routing": {"default": MODEL_HAIKU, "tasks": {"file_location": MODEL_HAIKU}}}
+
+    with patch("extensions.plugin_customization.resolve_workspace_root", return_value=tmp_path):
+        _save_config(cfg_in)
+        cfg_out = _load_config(force=True)
+
+    assert cfg_out["model_routing"]["default"] == MODEL_HAIKU
+    assert cfg_out["model_routing"]["tasks"]["file_location"] == MODEL_HAIKU
+
+
+def test_save_config_creates_dirs(tmp_path):
+    """_save_config creates intermediate directories if missing."""
+    cfg = {"model_routing": {"tasks": {}}}
+    out_path = tmp_path / "hub_agents" / "extensions" / "plugin_customization" / "plugin_config.json"
+
+    assert not out_path.exists()
+    with patch("extensions.plugin_customization.resolve_workspace_root", return_value=tmp_path):
+        _save_config(cfg)
+
+    assert out_path.exists()
+
+
+def test_do_get_plugin_config_returns_display():
+    result = _do_get_plugin_config()
+    assert "config" in result
+    assert "config_path" in result
+    assert "Model Routing Config" in result["_display"]
+
+
+def test_do_set_model_for_task_unknown_model():
+    result = _do_set_model_for_task("file_location", "gpt-9-turbo")
+    assert result["error"] == "unknown_model"
+    assert "gpt-9-turbo" in result["message"]
+
+
+def test_do_set_model_for_task_valid(tmp_path):
+    with patch("extensions.plugin_customization.resolve_workspace_root", return_value=tmp_path):
+        result = _do_set_model_for_task("file_location", MODEL_HAIKU)
+
+    assert result["task_type"] == "file_location"
+    assert result["model"] == MODEL_HAIKU
+    assert "_display" in result
+
+
+def test_do_list_task_types_returns_display():
+    result = _do_list_task_types()
+    assert "task_types" in result
+    assert "default_model" in result
+    assert "Task → Model routing" in result["_display"]
+
+
+# ── MCP wrapper lines coverage ────────────────────────────────────────────────
+
+def test_mcp_get_plugin_config(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "get_plugin_config", {})
+    assert "config" in result
+    assert "_display" in result
+
+
+def test_mcp_set_model_for_task_invalid(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "set_model_for_task", {"task_type": "file_location", "model": "bad-model"})
+    assert result["error"] == "unknown_model"
+
+
+def test_mcp_list_task_types(workspace):
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        result = call(server, "list_task_types", {})
+    assert "task_types" in result
+    assert "_display" in result
+
+
+def test_mcp_dispatch_task_wrapper(workspace):
+    """Cover the MCP dispatch_task wrapper line via server call."""
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace), \
+         patch("extensions.plugin_customization._do_dispatch_task",
+               return_value={"task_type": "file_location", "result": [], "_display": "ok"}):
+        server = create_server()
+        result = call(server, "dispatch_task", {"task_type": "file_location", "prompt": "find auth"})
+    assert result["task_type"] == "file_location"

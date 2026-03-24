@@ -8,3 +8,8 @@ hub_agents/
 commands/user/
 extensions/user/
 benchmarks/
+.DS_Store
+.coverage
+.claude/
+venv/
+*.log

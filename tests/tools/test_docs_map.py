@@ -191,6 +191,58 @@ def test_get_docs_map_auto_builds_if_missing(plugin_dir, workspace):
     assert map_path.exists()
 
 
+def test_get_docs_map_auto_rebuilds_when_skill_changes(plugin_dir, workspace):
+    """get_docs_map should rebuild when a skills/ file is newer than docs_map.json."""
+    import time
+
+    with (
+        patch("extensions.gh_management.github_planner._PLUGIN_DIR", plugin_dir),
+        patch("extensions.gh_management.github_planner._COMMANDS_DIR", plugin_dir / "commands"),
+        patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace),
+    ):
+        server = create_server()
+        # Build initial map
+        call(server, "build_docs_map", {})
+        map_path = plugin_dir / "docs_map.json"
+        old_mtime = map_path.stat().st_mtime
+
+        # Touch a skill file to make it newer than the map
+        time.sleep(0.05)
+        new_skill = plugin_dir / "skills" / "new_skill.md"
+        new_skill.write_text(
+            "---\nname: new_skill\nalwaysApply: false\n---\n# new_skill\n",
+            encoding="utf-8",
+        )
+
+        result = call(server, "get_docs_map", {"view": "skills"})
+
+    # Map must have been rebuilt (mtime updated)
+    assert map_path.stat().st_mtime > old_mtime
+    assert "new_skill" in result["_display"]
+
+
+def test_get_docs_map_no_rebuild_when_current(plugin_dir, workspace):
+    """get_docs_map should NOT rebuild when docs_map.json is up to date."""
+    with (
+        patch("extensions.gh_management.github_planner._PLUGIN_DIR", plugin_dir),
+        patch("extensions.gh_management.github_planner._COMMANDS_DIR", plugin_dir / "commands"),
+        patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace),
+    ):
+        server = create_server()
+        call(server, "build_docs_map", {})
+        map_path = plugin_dir / "docs_map.json"
+        mtime_after_build = map_path.stat().st_mtime
+
+        # No file changes — get_docs_map should read existing map, not rebuild
+        with patch(
+            "extensions.gh_management.github_planner._do_build_docs_map"
+        ) as mock_build:
+            call(server, "get_docs_map", {"view": "skills"})
+            mock_build.assert_not_called()
+
+    assert map_path.stat().st_mtime == mtime_after_build
+
+
 def test_build_docs_map_empty_dirs(tmp_path, workspace):
     """build_docs_map handles empty skills/ and commands/ dirs gracefully."""
     (tmp_path / "skills").mkdir()

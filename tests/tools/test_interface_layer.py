@@ -4,20 +4,27 @@ from pathlib import Path
 
 
 def test_gh_implementation_cache_keys_subset_of_gh_planner():
-    """All cache keys used by gh_implementation must be defined in gh_planner's policy."""
+    """All keys used by gh-implementation commands must be defined in gh_planner's cache_keys.
+
+    gh_implementation no longer has its own unload_policy.json — all commands
+    (including gh-implementation and gh-implementation/implement) are defined in
+    the single authoritative github_planner/unload_policy.json.
+    """
     planner_policy = json.loads(
         (Path(__file__).parents[2] / "extensions/gh_management/github_planner/unload_policy.json").read_text()
     )
-    impl_policy = json.loads(
-        (Path(__file__).parents[2] / "extensions/gh_management/gh_implementation/unload_policy.json").read_text()
-    )
-    planner_keys = set(planner_policy["cache_keys"].keys())
-    for cmd_name, cmd_entry in impl_policy["commands"].items():
-        for key in cmd_entry.get("unload", []):
-            assert key in planner_keys, f"gh_implementation command '{cmd_name}' unloads unknown key '{key}'"
-        for key in cmd_entry.get("keep", []):
-            assert key in planner_keys or key in impl_policy.get("cache_keys", {}), \
-                f"gh_implementation command '{cmd_name}' keeps unknown key '{key}'"
+    known_keys = set(planner_policy["cache_keys"].keys())
+    impl_commands = {
+        name: entry
+        for name, entry in planner_policy["commands"].items()
+        if name.startswith("gh-implementation")
+    }
+    assert impl_commands, "Expected at least one gh-implementation command in planner policy"
+    for cmd_name, cmd_entry in impl_commands.items():
+        for key in cmd_entry.get("unload", []) + cmd_entry.get("keep", []):
+            assert key in known_keys, (
+                f"gh_planner policy command '{cmd_name}' references unknown cache key '{key}'"
+            )
 
 
 def test_gh_planner_has_gh_implementation_commands():

@@ -21,6 +21,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from terminal_hub.constants import MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS, VALID_MODELS
 from terminal_hub.workspace import resolve_workspace_root
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -28,11 +29,7 @@ from terminal_hub.workspace import resolve_workspace_root
 _EXT_DIR = Path(__file__).parent
 _DEFAULT_CONFIG_PATH = _EXT_DIR / "plugin_config.json"
 
-_KNOWN_MODELS = {
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
-}
+_KNOWN_MODELS = set(VALID_MODELS)
 
 # ── Config loading + hot-reload ───────────────────────────────────────────────
 
@@ -61,7 +58,7 @@ def _load_config(force: bool = False) -> dict[str, Any]:
 def _model_for_task(task_type: str) -> str:
     cfg = _load_config()
     routing = cfg.get("model_routing", {})
-    return routing.get("tasks", {}).get(task_type) or routing.get("default", "claude-sonnet-4-6")
+    return routing.get("tasks", {}).get(task_type) or routing.get("default", MODEL_SONNET)
 
 
 def _save_config(cfg: dict[str, Any]) -> None:
@@ -170,7 +167,7 @@ def _do_dispatch_task(
 def _do_get_plugin_config() -> dict:
     cfg = _load_config()
     routing = cfg.get("model_routing", {})
-    default = routing.get("default", "claude-sonnet-4-6")
+    default = routing.get("default", MODEL_SONNET)
     tasks = routing.get("tasks", {})
 
     lines = ["**Model Routing Config**", "", f"default: `{default}`", "", "| Task | Model |", "|------|-------|"]
@@ -208,7 +205,7 @@ def _do_set_model_for_task(task_type: str, model: str) -> dict:
 def _do_list_task_types() -> dict:
     cfg = _load_config()
     routing = cfg.get("model_routing", {})
-    default = routing.get("default", "claude-sonnet-4-6")
+    default = routing.get("default", MODEL_SONNET)
     tasks = routing.get("tasks", {})
 
     lines = [
@@ -268,6 +265,7 @@ def register(mcp: FastMCP) -> None:
         """Assign a specific model to a task type and persist to plugin_config.json.
 
         model must be one of: claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-6
+        (see terminal_hub.constants.VALID_MODELS)
         Changes take effect immediately (no server restart needed).
         """
         return _do_set_model_for_task(task_type, model)

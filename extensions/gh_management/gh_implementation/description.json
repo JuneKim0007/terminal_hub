@@ -12,7 +12,7 @@
       "command": "/th:gh-implementation/implement",
       "aliases": ["implement issue", "work on issue", "pick up issue"],
       "use_when": "Run the full implementation flow for a specific issue"
-    },
+    }
   ],
   "interface": {
     "unloads_on_entry": ["gh_planner_analysis", "gh_planner_session_header", "gh_planner_file_tree"],

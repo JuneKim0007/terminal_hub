@@ -3836,14 +3836,28 @@ def _do_build_docs_map() -> dict:
     }
 
 
+def _docs_map_is_stale(map_path: Path) -> bool:
+    """Return True if any skills/ or commands/ file is newer than docs_map.json."""
+    if not map_path.exists():
+        return True
+    map_mtime = map_path.stat().st_mtime
+    for directory in (_PLUGIN_DIR / "skills", _COMMANDS_DIR):
+        if not directory.exists():
+            continue
+        for f in directory.rglob("*.md"):
+            if f.stat().st_mtime > map_mtime:
+                return True
+    return False
+
+
 def _do_get_docs_map(view: str) -> dict:
-    """Read docs_map.json and return a formatted table for the requested view."""
+    """Read docs_map.json; auto-rebuild if missing or any skills/commands file changed."""
     map_path = _PLUGIN_DIR / "docs_map.json"
-    if map_path.exists():
-        data: dict = json.loads(map_path.read_text(encoding="utf-8"))
-    else:
+    if _docs_map_is_stale(map_path):
         result = _do_build_docs_map()
         data = {"skills": result["skills"], "commands": result["commands"]}
+    else:
+        data = json.loads(map_path.read_text(encoding="utf-8"))
 
     if view == "skills":
         lines = ["**Skill Map** — all skills and where they are loaded\n"]

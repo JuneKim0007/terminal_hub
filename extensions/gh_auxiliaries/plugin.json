@@ -1,0 +1,13 @@
+{
+  "name": "gh_auxiliaries",
+  "version": "0.1.0",
+  "entry": "extensions.gh_auxiliaries",
+  "entry_command": "gh-auxiliaries.md",
+  "commands_dir": "commands",
+  "commands": [
+    "gh-auxiliaries.md",
+    "gh-auxiliaries/code-of-conduct.md"
+  ],
+  "description": "GitHub community standard file generators — Code of Conduct, Security Policy, PR templates, issue templates, and .gitignore management.",
+  "conversation_triggers": ["community standards", "code of conduct", "security policy", "gh-auxiliaries"]
+}

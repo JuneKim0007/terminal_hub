@@ -218,6 +218,7 @@ All of the following happen **inside** `/th:github-planner`. You do not need to 
 | `/th:gh-plan-unload` | "unload" | Clear all caches manually |
 | `/th:gh-implementation` | "implement this issue" | Implement a tracked issue end-to-end |
 | `/th:gh-docs` | "write docs" | Create or update README.md + CONTRIBUTING.md, then PR or push |
+| `/th:gh-auxiliaries` | "community standards", "code of conduct" | Generate GitHub community files (Code of Conduct, Security Policy, templates) |
 | `/th:current-stat` | "status" | Show what's currently loaded |
 
 For most workflows, **just use `/th:gh-plan`** — it composes all of these.

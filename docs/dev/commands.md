@@ -17,12 +17,17 @@ When a user types `/th:gh-plan`, Claude Code loads `~/.claude/commands/th/gh-pla
 `terminal-hub install` copies command files from the plugin directory to `~/.claude/commands/th/`:
 
 ```
-extensions/gh_management/github_planner/commands/gh-plan.md
-    → ~/.claude/commands/th/gh-plan.md   → /th:gh-plan
+extensions/plugin_creator/commands/create-plugin.md
+    → ~/.claude/commands/th/create-plugin.md   → /th:create-plugin
 
-extensions/gh_management/gh_implementation/commands/gh-implementation/implement.md
-    → ~/.claude/commands/th/gh-implementation/implement.md   → /th:gh-implementation/implement
+extensions/gh_auxiliaries/commands/gh-auxiliaries.md
+    → ~/.claude/commands/th/gh-auxiliaries.md   → /th:gh-auxiliaries
+
+extensions/gh_auxiliaries/commands/gh-auxiliaries/code-of-conduct.md
+    → ~/.claude/commands/th/gh-auxiliaries/code-of-conduct.md   → /th:gh-auxiliaries/code-of-conduct
 ```
+
+Note: commands served by the MCP server (e.g. `/th:gh-plan`, `/th:gh-implementation`) are loaded via the `load_skill` MCP tool from the server's own file system — they are not copied from local `extensions/` during install.
 
 **The `plugin.json` `commands` array is the authoritative install list.** Only files listed there are copied. If you create a new `.md` file but don't add it to `commands`, it will not be installed.
 
@@ -52,7 +57,7 @@ Every command should announce itself at the top before any tool calls:
 
 ```markdown
 <!-- LOAD ANNOUNCEMENT: At the very start of this command, output exactly:
-     🟢 Loaded: gh-plan — `extensions/gh_management/github_planner/commands/gh-plan.md`
+     🟢 Loaded: gh-auxiliaries — `extensions/gh_auxiliaries/commands/gh-auxiliaries.md`
      Do this before any tool calls. -->
 ```
 

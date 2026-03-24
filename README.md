@@ -4,8 +4,9 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-free%20to%20use-lightgrey.svg)](LICENSE)
 
-**NOT YET DEPLOYED NEITHER ON MARKETPLACE OR PYPI!!**
-_**”Conversation is the flow”**_ is the design principle of this Claude layer.
+**NOT YET DEPLOYED — not on PyPI or the Claude plugin marketplace.** Installation is manual — clone the repo and follow [Quick start](#quick-start) below. PyPI and marketplace support are on the roadmap for v1.0.
+
+_**”Conversation is the flow”**_ is the core philosophy of this backend Claude layer.
 
 The project aims to simplify developer workflows by enabling conversation-driven automation, where tasks like planning, implementation, and tooling are handled through natural interaction instead of manual orchestration.
 
@@ -14,9 +15,6 @@ Terminal-hub so far provides a system where specialized components—such as a G
 The framework is designed to be highly OS-compatible and error-tolerant, relying primarily on Claude APIs and GitHub CLI commands and built-in Python framework to ensure portability across different environments and architectures. BUT full compatibility across all systems cannot be guaranteed.
 
 If you wish to run on a docker environment, it is recommended to run the framework using a minimal Python Docker image such as python:3.11-slim.
-
-Although the project is not yet published on PyPI or the Claude plugin marketplace, it can already be integrated into a Claude server with minimal setup.
-
 
 Ships with **github_planner** (issue management + repo analysis) and **plugin_creator** (conversational plugin scaffolding) as built-in extensions.
 
@@ -64,6 +62,94 @@ With terminal-hub this is handled automatically — `project_summary.md` and the
 ## Built with terminal-hub
 
 terminal-hub was developed using terminal-hub itself, alongside the [everything-claude-code](https://github.com/disler/everything-claude-code) plugin suite. Issues were planned with `/th:gh-plan`, implemented with `/th:gh-implementation`, reviewed with ECC's code-review and TDD skills, and docs generated with `/th:gh-docs`. The workflow described in this README is the one used to build it.
+
+---
+
+## What's been built — how it works internally
+
+Every action in terminal-hub is a sequence of named MCP tool calls. This section walks through each flow in plain language so you know exactly what happens under the hood.
+
+---
+
+### Planning an issue (`/th:gh-plan`)
+
+When you say "let's plan", here is what fires in order:
+
+1. **`set_project_root(path)`** — anchors the `hub_agents/` directory to your project, not the terminal-hub install location. Every subsequent file write goes to the right place.
+2. **`apply_unload_policy("gh-plan")`** — reads the unload policy, identifies caches from any previous session (analysis snapshots, file trees, label caches), and clears them in Python. Claude only sees the one-line result.
+3. **`confirm_session_repo()`** — checks whether the active GitHub repo matches what's in `hub_agents/config.yaml`. If it doesn't match, you're asked to confirm or change it before anything else happens.
+4. **`load_project_docs(doc="summary")`** — reads `hub_agents/extensions/gh_planner/project_summary.md` (capped at ≤500 tokens). This contains your tech stack, design principles, and known pitfalls — the context Claude needs to plan correctly.
+5. **`get_session_header()`** — builds a compact status banner: current repo, mode (local/github), open issue count, and whether analysis is stale. Printed once at the top of the planning session.
+6. **Planning conversation begins.** You describe what you want to build. Claude uses the loaded design principles to shape each issue.
+7. **`draft_issue(title, body, labels, agent_workflow)`** — saves the issue locally to `hub_agents/issues/<slug>.md` with YAML frontmatter. Status is `pending`. Nothing goes to GitHub yet. You see a preview.
+8. **`submit_issue(slug)`** — on your approval, reads the local draft, bootstraps any missing GitHub labels via the API if needed, then creates the issue on GitHub. Updates the local file status to `open`.
+9. **`generate_issue_workflows(slug)`** — appends two structured sections to the issue: an **Agent Workflow** (step-by-step implementation instructions for Claude) and a **Program Workflow** (change type, affected components, test checklist). This is what makes each issue self-contained.
+10. **`update_project_detail_section(feature, content)`** — if the new issue touches a feature area not yet in your design dictionary, Claude merges a new section into `project_detail.md` without rewriting existing sections.
+11. **`unload_plugin()`** — when you're done, all in-memory caches are cleared. Your issues and docs on disk are preserved.
+
+---
+
+### Analyzing a repo (`/th:gh-plan-analyze`)
+
+1. **`get_file_tree()`** — walks the repo and builds a nested file tree, cached to `file_tree.json` with a 1-hour TTL. Skips `hub_agents/`, `.git/`, and common noise directories.
+2. **`create_scan_profile()`** — classifies the repo: detects language, framework, entry points, and test layout. Stored as a scan profile used to guide which files are worth reading.
+3. **`start_repo_analysis()`** — kicks off a batched read of the most relevant source files, prioritising entry points, config files, and core modules. Files are grouped into batches to stay within token limits.
+4. **`fetch_analysis_batch(batch_id)`** — called repeatedly until all batches are processed. Each call reads a set of files and accumulates findings: patterns, conventions, design decisions.
+5. **`save_project_docs(summary, detail)`** — writes two files:
+   - `project_summary.md` — high-level: tech stack, architecture style, design principles (≤500 tokens)
+   - `project_detail.md` — deep: one section per feature area with existing design notes and extension guidelines
+6. **`update_architecture()`** — if an `architecture_design.md` already exists, its relevant sections are merged rather than overwritten.
+
+---
+
+### Implementing an issue (`/th:gh-implementation`)
+
+1. **`set_project_root(path)`** — same anchor step as planning.
+2. **`apply_unload_policy("gh-implementation")`** — clears planning caches (analysis results, session headers) that aren't needed during implementation.
+3. **`load_project_docs(doc="summary")`** — loads design principles so Claude knows the conventions before touching code.
+4. **`list_issues()`** — reads all `hub_agents/issues/*.md` files and returns a compact table of open issues. You pick one.
+5. **`load_active_issue(slug)`** — reads the chosen issue file in full. Returns the issue body, labels, frontmatter, and — critically — the `agent_workflow` field that was generated at planning time. This workflow is the authoritative implementation guide; Claude follows it step by step.
+6. **`lookup_feature_section(feature)`** — if the issue references a feature area, the relevant section from `project_detail.md` is fetched and loaded. Only the matching section, not the whole file.
+7. **Implementation happens.** Claude works through the agent workflow steps, editing files and running tests. No prompting needed unless blocked.
+8. **`git diff HEAD`** — once implementation is done, the full diff is shown. You review it.
+9. **Commit, push, close.** On your approval: `git commit`, `git push`, then `close_github_issue(issue_number)` via the GitHub API. The local issue file is deleted by `unload_active_issue()`.
+
+---
+
+### Writing docs (`/th:gh-docs`)
+
+1. **`hub_agents/docs_guide.md` check** — reads your saved preferences (tone, structure, what to include/exclude). If the file doesn't exist, a default scaffold is created.
+2. **`load_skill("create_user_readme_docs")`** or **`load_skill("create_dev_readme_docs")`** — loads the relevant skill file into context. The skill contains exact structure rules, writing conventions, badge templates, and before/after examples.
+3. **Existing files are read first** — if `README.md` or `CONTRIBUTING.md` already exist, they're read before any generation. Only sections that need updating are patched; structure you've customised is preserved.
+4. **Content is generated in context** — nothing is written to disk until you confirm. A headings-only preview is shown first.
+5. **`git add README.md CONTRIBUTING.md`** → commit → push or PR. Only these two files are staged — never `git add .`.
+
+---
+
+### Creating a plugin (`/th:create-plugin`)
+
+1. Conversational scaffolding — Claude asks for plugin name, description, and what tools it needs.
+2. **`validate_plugin(manifest)`** — checks the proposed `plugin.json` against the required field schema before writing anything.
+3. **`write_plugin_file(path, content)`** — writes each file one at a time: `plugin.json`, `__init__.py` with `register(mcp)` stub, `description.json`, and at least one command `.md` file.
+4. **`write_test_file(path, content)`** — generates a test scaffold in `tests/tools/test_<name>.py` with the standard `_do_*` pattern and filesystem mocking fixtures.
+5. `terminal-hub install` is suggested at the end to copy the new command files to `~/.claude/commands/th/`.
+
+---
+
+## Roadmap
+
+### Confirmed
+
+- **GitHub community standards** — auto-generate and configure issue templates, pull request templates, security policy (`SECURITY.md`), and code of conduct (`CODE_OF_CONDUCT.md`) on demand via a single command
+- **Stabilize `/th:create-plugin`** — the plugin scaffolding flow works but needs hardening: better validation, test coverage, and error recovery
+- **Auto-assign issue templates** — when creating an issue, detect the appropriate GitHub issue template and apply it automatically rather than always using a blank form
+- **`.gitignore` management** — generate or update `.gitignore` based on detected stack during repo analysis; suggest additions when new file types are introduced
+- **GitHub Releases** — at v1.0, add support for drafting and publishing GitHub releases from within the planning or implementation flow
+
+### Considering
+
+- **GitHub Discussions** — open and manage discussion threads tied to planning sessions; useful for async teams
+- **Automated model deployment** — a possible future extension for projects that deploy AI models: trigger deploy pipelines, track model versions, and surface deployment status in the planning flow
 
 ---
 

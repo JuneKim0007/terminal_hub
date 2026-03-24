@@ -118,6 +118,7 @@ def write_issue_file(
     milestone_number: int | None = None,
     milestone_title: str | None = None,
     design_refs: list[str] | None = None,
+    updated_at: str | None = None,
 ) -> Path:
     """Write an issue .md file with YAML front matter atomically. Returns the file path.
 
@@ -147,6 +148,8 @@ def write_issue_file(
         frontmatter["github_url"] = github_url
     if design_refs:
         frontmatter["design_refs"] = design_refs
+    if updated_at is not None:
+        frontmatter["updated_at"] = updated_at
 
     # Prefix body with issue identifier header for easy agent orientation
     header = f"# Issue #{slug}: {title}\n\n"
@@ -248,6 +251,7 @@ def list_issue_files(root: Path) -> list[dict[str, Any]]:
                 "issue_number": fm.get("issue_number"),
                 "github_url": fm.get("github_url"),
                 "created_at": fm.get("created_at"),
+                "updated_at": fm.get("updated_at"),
                 "assignees": fm.get("assignees", []),
                 "labels": fm.get("labels", []),
                 "file": f"hub_agents/issues/{slug}.md",

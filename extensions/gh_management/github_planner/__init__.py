@@ -2149,13 +2149,17 @@ def _check_suggest_unload() -> str | None:
 
 
 def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
-    """Fetch issues from GitHub API and write to hub_agents/issues/ as local .md files (#113).
+    """Two-phase GitHub issue sync (#204).
 
-    Uses Python to fetch all issues (paginated), skipping unchanged ones.
-    Records issues_synced_at in github_local_config.json.
+    Phase 1 (ping): fetch all issues from GitHub, compare updated_at against
+    local frontmatter — identify new, changed, and newly-closed issues.
+    Phase 2 (gap-fill): write only issues that are new or changed.
+    Closed issues have their local status updated without a full re-write.
 
-    Returns {synced, skipped, total, _display}.
+    Returns {checked, updated, skipped, closed_locally, total, _display}.
     """
+    import datetime as _dt
+
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
@@ -2174,101 +2178,105 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
         except Exception as exc:
             return {"error": "github_error", "message": str(exc)}
 
-    issues_dir = root / "hub_agents" / "issues"
-    issues_dir.mkdir(parents=True, exist_ok=True)
+    (root / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
 
-    # Build lookup of existing local files by issue_number for skip check
-    existing_by_number: dict[int, dict] = {}
-    for existing in list_issue_files(root):
-        num = existing.get("issue_number")
+    # Phase 1 — build local index from frontmatter only (no body reads)
+    local_index: dict[int, dict] = {}  # issue_number → {slug, updated_at, status}
+    for fm in list_issue_files(root):
+        num = fm.get("issue_number")
         if num:
-            existing_by_number[num] = existing
+            local_index[num] = {
+                "slug": fm["slug"],
+                "updated_at": fm.get("updated_at", ""),
+                "status": fm.get("status", "open"),
+            }
 
-    synced = 0
+    total_raw = len(raw_issues)
+    checked = 0
+    updated = 0
     skipped = 0
+    closed_locally = 0
 
     for raw in raw_issues:
-        # Skip pull requests (GitHub returns PRs in issues endpoint)
         if raw.get("pull_request"):
             continue
 
+        checked += 1
         number = raw.get("number")
+        updated_at_str = raw.get("updated_at", "")
+        github_state = raw.get("state", "open")
+
+        if not refresh and number in local_index:
+            local = local_index[number]
+            # State-only change: closed on GitHub but open locally
+            if github_state == "closed" and str(local["status"]) == "open":
+                from extensions.gh_management.github_planner.storage import update_issue_status
+                update_issue_status(root, local["slug"], IssueStatus.CLOSED)
+                closed_locally += 1
+                continue
+            # Unchanged: same updated_at and state
+            if updated_at_str and updated_at_str == local["updated_at"]:
+                skipped += 1
+                continue
+
+        # Phase 2 — full write for new or changed issues
         title = raw.get("title", "")
         body = raw.get("body") or ""
         issue_state = raw.get("state", "open")
-        labels = [l["name"] for l in raw.get("labels", [])]
+        labels = [lbl["name"] for lbl in raw.get("labels", [])]
         assignees = [a["login"] for a in raw.get("assignees", [])]
         created_at_str = raw.get("created_at", "")
-        updated_at_str = raw.get("updated_at", "")
         github_url = raw.get("html_url", "")
+        milestone = raw.get("milestone") or {}
+        milestone_number = milestone.get("number") if milestone else None
+        milestone_title = milestone.get("title") if milestone else None
 
-        # Build slug: {number}-{slugified-title}
-        base_slug = f"{number}-{slugify(title)}" if number else slugify(title)
-        if not base_slug:
-            base_slug = str(number or "unknown")
-
-        # Skip if already exists and not refreshing and not changed
-        if not refresh and number in existing_by_number:
-            existing = existing_by_number[number]
-            # Read existing file to check updated_at
-            existing_path = issues_dir / f"{existing['slug']}.md"
-            if existing_path.exists():
-                content = existing_path.read_text(encoding="utf-8")
-                if updated_at_str and updated_at_str in content:
-                    skipped += 1
-                    continue
-
-        # Map GitHub state to IssueStatus
-        issue_status = IssueStatus.OPEN if issue_state == "open" else IssueStatus.CLOSED
-
-        # Parse created_at date
         try:
-            import datetime as _dt
             created_date = _dt.datetime.fromisoformat(
                 created_at_str.replace("Z", "+00:00")
             ).date()
         except (ValueError, AttributeError):
             created_date = date.today()
 
-        # Build body with metadata footer
-        body_with_meta = body
-        if updated_at_str:
-            body_with_meta = f"{body}\n\n<!-- synced_at: {updated_at_str} -->"
+        issue_status = IssueStatus.OPEN if issue_state == "open" else IssueStatus.CLOSED
 
-        # Use fixed slug: number-title to avoid collisions with re-syncs
-        slug = base_slug
-        # If a different slug exists for this number, reuse it
-        if number in existing_by_number:
-            slug = existing_by_number[number]["slug"]
+        base_slug = f"{number}-{slugify(title)}" if number else slugify(title)
+        if not base_slug:
+            base_slug = str(number or "unknown")
+        slug = local_index[number]["slug"] if number in local_index else base_slug
 
         write_issue_file(
             root=root,
             slug=slug,
             title=title,
-            body=body_with_meta,
+            body=body,
             assignees=assignees,
             labels=labels,
             created_at=created_date,
             status=issue_status,
             issue_number=number,
             github_url=github_url,
+            milestone_number=milestone_number,
+            milestone_title=milestone_title,
+            updated_at=updated_at_str,
         )
-        synced += 1
+        updated += 1
 
-    # Record sync timestamp in github_local_config.json
     _do_save_github_local_config({"issues_synced_at": time.time(), "issues_state": state})
 
-    total = len(raw_issues)
     env = read_env(root)
     repo = env.get("GITHUB_REPO", "unknown")
     return {
-        "synced": synced,
+        "checked": checked,
+        "updated": updated,
+        "synced": updated,   # backward-compat alias
         "skipped": skipped,
-        "total": total,
+        "closed_locally": closed_locally,
+        "total": total_raw,
         "state": state,
         "_display": (
-            f"✓ Synced {synced} issue(s) from {repo} ({state})\n"
-            f"  Skipped {skipped} unchanged | Total fetched: {total}\n"
+            f"✓ Synced {updated} issue(s) from {repo} ({state})\n"
+            f"  Skipped {skipped} unchanged | Closed locally: {closed_locally} | Checked: {checked}\n"
             f"  Stored in hub_agents/issues/"
         ),
     }

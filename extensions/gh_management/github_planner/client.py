@@ -166,6 +166,14 @@ class GitHubClient:
             page += 1
         return issues
 
+    def get_issue(self, number: int) -> dict:
+        """Fetch a single issue by number."""
+        _, base_url = self._url("github", "list_issues")
+        url = base_url.rstrip("/") + f"/{number}"
+        resp = self._client.get(url)
+        resp.raise_for_status()
+        return resp.json()
+
     def list_collaborators(self) -> list[dict]:
         """List repo collaborators."""
         url = BASE_URL + f"/repos/{self.repo}/collaborators"

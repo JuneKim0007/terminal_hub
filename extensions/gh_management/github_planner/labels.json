@@ -6,5 +6,12 @@
   {"name": "chore",       "color": "e4e669", "description": "Maintenance, dependency updates, and housekeeping"},
   {"name": "question",             "color": "d876e3", "description": "Further information is requested"},
   {"name": "usability_improvement","color": "f9d0c4", "description": "Improves the user-facing experience or workflow"},
-  {"name": "performance_improvement","color": "0e8a16", "description": "Reduces latency, token usage, or resource consumption"}
+  {"name": "performance_improvement","color": "0e8a16", "description": "Reduces latency, token usage, or resource consumption"},
+  {"name": "refactor",      "color": "c5def5", "description": "Code restructuring with no behaviour change"},
+  {"name": "test",          "color": "bfd4f2", "description": "Adds or improves test coverage"},
+  {"name": "backend",       "color": "5319e7", "description": "Python / MCP server-side work"},
+  {"name": "ux",            "color": "fef2c0", "description": "User-facing prompt flow or display improvements"},
+  {"name": "gh-implementation", "color": "1d76db", "description": "Related to the gh-implementation plugin"},
+  {"name": "gh-auxiliaries",    "color": "0075ca", "description": "Related to the gh-auxiliaries community standards plugin"},
+  {"name": "performance",       "color": "0e8a16", "description": "Performance improvement (short form)"}
 ]

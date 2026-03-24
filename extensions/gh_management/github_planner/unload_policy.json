@@ -1,5 +1,5 @@
 {
-  "_comment": "Per-command cache lifecycle policy. unload[] items are cleared when the command completes. keep[] items survive unload. Persistent disk state (issues, project_summary.md, project_detail.md, config.yaml, .env) is never touched.",
+  "_comment": "Per-command cache lifecycle policy. unload[] items are cleared when the command completes. keep[] items survive unload. Persistent disk state (issues, project_summary.md, project_detail.md, config.yaml, .env) is never touched. This is the single authoritative policy file — it covers both gh-plan and gh-implementation commands. No separate gh_implementation/unload_policy.json exists.",
   "cache_keys": {
     "analysis_cache": "repo file analysis used for smarter issue suggestions",
     "project_docs_cache": "your project summary and design notes",

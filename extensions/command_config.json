@@ -1,19 +1,4 @@
 {
   "version": 1,
-  "extensions": [
-    {
-      "_comment": "Example extension — remove or modify as needed",
-      "id": "example",
-      "description": "An example extension showing the schema",
-      "invoke": "/terminal_hub:ext_example",
-      "requires": ["gh"],
-      "fallback": "claude",
-      "platforms": {
-        "darwin":  ["echo 'hello from macOS'"],
-        "ubuntu":  ["echo 'hello from Ubuntu'"],
-        "linux":   ["echo 'hello from Linux'"],
-        "windows": ["echo hello from Windows"]
-      }
-    }
-  ]
+  "extensions": []
 }

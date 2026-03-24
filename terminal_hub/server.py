@@ -460,11 +460,15 @@ def create_server() -> FastMCP:
         }
 
     @mcp.tool()
-    def load_plugin_registry() -> dict:
+    def load_plugin_registry(plugin: str | None = None) -> dict:
         """Load hub_agents/plugin.config.json for plugin matching (#44 / #45).
 
         Returns {plugins, unidentified, last_scanned} or suggests calling scan_plugins first.
         Each plugin entry: {name, display_name, usage, commands, triggers}.
+
+        plugin: optional plugin name to filter by. When provided, returns only the
+                matching entry (avoids loading the full registry into Claude's context).
+                When omitted, returns all plugins (backward compatible).
         """
         import json as _json
 
@@ -488,8 +492,17 @@ def create_server() -> FastMCP:
         except (_json.JSONDecodeError, OSError):
             return {"plugins": [], "last_scanned": None, "error": "registry_corrupt"}
 
+        all_plugins = data.get("plugins", [])
+        if plugin:
+            filtered = [p for p in all_plugins if p.get("name") == plugin]
+            return {
+                "plugins": filtered,
+                "unidentified": 0,
+                "last_scanned": data.get("last_scanned"),
+            }
+
         return {
-            "plugins": data.get("plugins", []),
+            "plugins": all_plugins,
             "unidentified": len(data.get("unidentified", [])),
             "last_scanned": data.get("last_scanned"),
         }

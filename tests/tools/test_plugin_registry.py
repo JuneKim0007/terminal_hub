@@ -348,3 +348,38 @@ def test_get_github_config_tool_via_server(workspace):
 
     assert "global" in result
     assert "local" in result
+
+
+def test_load_plugin_registry_filtered_by_plugin(workspace):
+    """load_plugin_registry(plugin=name) returns only the matching entry."""
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        call(server, "scan_plugins", {})
+        result = call(server, "load_plugin_registry", {"plugin": "github_planner"})
+
+    assert isinstance(result["plugins"], list)
+    assert len(result["plugins"]) == 1
+    assert result["plugins"][0]["name"] == "github_planner"
+    assert result["unidentified"] == 0
+
+
+def test_load_plugin_registry_filtered_no_match(workspace):
+    """load_plugin_registry(plugin=unknown) returns empty plugins list."""
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        call(server, "scan_plugins", {})
+        result = call(server, "load_plugin_registry", {"plugin": "nonexistent_plugin"})
+
+    assert result["plugins"] == []
+    assert result["unidentified"] == 0
+
+
+def test_load_plugin_registry_unfiltered_still_works(workspace):
+    """load_plugin_registry() with no plugin arg returns full registry (backward compat)."""
+    with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+        server = create_server()
+        call(server, "scan_plugins", {})
+        result = call(server, "load_plugin_registry", {})
+
+    assert len(result["plugins"]) >= 1
+    assert "unidentified" in result

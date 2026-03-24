@@ -55,14 +55,15 @@ Then call `get_setup_status`.
 - `initialised: true` → continue
 
 **Repo confirmation (#148):** If `github_repo` is set, call `confirm_session_repo()`.
-- `confirmed: true` → proceed silently (already confirmed this session)
+- `confirmed: true` → proceed silently (already confirmed this session — sync + landscape already ran)
 - `confirmed: false` → print `_display` verbatim, then ask user "yes / change":
-  - "yes" → call `set_session_repo(repo=...)` to lock it, then proceed
-  - "change" → ask "Which repo? (owner/repo)", then call `set_session_repo(repo=new_repo)`
+  - "yes" → call `set_session_repo(repo=...)` to lock it, then run **post-lock steps** below
+  - "change" → ask "Which repo? (owner/repo)", then call `set_session_repo(repo=new_repo)`, then run **post-lock steps** below
 
-After confirmation: call `list_repo_labels()` and `list_milestones()` silently.
-This warms both caches so `submit_issue`/`assign_milestone` never make cold API calls,
-and gives Claude the repo's actual label and milestone names for planning (Step 5/6).
+**Post-lock steps (after fresh repo lock only — skip when confirmed: true):**
+
+Call `list_repo_labels()` and `list_milestones()` silently.
+This warms both caches so `submit_issue`/`assign_milestone` never make cold API calls.
 If either call fails with 404 or auth error, surface it immediately — bad repo config
 should be caught here, not at submit time.
 
@@ -70,6 +71,34 @@ should be caught here, not at submit time.
 > "Some issues have milestone assignments but no milestones exist on GitHub — fetch them? (yes / skip)"
 - **yes** → call `list_milestones()` again (forces a fresh fetch); if still empty, note "No milestones found on GitHub — milestone assignments may be stale."
 - **skip** → proceed without milestones; do not ask again this session.
+
+**Auto-sync + landscape (runs after cache warming, once per fresh repo lock):**
+
+1. Call `sync_github_issues()` — silent. Print one status line:
+   `🔄 Synced — {N} open issues from GitHub` (append `· {M} local drafts pending` if local-only drafts exist)
+   If sync fails, surface the error and continue without landscape.
+
+2. Call `list_issues(compact=False)`. If no open issues returned, print:
+   `No open issues — let's plan something!` and continue to Step 3.
+
+3. Otherwise, group open issues by `milestone_number` ascending (unassigned/null last).
+   Display the landscape using milestone titles from `_MILESTONE_CACHE`:
+   ```
+   📋 Open issues by milestone:
+
+   M{N} — {milestone title} ({count} open)
+     #{number} [{type label}] {title}
+
+   Unassigned ({count} open)
+     #{number} [{type label}] {title}
+   ```
+   `{type label}`: use the first label matching bug/feature/enhancement/refactor/chore/documentation/performance. Omit brackets if none match.
+
+4. Call `format_prompt(question="These are your unimplemented plans. What would you like to do?", options=["implement", "review", "plan more", "skip"], style="question")` — print `_display` verbatim.
+   - **implement** → call `apply_unload_policy(command="gh-plan")`, print `_display`, then invoke `/th:gh-implementation`
+   - **review** → ask "Which issue? (number or title)" → show that issue's full body from the `list_issues` result
+   - **plan more** → continue to Step 3
+   - **skip** → continue to Step 3 silently
 
 ---
 

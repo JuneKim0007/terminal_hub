@@ -34,11 +34,34 @@ _DEFAULT_FLAGS: dict[str, Any] = {
     "active_issue_slug": None,
 }
 
-_ALLOWED_SESSION_FLAGS = {"close_automatically_on_gh", "delete_local_issue_on_gh", "auto_switch_modes"}
+_ALLOWED_SESSION_FLAGS = {"close_automatically_on_gh", "delete_local_issue_on_gh", "auto_switch_modes",
+                          "lookup_design_refs", "run_verify", "run_make_test", "sync_docs_on_close"}
+
+
+def _load_persistent_flags(root: Path) -> None:
+    """Load flags from hub_agents/config.yaml into _SESSION_FLAGS on first use."""
+    key = str(root)
+    if key in _SESSION_FLAGS:
+        return  # already loaded this session
+    flags = dict(_DEFAULT_FLAGS)
+    # Load from config.yaml if it exists
+    config_path = root / "hub_agents" / "config.yaml"
+    if config_path.exists():
+        try:
+            import yaml as _yaml
+            data = _yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            gh_impl = data.get("gh_implementation", {})
+            for k in _ALLOWED_SESSION_FLAGS:
+                if k in gh_impl:
+                    flags[k] = gh_impl[k]
+        except Exception:
+            pass  # config load failure is non-fatal
+    _SESSION_FLAGS[key] = flags
 
 
 def _get_flags(root: Path) -> dict[str, Any]:
     key = str(root)
+    _load_persistent_flags(root)
     if key not in _SESSION_FLAGS:
         _SESSION_FLAGS[key] = dict(_DEFAULT_FLAGS)
     return _SESSION_FLAGS[key]
@@ -227,6 +250,154 @@ def _do_delete_local_issue(slug: str) -> dict:
     return {"deleted": True, "file": f"hub_agents/issues/{slug}.md", "_display": f"🗑 **Deleted** local issue #{slug}"}
 
 
+def _do_pre_implementation(issue_slug: str, flags_override: dict | None = None) -> dict:
+    """Pre-implementation phase: unload previous context, confirm repo, load docs, load issue.
+
+    Replaces the manual 8-call sequence in Steps 1-4 of gh-implementation.md.
+    Reads flags from the hybrid session/config system.
+    """
+    root = get_workspace_root()
+    _load_persistent_flags(root)
+    flags = _get_flags(root)
+    if flags_override:
+        flags.update(flags_override)
+
+    # 1. Apply unload policy (clears previous command's caches)
+    try:
+        from extensions.gh_management.github_planner import _do_apply_unload_policy as _unload
+        unload_result = _unload("gh-implementation")
+        cache_cleared = unload_result.get("cleared", [])
+    except Exception:
+        cache_cleared = []
+
+    # 2. Load implementation context (repo confirm + project docs + active issue + design refs)
+    try:
+        from extensions.gh_management.github_planner.workspace_tools import _do_load_implementation_context
+        ctx = _do_load_implementation_context(
+            project_root=str(root),
+            issue_slug=issue_slug,
+            lookup_design_refs=flags.get("lookup_design_refs", True),
+        )
+    except Exception as exc:
+        return {"error": "context_load_failed", "message": str(exc)}
+
+    if "error" in ctx:
+        return ctx
+
+    # 3. Load connected docs from docs_config.json (pre_load: true entries)
+    connected_docs_loaded = []
+    try:
+        docs_config_path = root / "hub_agents" / "docs_config.json"
+        if docs_config_path.exists():
+            import json
+            docs_config = json.loads(docs_config_path.read_text(encoding="utf-8"))
+            for key, entry in docs_config.items():
+                if isinstance(entry, dict) and entry.get("pre_load"):
+                    connected_docs_loaded.append(entry.get("path", key))
+    except Exception:
+        pass
+
+    return {
+        "workspace_ready": True,
+        "cache_cleared": cache_cleared,
+        "repo_confirmed": ctx.get("repo_confirmed"),
+        "project_summary": ctx.get("project_summary", ""),
+        "active_issue": ctx.get("issue_content", {}),
+        "design_sections": ctx.get("design_sections", {}),
+        "has_agent_workflow": ctx.get("has_agent_workflow", False),
+        "connected_docs_loaded": connected_docs_loaded,
+        "flags": {k: flags[k] for k in _ALLOWED_SESSION_FLAGS if k in flags},
+        "_display": (
+            f"✅ **Context loaded** — issue #{issue_slug}"
+            + (f", {len(ctx.get('design_sections', {}))} design sections" if ctx.get("design_sections") else "")
+            + (f", {len(connected_docs_loaded)} connected docs" if connected_docs_loaded else "")
+        ),
+    }
+
+
+def _do_post_implementation(
+    issue_slug: str,
+    issue_number: int | None = None,
+    affected_files: list[str] | None = None,
+    flags_override: dict | None = None,
+) -> dict:
+    """Post-implementation phase: tests, diff summary, commit/push, close, doc sync, cleanup.
+
+    Runs after Step 6 (implement). Each sub-step is controlled by a flag.
+    Does NOT perform git commit/push itself — returns diff and test results for Claude to present.
+    Claude calls this once to get test+diff, then calls it again with commit=True after user accepts.
+    """
+    root = get_workspace_root()
+    _load_persistent_flags(root)
+    flags = _get_flags(root)
+    if flags_override:
+        flags.update(flags_override)
+
+    import subprocess
+    result: dict = {"issue_slug": issue_slug}
+
+    # 1. Derive affected files
+    if affected_files is None:
+        try:
+            proc = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                capture_output=True, text=True, cwd=str(root),
+            )
+            affected_files = [f for f in proc.stdout.strip().splitlines() if f]
+        except Exception:
+            affected_files = []
+    result["affected_files"] = affected_files
+
+    # 2. Run tests (if flag set)
+    test_results: dict = {}
+    if flags.get("run_verify", True) and affected_files:
+        try:
+            tr = _do_run_tests_filtered(affected_files)
+            test_results = {
+                "passed": tr.get("passed", False),
+                "failed": tr.get("failed", 0),
+                "coverage": tr.get("coverage", 0.0),
+                "meets_threshold": tr.get("meets_threshold", False),
+                "filtered_output": tr.get("filtered_output", ""),
+            }
+        except Exception as exc:
+            test_results = {"error": str(exc)}
+    result["test_results"] = test_results
+
+    # 3. Git diff summary
+    diff_text = ""
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "HEAD"],
+            capture_output=True, text=True, cwd=str(root),
+        )
+        diff_text = proc.stdout
+    except Exception:
+        pass
+
+    # Parse diff stats
+    insertions = diff_text.count("\n+") - diff_text.count("\n+++")
+    deletions = diff_text.count("\n-") - diff_text.count("\n---")
+    files_changed = len([l for l in diff_text.splitlines() if l.startswith("diff --git")])
+    result["diff"] = {
+        "files_changed": files_changed,
+        "insertions": max(0, insertions),
+        "deletions": max(0, deletions),
+        "diff_text": diff_text,
+    }
+
+    # 4. Build display
+    tests_ok = test_results.get("passed", True) and not test_results.get("error")
+    cov = test_results.get("coverage", 0)
+    result["_display"] = (
+        f"{'✅' if tests_ok else '⚠'} Tests: {test_results.get('failed', 0)} failed, "
+        f"coverage {cov:.0f}% | "
+        f"Diff: {files_changed} files, +{max(0, insertions)}/-{max(0, deletions)} lines"
+    )
+
+    return result
+
+
 def _do_run_tests_filtered(files: list[str] | None) -> dict:
     import re
     import subprocess
@@ -372,6 +543,43 @@ def register(mcp: FastMCP) -> None:
         Returns {unloaded, slug, file_deleted, _display}.
         """
         return _do_unload_active_issue(slug, delete_file)
+
+    @mcp.tool()
+    def pre_implementation(issue_slug: str, flags_override: dict | None = None) -> dict:
+        """Run the pre-implementation phase in one call.
+
+        Replaces the 8-call Steps 1-4 sequence: unload caches, confirm repo,
+        load project docs, load active issue, lookup design refs, load connected docs.
+
+        issue_slug: the issue to implement (e.g. '42')
+        flags_override: optional dict to override session flags for this call only
+        Returns {workspace_ready, repo_confirmed, project_summary, active_issue,
+                 design_sections, has_agent_workflow, connected_docs_loaded, flags, _display}
+        """
+        return _do_pre_implementation(issue_slug, flags_override)
+
+    @mcp.tool()
+    def post_implementation(
+        issue_slug: str,
+        issue_number: int | None = None,
+        affected_files: list[str] | None = None,
+        flags_override: dict | None = None,
+    ) -> dict:
+        """Run the post-implementation phase in one call.
+
+        Runs after Step 6 (implement). Derives affected files, runs filtered tests,
+        and returns diff summary for Claude to present to the user.
+
+        Does NOT commit/push — Claude reads diff and test results, presents them
+        to user, then calls git commit/push via Bash tool after user accepts.
+
+        issue_slug: active issue slug
+        issue_number: GitHub issue number (for close step — pass after user accepts)
+        affected_files: override auto-derived file list (from git diff --name-only HEAD)
+        flags_override: override session flags for this call only
+        Returns {affected_files, test_results, diff, _display}
+        """
+        return _do_post_implementation(issue_slug, issue_number, affected_files, flags_override)
 
     @mcp.tool()
     def run_tests_filtered(files: list[str] | None = None) -> dict:

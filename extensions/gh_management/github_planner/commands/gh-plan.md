@@ -62,9 +62,9 @@ Then call `get_setup_status`.
 
 **Post-lock steps (after fresh repo lock only — skip when confirmed: true):**
 
-Call `list_repo_labels()` and `list_milestones()` silently.
-This warms both caches so `submit_issue`/`assign_milestone` never make cold API calls.
-If either call fails with 404 or auth error, surface it immediately — bad repo config
+Call `list_milestones()` silently.
+This warms the milestone cache so `assign_milestone` never makes a cold API call.
+If the call fails with 404 or auth error, surface it immediately — bad repo config
 should be caught here, not at submit time.
 
 **Milestone cache check (#49):** After `list_milestones()` completes, check `milestone_assign` preference via `read_preference("milestone_assign")`. If the preference is not `False` and `list_milestones()` returned 0 milestones, scan local issues (from `list_issues()`) for any that have a `milestone_number` set. If any are found, offer once per session:
@@ -328,9 +328,9 @@ Say: **"Let me know any plans for this!"**
   - **Overlap check:** scan `_ISSUE_LANDSCAPE` for existing issues with similar title or
     feature area. If found, surface it before planning: "This looks similar to #{slug} —
     {title}. Extend that issue, or create a new one?" Do not silently duplicate.
-- **Label suggestions:** use names from `_LABEL_CACHE` (warmed in Step 1). Never invent
-  a label not in cache or `labels.json`. Suggest type label (`bug`/`feature`/`enhancement`/
-  `refactor`/`chore`/`documentation`/`performance`) + area label if identifiable.
+- **Label suggestions:** labels are loaded lazily — do NOT call `list_repo_labels()` here.
+  Suggest from the known type labels: `bug`/`feature`/`enhancement`/`refactor`/`chore`/`documentation`/`performance` + area label if identifiable.
+  If the user explicitly asks "what labels are available?", call `list_repo_labels()` and display the names.
 - **Milestone suggestions:** if exactly one active milestone is in `_MILESTONE_CACHE`,
   mention it as the natural target. If multiple exist, ask which one fits.
 - Ask one clarifying question at a time
@@ -387,7 +387,8 @@ After approval:
 
 ### 6g — Draft, confirm, submit
 
-3. Call `draft_issue(title, body, labels, assignees, agent_workflow=[...], milestone_number=N_or_None)` for each — **silent**
+3. **Lazy label load:** Call `list_repo_labels()` now (if not already cached) — this is the only point labels are fetched. Use the returned names to validate label choices before drafting.
+   Call `draft_issue(title, body, labels, assignees, agent_workflow=[...], milestone_number=N_or_None)` for each — **silent**
 4. Show confirmation block:
    ```
    About to: Create {N} GitHub issues on {repo}
@@ -398,17 +399,18 @@ After approval:
    ```
    Wait for explicit "yes".
 5. Call `submit_issue(slug)` for each — **silent**
+   After all submissions complete, label cache is no longer needed — it will be cleared by `apply_unload_policy` below.
 
 ### 6h — Doc updates (medium/large only)
 
 <!-- SKILL: load_skill("design-principles") — contains doc update decision table and confirm_arch_changes behavior -->
 6. **Offer implementation** — ask immediately after issues are submitted:
    > "Implement now using /th:gh-implementation? (yes / no)"
-   - **yes** → call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line,
-     then invoke `/th:gh-implementation` — this switches mode automatically.
+   - **yes** → call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line
+     (this clears label cache and other transient state), then invoke `/th:gh-implementation`.
      Do NOT ask about cache cleanup separately; the unload happens as part of the switch.
    - **no** → ask: "Unload cached data to keep context lean? (yes/no)"
-     - If yes: call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line.
+     - If yes: call `apply_unload_policy(command="gh-plan")` — output `_display` as a standalone line (clears label cache).
      - If no: proceed.
 7. Say: **"Issues drafted and submitted! Let me know if you'd like me to start implementing or if you want to change any issues!"**
 

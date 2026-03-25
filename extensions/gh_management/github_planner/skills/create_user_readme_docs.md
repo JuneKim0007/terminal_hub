@@ -301,3 +301,28 @@ GITHUB_TOKEN=ghp_...
 GITHUB_REPO=alice/my-project
 ```
 ```
+
+---
+
+## Section 8 — Self-Update Rule
+
+When writing or updating documentation, check whether the change involves something
+that is likely to evolve over time:
+
+- A new or removed slash command
+- A changed CLI flag, subcommand, or entry point
+- A new or renamed env var
+- A new feature, plugin, or tool
+- A changed file path, directory structure, or module name
+- A changed version number or dependency
+
+If yes: **also update the relevant section in this skill file** — find the section
+that documents that concept (e.g. Section 2 — Local Files, Section 3 — README Structure)
+and modify only the specific lines that changed. Delete stale entries, add new ones.
+
+Do NOT rewrite the whole section — surgical edits only (add / modify / delete the
+specific item). This keeps the skill self-maintaining and avoids stale guidance
+accumulating over time.
+
+After updating: confirm with one line — e.g. "Updated skill: added /th:settings to
+Section 2 command list."

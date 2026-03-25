@@ -151,7 +151,34 @@ Follow the `agent_workflow` steps in order. After each logical change:
 - Run tests if applicable
 - Do not ask the user unless blocked
 
-When implementation is complete → go to Step 7.
+When implementation is complete → go to Step 6.5.
+
+---
+
+## Step 6.5 — make_test (generate or update tests)
+
+After Step 6 completes, generate targeted tests before presenting the diff.
+
+**`make_test(files=None)` vs `make_test(files=[list])`:**
+- `files=None` (default) → derive affected files from `git diff --name-only HEAD`
+- `files=[list]` → use that specific subset (for targeted re-runs after a fix)
+
+**For each affected file:**
+
+1. Determine the test file path: `tests/test_{module}.py` for top-level modules, `tests/{subdirectory}/test_{file}.py` for nested paths. Mirror the source tree under `tests/`.
+
+2. **Test file does not exist** → create it with full scaffold using the Write tool. The generation prompt must include:
+   - The affected file's full content (read it)
+   - Changed function/class signatures extracted from `git diff HEAD`
+   - Issue title + body (the "why")
+   - The `agent_workflow` steps (the "how")
+   - Design principles from project_summary.md (coverage ≥ 80%, no mutable global state)
+
+3. **Test file exists** → update it partially using the Edit tool. Extract only the new/changed function signatures from `git diff HEAD` — add new test cases for those signatures only. Do NOT rewrite the whole test file or touch untouched test cases.
+
+**Note:** `write_test_file` MCP tool is plugin_creator-scoped only — use `Write`/`Edit` tools directly for test file operations here.
+
+After make_test → go to Step 6.6 (verify).
 
 ---
 

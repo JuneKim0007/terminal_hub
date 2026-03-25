@@ -227,6 +227,14 @@ class GitHubClient:
                 return existing.json()
         raise GitHubError(f"Failed to create label '{name}': {resp.status_code}")
 
+    def update_label(self, name: str, new_description: str) -> dict:
+        """Update a label's description (idempotent — no error if label not found)."""
+        url = BASE_URL + f"/repos/{self.repo}/labels/{name}"
+        resp = self._client.patch(url, json={"description": new_description})
+        if resp.status_code in (200, 201):
+            return resp.json()
+        raise GitHubError(f"Failed to update label '{name}': {resp.status_code}")
+
     def create_milestone(self, title: str, description: str = "", due_on: str | None = None) -> dict:
         """Create a milestone. If title already exists (422), fetch and return the existing one."""
         url = BASE_URL + f"/repos/{self.repo}/milestones"

@@ -40,8 +40,12 @@ Sub-commands handle each step; this command composes them.
 
 ## Step 1 — Workspace + auth check
 
-Call `set_project_root(path="<Claude's actual working directory>")` first — this ensures hub_agents/ is written to the user's project.
-Then call `get_setup_status`.
+Call `bootstrap_gh_plan(project_root=<cwd>, confirm_repo=<bool>, sync_issues=true)`.
+- `confirm_repo=true` if session is fresh; `confirm_repo=false` if `confirm_session_repo()` was already called this session
+- Print `_display` verbatim
+- Print `landscape_display` — grouped by milestone, unassigned last
+- If `issue_count > 0`: ask "Those are your open issues. Implement, review, plan more, or skip?"
+- If `issue_count == 0`: offer fetch or plan
 
 **Skill setup (once per session):** If `hub_agents/skills/` does not exist, prompt once:
 > "I can load a skills index for this project to guide my behaviour.
@@ -54,49 +58,20 @@ Then call `get_setup_status`.
 - `initialised: false` → run the **setup sub-command** workflow (`/th:gh-plan-setup`)
 - `initialised: true` → continue
 
-**Repo confirmation (#148):** If `github_repo` is set, call `confirm_session_repo()`.
-- `confirmed: true` → proceed silently (already confirmed this session — sync + landscape already ran)
-- `confirmed: false` → print `_display` verbatim, then ask user "yes / change":
-  - "yes" → call `set_session_repo(repo=...)` to lock it, then run **post-lock steps** below
-  - "change" → ask "Which repo? (owner/repo)", then call `set_session_repo(repo=new_repo)`, then run **post-lock steps** below
+**Repo confirmation:** If `confirmed_repo` is null in `bootstrap_gh_plan` result, repo is not confirmed — print `landscape_display` then ask user "yes / change":
+  - "yes" → call `set_session_repo(repo=...)` to lock it
+  - "change" → ask "Which repo? (owner/repo)", then call `set_session_repo(repo=new_repo)`
 
-**Post-lock steps (after fresh repo lock only — skip when confirmed: true):**
-
-Call `list_milestones()` silently.
-This warms the milestone cache so `assign_milestone` never makes a cold API call.
-If the call fails with 404 or auth error, surface it immediately — bad repo config
-should be caught here, not at submit time.
-
-**Milestone cache check (#49):** After `list_milestones()` completes, check `milestone_assign` preference via `read_preference("milestone_assign")`. If the preference is not `False` and `list_milestones()` returned 0 milestones, scan local issues (from `list_issues()`) for any that have a `milestone_number` set. If any are found, offer once per session:
+**Milestone cache check (#49):** After `bootstrap_gh_plan` completes, check `milestone_assign` preference via `read_preference("milestone_assign")`. If the preference is not `False` and `milestones` list is empty, scan `issues` for any that have a `milestone_number` set. If any are found, offer once per session:
 > "Some issues have milestone assignments but no milestones exist on GitHub — fetch them? (yes / skip)"
 - **yes** → call `list_milestones()` again (forces a fresh fetch); if still empty, note "No milestones found on GitHub — milestone assignments may be stale."
 - **skip** → proceed without milestones; do not ask again this session.
 
-**Auto-sync + landscape (runs after cache warming, once per fresh repo lock):**
+**Landscape display:** Use `landscape_display` from `bootstrap_gh_plan` result. If `issue_count > 0`:
 
-1. Call `sync_github_issues()` — silent. Print one status line:
-   `🔄 Synced — {N} open issues from GitHub` (append `· {M} local drafts pending` if local-only drafts exist)
-   If sync fails, surface the error and continue without landscape.
-
-2. Call `list_issues(compact=False)`. If no open issues returned, print:
-   `No open issues — let's plan something!` and continue to Step 3.
-
-3. Otherwise, group open issues by `milestone_number` ascending (unassigned/null last).
-   Display the landscape using milestone titles from `_MILESTONE_CACHE`:
-   ```
-   📋 Open issues by milestone:
-
-   M{N} — {milestone title} ({count} open)
-     #{number} [{type label}] {title}
-
-   Unassigned ({count} open)
-     #{number} [{type label}] {title}
-   ```
-   `{type label}`: use the first label matching bug/feature/enhancement/refactor/chore/documentation/performance. Omit brackets if none match.
-
-4. Call `format_prompt(question="These are your unimplemented plans. What would you like to do?", options=["implement", "review", "plan more", "skip"], style="question")` — print `_display` verbatim.
+Call `format_prompt(question="These are your unimplemented plans. What would you like to do?", options=["implement", "review", "plan more", "skip"], style="question")` — print `_display` verbatim.
    - **implement** → call `apply_unload_policy(command="gh-plan")`, print `_display`, then invoke `/th:gh-implementation`
-   - **review** → ask "Which issue? (number or title)" → show that issue's full body from the `list_issues` result
+   - **review** → ask "Which issue? (number or title)" → show that issue's full body from the `issues` list in `bootstrap_gh_plan` result
    - **plan more** → continue to Step 3
    - **skip** → continue to Step 3 silently
 
@@ -394,18 +369,10 @@ After approval:
 
 ### 6g — Draft, confirm, submit
 
-3. **Lazy label load:** Call `list_repo_labels()` now (if not already cached) — this is the only point labels are fetched. Use the returned names to validate label choices before drafting.
-   Call `draft_issue(title, body, labels, assignees, agent_workflow=[...], milestone_number=N_or_None)` for each — **silent**
-4. Show confirmation block:
-   ```
-   About to: Create {N} GitHub issues on {repo}
-     {issue-1-title} [{size}] [{labels}]
-     {issue-2-title} [{size}] [{labels}]
-     ...
-   Proceed? (yes / review first / cancel)
-   ```
-   Wait for explicit "yes".
-5. Call `submit_issue(slug)` for each — **silent**
+3. Call `batch_create_issues(issue_specs=[...], confirm_before_submit=true)`.
+   - Print `confirmation_display` verbatim
+   - Wait for user "yes"
+   - For each slug in `drafts`: call `submit_issue(slug)` — this keeps label bootstrap per-issue
    After all submissions complete, label cache is no longer needed — it will be cleared by `apply_unload_policy` below.
 
 ### 6h — Doc updates (medium/large only)

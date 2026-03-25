@@ -674,3 +674,63 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
             f"  Stored in hub_agents/issues/"
         ),
     }
+
+
+def _do_batch_create_issues(
+    issue_specs: list,
+    confirm_before_submit: bool = True,
+) -> dict:
+    """Draft N issues locally, then submit them all to GitHub."""
+    from extensions.gh_management.github_planner.labels import _do_list_repo_labels
+
+    # Warm label cache (needed for validation)
+    labels_result = _do_list_repo_labels()
+    valid_label_names = {l["name"] for l in labels_result.get("labels", [])}
+
+    validation_errors = []
+    drafts = []
+    for spec in issue_specs:
+        # Validate labels
+        bad_labels = [l for l in spec.get("labels", []) if l and l not in valid_label_names]
+        if bad_labels:
+            validation_errors.append(f"Unknown labels for '{spec.get('title')}': {bad_labels}")
+
+        result = _do_draft_issue(
+            title=spec["title"],
+            body=spec.get("body", ""),
+            labels=spec.get("labels"),
+            assignees=spec.get("assignees"),
+            agent_workflow=spec.get("agent_workflow"),
+            milestone_number=spec.get("milestone_number"),
+        )
+        drafts.append({"slug": result["slug"], "title": spec["title"], "status": "pending"})
+
+    # Build confirmation display
+    lines = [f"About to create {len(drafts)} GitHub issues:"]
+    for d in drafts:
+        spec = next((s for s in issue_specs if s["title"] == d["title"]), {})
+        labels_str = ", ".join(spec.get("labels", []))
+        lines.append(f"  {d['title']} [{labels_str}]")
+    confirmation_display = "\n".join(lines)
+
+    submitted = []
+    failed_submissions = []
+    if not confirm_before_submit:
+        for d in drafts:
+            result = _do_submit_issue(d["slug"])
+            if "error" in result:
+                failed_submissions.append({"slug": d["slug"], "error": result["error"]})
+            else:
+                submitted.append({"slug": d["slug"], "issue_number": result.get("issue_number"), "url": result.get("url")})
+
+    all_succeeded = len(failed_submissions) == 0 and len(submitted) == len(drafts) if not confirm_before_submit else False
+
+    return {
+        "drafts": drafts,
+        "validation_errors": validation_errors,
+        "confirmation_display": confirmation_display,
+        "submitted": submitted,
+        "failed_submissions": failed_submissions,
+        "all_succeeded": all_succeeded,
+        "_display": f"📝 **Drafted** {len(drafts)} issues" + (f" — {len(validation_errors)} validation warning(s)" if validation_errors else ""),
+    }

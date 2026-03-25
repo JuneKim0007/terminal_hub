@@ -16,6 +16,8 @@ from extensions.gh_management.github_planner.setup import (
     _load_agent,
     _invalidate_repo_cache,
     _REPO_CACHE,
+    _do_bootstrap_gh_plan,
+    _do_bootstrap_new_repo,
 )
 # auth helpers re-exported at package root (server.py imports them here)
 from extensions.gh_management.github_planner.auth import resolve_token, verify_gh_cli_auth
@@ -129,6 +131,7 @@ from extensions.gh_management.github_planner.issues import (
     _do_list_issues,
     _do_list_pending_drafts,
     _do_sync_github_issues,
+    _do_batch_create_issues,
 )
 from extensions.gh_management.github_planner.project_docs import (
     _do_update_project_description,
@@ -164,6 +167,8 @@ from extensions.gh_management.github_planner.workspace_tools import (
     _do_unload_plugin,
     _do_apply_unload_policy,
     detect_existing_docs,
+    _do_initialize_implementation_session,
+    _do_load_implementation_context,
 )
 from extensions.gh_management.github_planner.skills import (
     _do_load_skill,
@@ -901,3 +906,79 @@ def register(mcp) -> None:
         Returns {view, data, _display}.
         """
         return _do_get_docs_map(view)
+
+    # ── Integrated flow tools (#218) ───────────────────────────────────────────
+
+    @mcp.tool()
+    def bootstrap_gh_plan(project_root: str, confirm_repo: bool = True, sync_issues: bool = True) -> dict:
+        """Bootstrap gh-plan in one call: set root, confirm repo, warm milestones, sync and list issues.
+
+        Replaces the 8-call gh-plan startup sequence with a single atomic operation.
+
+        project_root: absolute path to the project directory
+        confirm_repo: if False, skip repo confirmation (already confirmed this session)
+        sync_issues: if False, skip GitHub sync (use cached issues)
+        Returns {workspace_ready, confirmed_repo, milestones, sync_result, issues, landscape_display, _display}
+        """
+        return _do_bootstrap_gh_plan(project_root, confirm_repo, sync_issues)
+
+    @mcp.tool()
+    def batch_create_issues(issue_specs: list, confirm_before_submit: bool = True) -> dict:
+        """Draft and optionally submit multiple issues in one call.
+
+        Replaces the label-warm + draft×N + submit×N sequence for Step 6g.
+
+        issue_specs: list of {title, body, labels, assignees, agent_workflow, milestone_number}
+        confirm_before_submit: if True (default), only drafts — Claude calls submit_issue() after user confirms
+        Returns {drafts, validation_errors, confirmation_display, submitted, failed_submissions, all_succeeded, _display}
+        """
+        return _do_batch_create_issues(issue_specs, confirm_before_submit)
+
+    @mcp.tool()
+    def initialize_implementation_session(project_root: str, previous_command: str = "gh-plan") -> dict:
+        """Initialize gh-implementation session in one call.
+
+        Replaces the 7-call startup sequence: unload previous command, confirm repo,
+        load project docs, and list issues.
+
+        project_root: absolute path to the project
+        previous_command: command to unload (default: 'gh-plan')
+        Returns {workspace_ready, cache_cleared, repo_confirmed, project_summary, issues, issue_count, next_action, _display}
+        """
+        return _do_initialize_implementation_session(project_root, previous_command)
+
+    @mcp.tool()
+    def load_implementation_context(project_root: str, issue_slug: str, lookup_design_refs: bool = True) -> dict:
+        """Load full implementation context in one call.
+
+        Replaces 8-call sequence: initialize session + load active issue + design ref sections.
+
+        project_root: absolute path to project
+        issue_slug: issue slug to load (e.g. '42')
+        lookup_design_refs: if True, load design_ref sections from project_detail.md
+        Returns {workspace_ready, repo_confirmed, project_summary, issue_content, design_sections, has_agent_workflow, context_ready, _display}
+        """
+        return _do_load_implementation_context(project_root, issue_slug, lookup_design_refs)
+
+    @mcp.tool()
+    def bootstrap_new_repo(
+        project_title: str,
+        project_description: str,
+        tech_stack: list,
+        design_principles: list,
+        is_private: bool = True,
+        confirm_arch_changes: bool = False,
+    ) -> dict:
+        """Create a new GitHub repo and fully bootstrap the workspace in one call.
+
+        Replaces the 11-call new-repo path sequence.
+
+        project_title: name for the new repo
+        project_description: one-sentence description
+        tech_stack: list of tech stack items
+        design_principles: list of initial design principles
+        is_private: create as private repo (default: True)
+        confirm_arch_changes: persist confirm_arch_changes preference (default: False)
+        Returns {project_description_saved, repo_created, repo_url, workspace_linked, caches_warmed, ready_to_plan, _display}
+        """
+        return _do_bootstrap_new_repo(project_title, project_description, tech_stack, design_principles, is_private, confirm_arch_changes)

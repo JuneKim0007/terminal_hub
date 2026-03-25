@@ -556,3 +556,92 @@ def _do_get_session_header() -> dict:
     """Delegate to project_docs._do_get_session_header for the workspace_tools API."""
     from extensions.gh_management.github_planner.project_docs import _do_get_session_header
     return _do_get_session_header()
+
+
+def _do_initialize_implementation_session(
+    project_root: str,
+    previous_command: str = "gh-plan",
+) -> dict:
+    """Initialize gh-implementation session: unload previous command, confirm repo, load docs, list issues."""
+    from terminal_hub.workspace import set_active_project_root
+    from extensions.gh_management.github_planner.session import _do_confirm_session_repo
+    from extensions.gh_management.github_planner.project_docs import _do_load_project_docs
+    from extensions.gh_management.github_planner.issues import _do_list_issues
+
+    set_active_project_root(Path(project_root).resolve())
+    root = _pkg().get_workspace_root()
+
+    # Apply unload policy for previous command
+    unload_result = _do_apply_unload_policy(previous_command)
+    cache_cleared = unload_result.get("cleared", [])
+
+    # Confirm repo
+    confirm_result = _do_confirm_session_repo(force=False)
+    confirmed_repo = confirm_result.get("repo")
+
+    # Load project summary
+    docs_result = _do_load_project_docs(doc="summary")
+    project_summary = docs_result.get("summary", "")
+
+    # List issues
+    issues_result = _do_list_issues(compact=True)
+    issues = issues_result.get("issues", [])
+    issue_count = len(issues)
+
+    # Determine next action
+    if issue_count > 0:
+        next_action = "select_issue"
+    else:
+        next_action = "fetch_from_github"
+
+    return {
+        "workspace_ready": True,
+        "cache_cleared": cache_cleared,
+        "repo_confirmed": confirmed_repo,
+        "project_summary": project_summary,
+        "issues": issues,
+        "issue_count": issue_count,
+        "next_action": next_action,
+        "_display": f"✅ **Implementation session ready** — {issue_count} issues available",
+    }
+
+
+def _do_load_implementation_context(
+    project_root: str,
+    issue_slug: str,
+    lookup_design_refs: bool = True,
+) -> dict:
+    """Load full implementation context: initialize session + load active issue + design ref sections."""
+    from extensions.gh_management.github_planner.project_docs import _do_lookup_feature_section
+
+    # Initialize session first
+    session_result = _do_initialize_implementation_session(project_root)
+
+    # Load the active issue
+    from extensions.gh_management.gh_implementation import _do_load_active_issue
+    issue_result = _do_load_active_issue(issue_slug)
+    if "error" in issue_result:
+        return {**session_result, "error": issue_result["error"], "context_ready": False}
+
+    # Load design ref sections
+    design_sections = {}
+    if lookup_design_refs:
+        design_refs = issue_result.get("agent_workflow", [])
+        import re
+        for ref in design_refs:
+            if isinstance(ref, str) and "§" in ref:
+                section = ref.split("§")[-1].strip()
+                section_result = _do_lookup_feature_section(section)
+                if "section" in section_result:
+                    design_sections[section] = section_result["section"]
+
+    return {
+        "workspace_ready": session_result.get("workspace_ready", True),
+        "repo_confirmed": session_result.get("repo_confirmed"),
+        "project_summary": session_result.get("project_summary", ""),
+        "issue_content": issue_result,
+        "design_sections": design_sections,
+        "has_agent_workflow": bool(issue_result.get("agent_workflow")),
+        "context_ready": True,
+        "_display": f"✅ **Context loaded** — issue #{issue_slug}, {len(design_sections)} design sections",
+    }

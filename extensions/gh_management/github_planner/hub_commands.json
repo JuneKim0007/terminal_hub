@@ -1,0 +1,14 @@
+{
+  "github": {
+    "create_issue": "POST /repos/{repo}/issues",
+    "list_labels":  "GET /repos/{repo}/labels",
+    "create_label": "POST /repos/{repo}/labels",
+    "get_issue":    "GET /repos/{repo}/issues/{number}",
+    "close_issue":  "PATCH /repos/{repo}/issues/{number}",
+    "list_issues":  "GET /repos/{repo}/issues"
+  },
+  "gh_cli": {
+    "auth_status": "gh auth status",
+    "auth_token":  "gh auth token"
+  }
+}

@@ -264,6 +264,20 @@ def _do_run_tests_filtered(files: list[str] | None) -> dict:
     }
 
 
+def _classify_test_failure(filtered_output: str, failed_count: int, coverage: float, threshold: float) -> str:
+    """Classify test failure type from pytest filtered output.
+
+    Returns: 'import_error' | 'assertion_error' | 'missing_coverage' | 'general'
+    """
+    if failed_count == 0 and coverage < threshold:
+        return "missing_coverage"
+    if "ImportError" in filtered_output or "ModuleNotFoundError" in filtered_output:
+        return "import_error"
+    if "AssertionError" in filtered_output:
+        return "assertion_error"
+    return "general"
+
+
 def register(mcp: FastMCP) -> None:
     """Register gh_implementation tools on the shared MCP server."""
 

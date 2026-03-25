@@ -203,6 +203,50 @@ After Step 6.5 (make_test):
 
 ---
 
+## Step 6.6a — Failure handling
+
+**On any failure from Step 6.6** (failed tests OR coverage < threshold):
+
+1. Write `hub_agents/cache/test_failures.json`:
+   ```json
+   {
+     "issue_slug": "<active slug>",
+     "affected_files": [...],
+     "failed_tests": ["test_name", ...],
+     "coverage": <float>,
+     "threshold": <int>,
+     "errors": ["AssertionError: ...", ...]
+   }
+   ```
+   Extract `failed_tests` and `errors` by parsing FAILED/ERROR lines from `filtered_output`.
+
+2. Classify failure type from error messages in `filtered_output`:
+   - Contains `ImportError` or `ModuleNotFoundError` → `import_error`
+   - Contains `AssertionError` → `assertion_error`
+   - No FAILED lines but `coverage < threshold` → `missing_coverage`
+   - Multiple types or unrecognised → `general`
+
+3. Load suggestion file:
+   - Check `extensions/gh_management/gh_implementation/suggestions/{failure_type}.md`
+   - If not found → load `extensions/gh_management/gh_implementation/suggestions/general.md`
+   - Use Read tool to load the file.
+
+4. Present to user (one message):
+   ```
+   ⚠ {N} tests failed / coverage {X}% (threshold: {Y}%)
+
+   Suggested fix:
+   {suggestion file content}
+   ```
+   Then call `format_prompt(question="What would you like to do?", options=["fix", "skip", "set new threshold"], style="question")` and print `_display`.
+
+5. Handle user response:
+   - **fix** → apply the minimal fix described in the suggestion to the affected files, then re-run Step 6.6 (call `run_tests_filtered(files=affected_files)` again). If it passes, continue to Step 7. If still failing, show updated results and ask again.
+   - **skip** → continue to Step 7 with a note: `(tests have failures — accepted by user)`
+   - **set new threshold** → ask "New threshold? (integer 0–100)", validate, then replace the `COVERAGE_THRESHOLD = <N>` line in `terminal_hub/constants.py` using Edit tool. Confirm: `COVERAGE_THRESHOLD = {new} (was {old}) — saved`. Then re-run Step 6.6.
+
+---
+
 ## Step 7 — Present changes
 
 Run `git diff HEAD` (Bash tool), then present changes to the user.

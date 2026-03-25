@@ -182,6 +182,27 @@ After make_test → go to Step 6.6 (verify).
 
 ---
 
+## Step 6.6 — verify (run tests with filtered output)
+
+After Step 6.5 (make_test):
+
+1. Call `run_tests_filtered(files=affected_files)`:
+   - Runs the full pytest suite internally
+   - Filters output through `filter_test_results()` in `terminal_hub/utils/test_filter.py` (single export — never duplicate)
+   - Returns `{passed, failed, coverage, meets_threshold, threshold, filtered_output, raw_summary}`
+
+2. Claude reads `filtered_output` only — not the raw pytest log. This keeps context lean.
+
+3. **If all pass and coverage ≥ threshold:**
+   Print: `Tests passed — coverage {N}% ({passed} passed, 0 failed)` and continue to Step 7.
+
+4. **If failures or coverage below threshold:**
+   Go to Step 6.6a (failure handling — see #210).
+
+**Note:** `files=None` skips filtering and returns full pytest output — use for full-suite runs.
+
+---
+
 ## Step 7 — Present changes
 
 Run `git diff HEAD` (Bash tool), then present changes to the user.

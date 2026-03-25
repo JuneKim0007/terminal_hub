@@ -1,0 +1,8 @@
+{
+  "name": "settings",
+  "version": "0.1.0",
+  "description": "Conversational settings manager — view and change all user-configurable values in terminal_hub/constants.py and plugin_config.json files.",
+  "entry": "extensions.settings",
+  "commands_dir": "commands",
+  "commands": ["th-settings.md"]
+}

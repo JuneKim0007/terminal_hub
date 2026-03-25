@@ -26,3 +26,7 @@ VALID_MODELS: tuple[str, ...] = (MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS)
 ANALYSIS_BATCH_SIZE: int = 5
 ANALYSIS_BATCH_SIZE_MAX: int = 20
 ANALYSIS_BATCH_SIZE_MIN: int = 1
+
+# ── Test quality gates ────────────────────────────────────────────────────────
+
+COVERAGE_THRESHOLD: int = 80  # minimum coverage % to pass verify step (only change via /th:settings)

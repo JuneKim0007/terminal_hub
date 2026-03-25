@@ -2,7 +2,8 @@
 
 Tools: get_implementation_session, set_implementation_session_flag,
        fetch_github_issues, update_issue_frontmatter,
-       close_github_issue, delete_local_issue
+       close_github_issue, delete_local_issue,
+       run_tests_filtered
 """
 from __future__ import annotations
 
@@ -19,6 +20,8 @@ from extensions.gh_management.github_planner.storage import (
     read_issue_frontmatter, list_issue_files, IssueStatus, write_issue_file,
 )
 from terminal_hub.env_store import read_env
+from terminal_hub.constants import COVERAGE_THRESHOLD
+from terminal_hub.utils.test_filter import filter_test_results
 
 # ── In-memory session state ───────────────────────────────────────────────────
 # Keyed by workspace root str so multi-workspace scenarios don't collide.
@@ -224,6 +227,43 @@ def _do_delete_local_issue(slug: str) -> dict:
     return {"deleted": True, "file": f"hub_agents/issues/{slug}.md", "_display": f"🗑 **Deleted** local issue #{slug}"}
 
 
+def _do_run_tests_filtered(files: list[str] | None) -> dict:
+    import re
+    import subprocess
+
+    cmd = [
+        "python", "-m", "pytest", "--tb=short", "-q",
+        "--cov=terminal_hub", "--cov=extensions", "--cov-report=term-missing",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    raw = result.stdout + result.stderr
+
+    filtered = filter_test_results(raw, files)
+
+    failed_count = len(re.findall(r"^FAILED ", raw, re.MULTILINE))
+    passed_match = re.search(r"(\d+) passed", raw)
+    passed_count = int(passed_match.group(1)) if passed_match else 0
+    cov_match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", raw)
+    coverage = float(cov_match.group(1)) if cov_match else 0.0
+    raw_summary = "\n".join(raw.strip().splitlines()[-5:])
+
+    passed = failed_count == 0 and result.returncode == 0
+    return {
+        "passed": passed,
+        "failed": failed_count,
+        "coverage": coverage,
+        "meets_threshold": coverage >= COVERAGE_THRESHOLD,
+        "threshold": COVERAGE_THRESHOLD,
+        "filtered_output": filtered,
+        "raw_summary": raw_summary,
+        "_display": (
+            f"{'Tests passed' if passed else 'Tests FAILED'} — "
+            f"{passed_count} passed, {failed_count} failed — "
+            f"coverage {coverage:.0f}% (threshold: {COVERAGE_THRESHOLD}%)"
+        ),
+    }
+
+
 def register(mcp: FastMCP) -> None:
     """Register gh_implementation tools on the shared MCP server."""
 
@@ -318,3 +358,17 @@ def register(mcp: FastMCP) -> None:
         Returns {unloaded, slug, file_deleted, _display}.
         """
         return _do_unload_active_issue(slug, delete_file)
+
+    @mcp.tool()
+    def run_tests_filtered(files: list[str] | None = None) -> dict:
+        """Run pytest and return results filtered to the given source files.
+
+        Runs the full test suite, then filters stdout through filter_test_results()
+        so Claude only receives output relevant to the implementation at hand.
+
+        files: source file paths to filter by (e.g. ['terminal_hub/foo.py']).
+               Pass None to return full unfiltered output.
+        Returns {passed, failed, coverage, meets_threshold, threshold,
+                 filtered_output, raw_summary, _display}.
+        """
+        return _do_run_tests_filtered(files)

@@ -71,12 +71,16 @@ Do NOT show the switch offer again after the user has already said yes in this s
 
 ---
 
-## Step 1 — Context switch (silent)
+## Step 1 — Pre-implementation (single call)
 
 Call `set_project_root(path="<Claude's actual working directory>")` first — this ensures hub_agents/ is written to the user's project.
-Call `apply_unload_policy(command="gh-implementation")`.
-Output `_display` verbatim as a **standalone line** — nothing before or after it on the same line.
-Do NOT bury it in a sentence. Example output line: `🧹 Cleared: analysis_cache, label_cache`
+
+Call `pre_implementation(issue_slug=<slug>)`:
+- Returns full context: project summary, active issue, design sections, connected docs, flags
+- Print `_display` verbatim
+
+If `has_agent_workflow: true` → go to Step 6 (implement)
+If `has_agent_workflow: false` → go to Step 5 (define workflow)
 
 **Skill setup (once per session):** If `hub_agents/skills/` does not exist, prompt once:
 > "I can load a skills index for this project to guide my behaviour.
@@ -86,49 +90,6 @@ Do NOT bury it in a sentence. Example output line: `🧹 Cleared: analysis_cache
 > - **skip** → proceed; only plugin-level skills (Tier 1) will be used
 
 **Persistent skills:** `set_project_root` triggers `_load_skill_registry` — skills with `alwaysApply: true` are auto-available.
-
-**Repo confirmation (#148):** Call `confirm_session_repo()`.
-- `confirmed: true` → proceed silently
-- `confirmed: false` → print `_display` verbatim and ask "yes / change" (same flow as gh-plan Step 1)
-
----
-
-## Step 2 — Read project context (silent)
-
-Call `load_project_docs(doc="summary")`. Print `_display` verbatim (e.g. "📄 Loaded: project_summary.md (1,234 bytes)"). Do not show the doc contents.
-Do not read project_detail.md in full — use `lookup_feature_section` per topic when needed.
-
----
-
-## Step 3 — Load issues
-
-Call `list_issues`. If issues are returned: show a compact numbered list and ask:
-> "Which issue would you like to implement? (number or title)"
-
-If no local issues:
-> "No local issues found. Options:
-> a) Switch to planner mode (/th:gh-plan) to create some
-> b) Fetch issues from GitHub and sync them locally"
-
-- **(a)**: say "Run `/th:gh-plan` to plan and track issues."
-- **(b)**: call `fetch_github_issues()` (TODO #125) to pull open issues from GitHub
-
----
-
-## Step 4 — Load selected issue
-
-Call `load_active_issue(slug)` — this is **mandatory**. Do not read the issue file separately.
-
-- The returned `agent_workflow` field is the authoritative workflow (no frontmatter re-read needed)
-- The returned `content` is the full issue context — it is already in your context window
-- **`agent_workflow` present in return value** → go to Step 6 (implement)
-- **`agent_workflow` absent** → go to Step 5 (define workflow)
-
-**Design refs:** If the loaded issue has `design_refs` in its frontmatter, use those as the
-lookup targets — call `lookup_feature_section(feature="<section>")` for each
-`project_detail.md § <section>` entry. Do **not** do a broad doc scan; the refs already
-identify the relevant sections. If no `design_refs` are present, fall back to checking
-`project_detail.md` for any feature section matching this issue's area.
 
 ---
 
@@ -200,6 +161,23 @@ After Step 6.5 (make_test):
    Go to Step 6.6a (failure handling — see #210).
 
 **Note:** `files=None` skips filtering and returns full pytest output — use for full-suite runs.
+
+---
+
+## Step 6.7 — Post-implementation (single call)
+
+After Step 6.6 (make_test + verify complete):
+Call `post_implementation(issue_slug=<slug>)`:
+- Returns test results, diff summary, affected files
+- Print `_display` verbatim
+- Show `diff.diff_text` to user (or summarize if > 200 lines)
+
+Ask: **"Accept these changes? (yes / review more / cancel)"**
+- "yes" → run `git commit -m "<type>: <description> (#<issue_number>)"` + `git push` via Bash tool
+  Then if `close_automatically_on_gh=true`: call `close_github_issue(issue_number)`
+  Then call `unload_active_issue()`
+- "review more" → show specific file/hunk
+- "cancel" → `git checkout -- .` and return to issue list
 
 ---
 

@@ -33,6 +33,16 @@ You are in **gh-implementation** mode — the end-to-end flow for implementing a
 
 ---
 
+## Design principle detection (always active)
+
+If any user message at any point during implementation contains trigger phrases — "always", "never", "every time", "must always", "should always", "don't ever", "every X must", "all X should" — before responding:
+1. Call `format_prompt(question="That sounds like a design principle — add it to your project docs?", options=["yes", "no"], style="confirm")` — print `_display` verbatim
+2. If "yes": read `hub_agents/docs_config.json` → find entry with `primary: true` or `type: "design"` → append `- {principle text} *(added {date})*` under `## Design Principles`. Also call `update_project_summary_section(section_name="Design Principles", ...)` to append it. Confirm: `Saved: "{principle}" → {doc_path}`
+3. If no connected design doc found: ask "Which file? (path / 'create new')". On "create new": create `hub_agents/design_principles.md` and call `connect_docs(design="hub_agents/design_principles.md")`
+4. If "no": proceed without saving
+
+---
+
 ## Mode switching — bidirectional (always active)
 
 Detect planning intent at any point during the conversation. Signals include:

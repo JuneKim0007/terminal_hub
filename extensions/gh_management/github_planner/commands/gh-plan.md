@@ -318,6 +318,13 @@ scope overlap and in Step 6 to populate per-issue sibling context.
 
 Say: **"Let me know any plans for this!"**
 
+**Design principle detection (always active in this step):**
+If any user message contains trigger phrases — "always", "never", "every time", "must always", "should always", "don't ever", "every X must", "all X should" — before responding to the main message:
+1. Call `format_prompt(question="That sounds like a design principle — add it to your project docs?", options=["yes", "no"], style="confirm")` — print `_display` verbatim
+2. If "yes": read `hub_agents/docs_config.json` → find entry with `primary: true` or `type: "design"` → append `- {principle text} *(added {date})*` under `## Design Principles`. Also call `update_project_summary_section(section_name="Design Principles", ...)` to append it there. Confirm: `Saved: "{principle}" → {doc_path}`
+3. If no connected design doc found: ask "Which file should I add design principles to? (path / 'create new')". On "create new": create `hub_agents/design_principles.md` with `## Design Principles` heading and call `connect_docs(design="hub_agents/design_principles.md")`
+4. If "no": proceed without saving — no friction
+
 - Use project summary as background context (silent)
 - When the user describes a feature or task:
   - If `session_header.sections` (or `docs_exist.sections`) contains a matching area,

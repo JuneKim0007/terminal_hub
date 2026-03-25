@@ -13,3 +13,4 @@ benchmarks/
 .claude/
 venv/
 *.log
+docs_map.json

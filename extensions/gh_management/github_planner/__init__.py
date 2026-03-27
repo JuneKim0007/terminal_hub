@@ -216,8 +216,9 @@ def register(mcp) -> None:
         MUST be the very first tool call in every /th: command.
         path: Claude's actual working directory (absolute path)."""
         from terminal_hub.workspace import set_active_project_root
+        from terminal_hub.display import display as _text
         set_active_project_root(path)
-        return {"root": str(path), "_display": f"📁 **Project root:** {path}"}
+        return {"root": str(path), "_display": _text("project_root.set", path=path)}
 
     # ── Session repo confirmation (#148) ──────────────────────────────────────
 
@@ -910,7 +911,7 @@ def register(mcp) -> None:
     # ── Integrated flow tools (#218) ───────────────────────────────────────────
 
     @mcp.tool()
-    def bootstrap_gh_plan(project_root: str, confirm_repo: bool = True, sync_issues: bool = True) -> dict:
+    def bootstrap_gh_plan(project_root: str, confirm_repo: bool = True, sync_issues: bool = True, full_data: bool = False) -> dict:
         """Bootstrap gh-plan in one call: set root, confirm repo, warm milestones, sync and list issues.
 
         Replaces the 8-call gh-plan startup sequence with a single atomic operation.
@@ -918,9 +919,11 @@ def register(mcp) -> None:
         project_root: absolute path to the project directory
         confirm_repo: if False, skip repo confirmation (already confirmed this session)
         sync_issues: if False, skip GitHub sync (use cached issues)
-        Returns {workspace_ready, confirmed_repo, milestones, sync_result, issues, landscape_display, _display}
+        full_data: if True, include full issue objects in response (default False — returns issue_slugs only)
+        Returns {workspace_ready, confirmed_repo, milestones, sync_result, issue_slugs, issue_count, landscape_display, _display}
+        When full_data=True also returns: {issues}
         """
-        return _do_bootstrap_gh_plan(project_root, confirm_repo, sync_issues)
+        return _do_bootstrap_gh_plan(project_root, confirm_repo, sync_issues, full_data)
 
     @mcp.tool()
     def batch_create_issues(issue_specs: list, confirm_before_submit: bool = True) -> dict:

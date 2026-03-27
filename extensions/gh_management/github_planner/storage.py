@@ -254,11 +254,42 @@ def list_issue_files(root: Path) -> list[dict[str, Any]]:
                 "updated_at": fm.get("updated_at"),
                 "assignees": fm.get("assignees", []),
                 "labels": fm.get("labels", []),
+                "milestone_number": fm.get("milestone_number"),
                 "file": f"hub_agents/issues/{slug}.md",
             }
             if fm.get("design_refs"):
                 entry["design_refs"] = fm["design_refs"]
             results.append(entry)
+    return sorted(results, key=lambda x: x["created_at"] or "", reverse=True)
+
+
+def list_issue_titles(root: Path) -> list[dict[str, Any]]:
+    """Return minimal metadata for each issue file: slug, title, issue_number, milestone_number, labels.
+
+    Lighter than list_issue_files — used by bootstrap_gh_plan to build landscape_display
+    without loading full issue payloads into Claude's context.
+    Sorted by created_at descending (same order as list_issue_files).
+    """
+    issues_dir = _issues_dir(root)
+    if not issues_dir.exists():
+        return []
+    results = []
+    for md_file in issues_dir.glob("*.md"):
+        slug = md_file.stem
+        try:
+            validate_slug(slug)
+        except ValueError:
+            continue
+        fm = read_issue_frontmatter(root, slug)
+        if fm:
+            results.append({
+                "slug": slug,
+                "title": fm.get("title", ""),
+                "issue_number": fm.get("issue_number"),
+                "milestone_number": fm.get("milestone_number"),
+                "labels": fm.get("labels", []),
+                "created_at": fm.get("created_at"),
+            })
     return sorted(results, key=lambda x: x["created_at"] or "", reverse=True)
 
 

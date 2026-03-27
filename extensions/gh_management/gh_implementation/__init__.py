@@ -67,6 +67,17 @@ def _get_flags(root: Path) -> dict[str, Any]:
     return _SESSION_FLAGS[key]
 
 
+def _build_context_loaded_display(issue_slug: str, ctx: dict, connected_docs_loaded: list) -> str:
+    """Build the _display string for pre_implementation using predefined templates."""
+    from terminal_hub.display import display as _text
+    details = ""
+    if ctx.get("design_sections"):
+        details += _text("gh_implementation.context_detail_design", design_count=len(ctx["design_sections"]))
+    if connected_docs_loaded:
+        details += _text("gh_implementation.context_detail_docs", docs_count=len(connected_docs_loaded))
+    return _text("gh_implementation.context_loaded", issue_slug=issue_slug, details=details)
+
+
 def _do_get_implementation_session() -> dict:
     root = get_workspace_root()
     flags = _get_flags(root)
@@ -101,13 +112,14 @@ def _do_load_active_issue(slug: str) -> dict:
     content = path.read_text(encoding="utf-8")
     fm = read_issue_frontmatter(root, slug) or {}
     _get_flags(root)["active_issue_slug"] = slug
+    from terminal_hub.display import display as _text
     return {
         "slug": slug,
         "content": content,
         "title": fm.get("title", ""),
         "labels": fm.get("labels", []),
         "agent_workflow": fm.get("agent_workflow"),
-        "_display": f"✅ **Hooked:** issue #{slug} — {fm.get('title', '')} loaded into context",
+        "_display": _text("gh_implementation.issue_hooked", slug=slug, title=fm.get("title", "")),
     }
 
 
@@ -125,11 +137,16 @@ def _do_unload_active_issue(slug: str | None = None, delete_file: bool | None = 
         if path.exists():
             path.unlink()
             deleted = True
+    from terminal_hub.display import display as _text
     return {
         "unloaded": True,
         "slug": target_slug,
         "file_deleted": deleted,
-        "_display": f"✅ **Unhooked:** issue #{target_slug} — context cleared{', file deleted' if deleted else ''}",
+        "_display": _text(
+            "gh_implementation.issue_unhooked",
+            slug=target_slug,
+            suffix=", file deleted" if deleted else "",
+        ),
     }
 
 
@@ -307,11 +324,7 @@ def _do_pre_implementation(issue_slug: str, flags_override: dict | None = None) 
         "has_agent_workflow": ctx.get("has_agent_workflow", False),
         "connected_docs_loaded": connected_docs_loaded,
         "flags": {k: flags[k] for k in _ALLOWED_SESSION_FLAGS if k in flags},
-        "_display": (
-            f"✅ **Context loaded** — issue #{issue_slug}"
-            + (f", {len(ctx.get('design_sections', {}))} design sections" if ctx.get("design_sections") else "")
-            + (f", {len(connected_docs_loaded)} connected docs" if connected_docs_loaded else "")
-        ),
+        "_display": _build_context_loaded_display(issue_slug, ctx, connected_docs_loaded),
     }
 
 

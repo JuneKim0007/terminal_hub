@@ -6,6 +6,7 @@ from extensions.gh_management.github_planner.storage import (
     STATUS_OPEN,
     STATUS_PENDING,
     list_issue_files,
+    list_issue_titles,
     read_doc_file,
     read_issue_file,
     read_issue_frontmatter,
@@ -361,3 +362,63 @@ def test_read_doc_file_oserror_on_read_returns_none(workspace):
     with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
         result = read_doc_file(workspace, "project_description")
     assert result is None
+
+
+# ── list_issue_titles ─────────────────────────────────────────────────────────
+
+def test_list_issue_titles_returns_minimal_fields(workspace):
+    write_issue_file(
+        root=workspace, slug="lean-issue", title="Lean Title",
+        body="body", assignees=["alice"], labels=["feature"],
+        created_at=date(2026, 3, 10),
+    )
+    titles = list_issue_titles(workspace)
+    assert len(titles) == 1
+    entry = titles[0]
+    assert entry["slug"] == "lean-issue"
+    assert entry["title"] == "Lean Title"
+    assert entry["labels"] == ["feature"]
+    # Full fields must NOT be present
+    assert "assignees" not in entry
+    assert "github_url" not in entry
+    assert "status" not in entry
+    assert "file" not in entry
+    assert "updated_at" not in entry
+
+
+def test_list_issue_titles_empty_when_no_issues(workspace):
+    assert list_issue_titles(workspace) == []
+
+
+def test_list_issue_titles_missing_dir(tmp_path):
+    assert list_issue_titles(tmp_path) == []
+
+
+def test_list_issue_titles_sorted_by_date_desc(workspace):
+    for slug, day in [("t-a", 5), ("t-b", 20), ("t-c", 12)]:
+        write_issue_file(
+            root=workspace, slug=slug, title=slug,
+            body="b", assignees=[], labels=[],
+            created_at=date(2026, 3, day),
+        )
+    titles = list_issue_titles(workspace)
+    assert [t["slug"] for t in titles] == ["t-b", "t-c", "t-a"]
+
+
+def test_list_issue_files_includes_milestone_number(workspace):
+    write_issue_file(
+        root=workspace, slug="ms-issue", title="Milestone Issue",
+        body="b", assignees=[], labels=[],
+        created_at=date(2026, 3, 1),
+    )
+    # Patch in a milestone_number via direct frontmatter write
+    issue_path = workspace / "hub_agents" / "issues" / "ms-issue.md"
+    content = issue_path.read_text()
+    content = content.replace("milestone_number: null\n", "milestone_number: 3\n")
+    issue_path.write_text(content)
+
+    issues = list_issue_files(workspace)
+    assert issues[0]["milestone_number"] == 3
+
+    titles = list_issue_titles(workspace)
+    assert titles[0]["milestone_number"] == 3

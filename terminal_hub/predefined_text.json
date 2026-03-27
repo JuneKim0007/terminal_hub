@@ -1,0 +1,27 @@
+{
+  "project_root": {
+    "set": "📁 **Project root:** {path}"
+  },
+  "gh_plan": {
+    "bootstrap_ready": "✅ **gh-plan ready** — {issue_count} issues, {milestone_count} milestones",
+    "no_open_issues": "No open issues.",
+    "landscape_group_header": "**{group_title}**",
+    "landscape_issue_labeled": "  #{number} {title} [{labels}]",
+    "landscape_issue": "  #{number} {title}",
+    "unassigned_header": "**Unassigned**"
+  },
+  "gh_implementation": {
+    "context_loaded": "✅ **Context loaded** — issue #{issue_slug}{details}",
+    "context_detail_design": ", {design_count} design sections",
+    "context_detail_docs": ", {docs_count} connected docs",
+    "issue_hooked": "✅ **Hooked:** issue #{slug} — {title} loaded into context",
+    "issue_unhooked": "✅ **Unhooked:** issue #{slug} — context cleared{suffix}"
+  },
+  "sync": {
+    "issues_synced": "✓ Synced {updated} issue(s) from {repo} ({state})\n  Skipped {skipped} unchanged | Closed locally: {closed_locally} | Checked: {checked}\n  Stored in hub_agents/issues/"
+  },
+  "prompt_coloring": {
+    "question_line": "{icon} {wrap}{question}{wrap}",
+    "question_with_options": "{icon} {wrap}{question}{wrap} *({opts_str})*"
+  }
+}

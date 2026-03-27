@@ -283,9 +283,10 @@ Also note:
 - `## Interface Layers` section if present — authoritative layer reference; used in issue bodies and doc updates
 - `## Planned Features` section if present — running table of all tracked issues
 
-Call `list_issues` silently. Store the result as `_ISSUE_LANDSCAPE` — the full set of
-tracked issues (slug, title, labels, milestone_number, status). Use in Step 5 to detect
-scope overlap and in Step 6 to populate per-issue sibling context.
+Use `issue_slugs` from the `bootstrap_gh_plan` result (Step 1) as `_ISSUE_SLUGS` — the list
+of tracked issue slugs. Use in Step 5 for slug-based dedup. For title-based overlap detection,
+parse `landscape_display` from the same Step 1 result — it already contains `#N Title` lines.
+Do NOT call `list_issues` separately; all orientation data is already in the bootstrap result.
 
 ---
 
@@ -307,9 +308,10 @@ If any user message contains trigger phrases — "always", "never", "every time"
     `section` to inform issue scope and AC.
   - Do NOT load `project_detail.md` in full — always use `lookup_feature_section`
     with a specific feature name.
-  - **Overlap check:** scan `_ISSUE_LANDSCAPE` for existing issues with similar title or
-    feature area. If found, surface it before planning: "This looks similar to #{slug} —
-    {title}. Extend that issue, or create a new one?" Do not silently duplicate.
+  - **Overlap check:** scan `landscape_display` (from Step 1) for existing issues with
+    similar title or feature area. If found, surface it before planning: "This looks
+    similar to #{slug} — {title}. Extend that issue, or create a new one?" Do not
+    silently duplicate.
 - **Label suggestions:** labels are loaded lazily — do NOT call `list_repo_labels()` here.
   Suggest from the known type labels: `bug`/`feature`/`enhancement`/`refactor`/`chore`/`documentation`/`performance` + area label if identifiable.
   If the user explicitly asks "what labels are available?", call `list_repo_labels()` and display the names.

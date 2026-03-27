@@ -658,6 +658,7 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
 
     _do_save_github_local_config({"issues_synced_at": time.time(), "issues_state": state})
 
+    from terminal_hub.display import display as _text
     env = _p.read_env(root)
     repo = env.get("GITHUB_REPO", "unknown")
     return {
@@ -668,10 +669,10 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
         "closed_locally": closed_locally,
         "total": total_raw,
         "state": state,
-        "_display": (
-            f"✓ Synced {updated} issue(s) from {repo} ({state})\n"
-            f"  Skipped {skipped} unchanged | Closed locally: {closed_locally} | Checked: {checked}\n"
-            f"  Stored in hub_agents/issues/"
+        "_display": _text(
+            "sync.issues_synced",
+            updated=updated, repo=repo, state=state,
+            skipped=skipped, closed_locally=closed_locally, checked=checked,
         ),
     }
 

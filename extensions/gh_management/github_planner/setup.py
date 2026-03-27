@@ -83,12 +83,15 @@ def _do_bootstrap_gh_plan(
     project_root: str,
     confirm_repo: bool = True,
     sync_issues: bool = True,
+    full_data: bool = False,
 ) -> dict:
     """Bootstrap gh-plan session: set root, confirm repo, warm milestones, sync + list issues."""
     from terminal_hub.workspace import set_active_project_root
     from extensions.gh_management.github_planner.session import _do_confirm_session_repo, _do_set_session_repo
     from extensions.gh_management.github_planner.milestones import _do_list_milestones
-    from extensions.gh_management.github_planner.issues import _do_sync_github_issues, _do_list_issues
+    from extensions.gh_management.github_planner.issues import _do_sync_github_issues
+    from extensions.gh_management.github_planner.storage import list_issue_titles
+    from terminal_hub.display import display as _text
 
     # Set project root
     set_active_project_root(Path(project_root).resolve())
@@ -106,51 +109,60 @@ def _do_bootstrap_gh_plan(
     milestones_result = _do_list_milestones(state="open")
     milestones = milestones_result.get("milestones", [])
 
-    # Sync + list issues
+    # Sync issues if requested
     sync_result = {"synced": 0, "skipped": 0}
     if sync_issues:
         sync_result = _do_sync_github_issues(state="open", refresh=False)
 
-    issues_result = _do_list_issues(compact=False)
-    issues = issues_result.get("issues", [])
+    # Read lean title-only metadata for display and slug list
+    lean_issues = list_issue_titles(root)
 
-    # Group by milestone
+    # Group by milestone for display
     by_milestone: dict = {}
     unassigned = []
-    for issue in issues:
+    for issue in lean_issues:
         mn = issue.get("milestone_number")
         if mn:
             by_milestone.setdefault(mn, []).append(issue)
         else:
             unassigned.append(issue)
 
-    # Build landscape display
+    # Build landscape display server-side — only titles reach Claude's context
     lines = []
     for mn in sorted(by_milestone.keys()):
         milestone_issues = by_milestone[mn]
         m_title = next((m.get("title", f"M{mn}") for m in milestones if m.get("number") == mn), f"Milestone {mn}")
-        lines.append(f"**{m_title}**")
+        lines.append(_text("gh_plan.landscape_group_header", group_title=m_title))
         for iss in milestone_issues:
             label_str = ", ".join(iss.get("labels", []))
-            lines.append(f"  #{iss.get('issue_number') or iss.get('slug')} {iss.get('title')} [{label_str}]")
+            number = iss.get("issue_number") or iss.get("slug")
+            lines.append(_text("gh_plan.landscape_issue_labeled", number=number, title=iss.get("title", ""), labels=label_str))
     if unassigned:
-        lines.append("**Unassigned**")
+        lines.append(_text("gh_plan.unassigned_header"))
         for iss in unassigned:
-            lines.append(f"  #{iss.get('issue_number') or iss.get('slug')} {iss.get('title')}")
+            number = iss.get("issue_number") or iss.get("slug")
+            lines.append(_text("gh_plan.landscape_issue", number=number, title=iss.get("title", "")))
 
-    landscape_display = "\n".join(lines) if lines else "No open issues."
+    landscape_display = "\n".join(lines) if lines else _text("gh_plan.no_open_issues")
+    issue_slugs = [iss["slug"] for iss in lean_issues]
 
-    return {
+    result: dict = {
         "workspace_ready": True,
         "confirmed_repo": confirmed_repo,
         "repo_changed": repo_changed,
         "milestones": milestones,
         "sync_result": sync_result,
-        "issues": issues,
-        "issue_count": len(issues),
+        "issue_slugs": issue_slugs,
+        "issue_count": len(lean_issues),
         "landscape_display": landscape_display,
-        "_display": f"✅ **gh-plan ready** — {len(issues)} issues, {len(milestones)} milestones",
+        "_display": _text("gh_plan.bootstrap_ready", issue_count=len(lean_issues), milestone_count=len(milestones)),
     }
+
+    if full_data:
+        from extensions.gh_management.github_planner.issues import _do_list_issues
+        result["issues"] = _do_list_issues(compact=False).get("issues", [])
+
+    return result
 
 
 def _do_bootstrap_new_repo(

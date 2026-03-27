@@ -27,17 +27,16 @@ def _do_format_prompt(
     options: list[str] | None = None,
     style: str = "question",
 ) -> dict:
+    from terminal_hub.display import display as _text
     icon, wrap = _STYLES.get(style, _STYLES[_DEFAULT_STYLE])
-
-    q_line = f"{icon} {wrap}{question}{wrap}"
 
     if options:
         opts_str = " / ".join(options)
-        display = f"{q_line} *({opts_str})*"
+        output = _text("prompt_coloring.question_with_options", icon=icon, wrap=wrap, question=question, opts_str=opts_str)
     else:
-        display = q_line
+        output = _text("prompt_coloring.question_line", icon=icon, wrap=wrap, question=question)
 
-    return {"_display": display, "style": style, "question": question, "options": options or []}
+    return {"_display": output, "style": style, "question": question, "options": options or []}
 
 
 def register(mcp: FastMCP) -> None:

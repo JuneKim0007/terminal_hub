@@ -13,10 +13,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "install":
-        from terminal_hub.install import run_install
+        from terminal_hub.cli.install import run_install
         run_install()
     elif args.command == "verify":
-        from terminal_hub.install import run_verify
+        from terminal_hub.cli.install import run_verify
         run_verify()
     else:
         # Default: MCP server mode (no subcommand = stdio)

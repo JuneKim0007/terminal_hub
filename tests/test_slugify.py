@@ -1,5 +1,5 @@
 import pytest
-from terminal_hub.slugify import slugify
+from terminal_hub.io.slugify import slugify
 
 
 @pytest.mark.parametrize("title,expected", [

@@ -19,8 +19,8 @@ from extensions.gh_management.github_planner.storage import (
     _issues_dir, _atomic_write, validate_slug,
     read_issue_frontmatter, list_issue_files, IssueStatus, write_issue_file,
 )
-from terminal_hub.env_store import read_env
-from terminal_hub.constants import COVERAGE_THRESHOLD
+from terminal_hub.config.env_store import read_env
+from terminal_hub.config.constants import COVERAGE_THRESHOLD
 from terminal_hub.utils.test_filter import filter_test_results
 
 # ── In-memory session state ───────────────────────────────────────────────────
@@ -69,7 +69,7 @@ def _get_flags(root: Path) -> dict[str, Any]:
 
 def _build_context_loaded_display(issue_slug: str, ctx: dict, connected_docs_loaded: list) -> str:
     """Build the _display string for pre_implementation using predefined templates."""
-    from terminal_hub.display import display as _text
+    from terminal_hub.io.display import display as _text
     details = ""
     if ctx.get("design_sections"):
         details += _text("gh_implementation.context_detail_design", design_count=len(ctx["design_sections"]))
@@ -112,7 +112,7 @@ def _do_load_active_issue(slug: str) -> dict:
     content = path.read_text(encoding="utf-8")
     fm = read_issue_frontmatter(root, slug) or {}
     _get_flags(root)["active_issue_slug"] = slug
-    from terminal_hub.display import display as _text
+    from terminal_hub.io.display import display as _text
     return {
         "slug": slug,
         "content": content,
@@ -137,7 +137,7 @@ def _do_unload_active_issue(slug: str | None = None, delete_file: bool | None = 
         if path.exists():
             path.unlink()
             deleted = True
-    from terminal_hub.display import display as _text
+    from terminal_hub.io.display import display as _text
     return {
         "unloaded": True,
         "slug": target_slug,

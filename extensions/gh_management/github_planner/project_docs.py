@@ -12,7 +12,7 @@ def _pkg():
     import sys
     return sys.modules['extensions.gh_management.github_planner']
 
-from terminal_hub.constants import SECONDS_PER_HOUR
+from terminal_hub.config.constants import SECONDS_PER_HOUR
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 _PROJECT_DOCS_CACHE: dict[str, dict] = {}
@@ -201,7 +201,7 @@ def _render_project_summary(
 
 
 def _do_update_project_description(title: str, description: str, notes: str = "") -> dict:
-    from terminal_hub.errors import msg
+    from terminal_hub.io.errors import msg
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -216,7 +216,7 @@ def _do_update_project_description(title: str, description: str, notes: str = ""
 
 
 def _do_update_architecture(overview: str, components: list[str] | None = None, notes: str = "") -> dict:
-    from terminal_hub.errors import msg
+    from terminal_hub.io.errors import msg
     _p = _pkg()
 
     root = _p.get_workspace_root()

@@ -1,4 +1,4 @@
-"""Tests for terminal_hub.extension_loader."""
+"""Tests for terminal_hub.plugins.extension_loader."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from terminal_hub.extension_loader import (
+from terminal_hub.plugins.extension_loader import (
     check_deps,
     load_config,
     load_extensions,

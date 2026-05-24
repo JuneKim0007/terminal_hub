@@ -151,7 +151,7 @@ def snapshot_age_hours(snapshot: dict) -> float:
         analyzed_at = datetime.fromisoformat(snapshot["analyzed_at"])
         now = datetime.now(timezone.utc)
         delta = now - analyzed_at
-        from terminal_hub.constants import SECONDS_PER_HOUR
+        from terminal_hub.config.constants import SECONDS_PER_HOUR
         return delta.total_seconds() / SECONDS_PER_HOUR
     except (KeyError, ValueError):
         return float("inf")

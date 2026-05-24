@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from terminal_hub.install import (
+from terminal_hub.cli.install import (
     build_mcp_config,
     install_commands,
     read_claude_json,
@@ -162,7 +162,7 @@ def test_verify_commands_all_missing_when_dir_absent(tmp_path):
 
 # ── install_plugin_commands ───────────────────────────────────────────────────
 
-from terminal_hub.install import install_plugin_commands  # noqa: E402
+from terminal_hub.cli.install import install_plugin_commands  # noqa: E402
 
 
 def _make_plugin_manifest(tmp_path, name="myplugin", namespace=None, commands=("start.md",)):
@@ -187,7 +187,7 @@ def _make_plugin_manifest(tmp_path, name="myplugin", namespace=None, commands=("
 
 def test_install_plugin_commands_uses_command_namespace_as_default(tmp_path):
     """Without install_namespace in manifest, falls back to COMMAND_NAMESPACE ('th')."""
-    from terminal_hub.namespace import COMMAND_NAMESPACE
+    from terminal_hub.config.namespace import COMMAND_NAMESPACE
     manifest = _make_plugin_manifest(tmp_path, name="myplugin")
     install_plugin_commands(manifest, tmp_path)
     assert (tmp_path / "commands" / COMMAND_NAMESPACE / "start.md").exists()
@@ -212,7 +212,7 @@ def test_install_plugin_commands_preserves_subdirectory_structure(tmp_path):
 
 
 def test_install_plugin_commands_skips_missing_source_files(tmp_path):
-    from terminal_hub.namespace import COMMAND_NAMESPACE
+    from terminal_hub.config.namespace import COMMAND_NAMESPACE
     manifest = _make_plugin_manifest(tmp_path, name="myplugin", commands=("real.md",))
     manifest["commands"].append("ghost.md")  # not on disk
     install_plugin_commands(manifest, tmp_path)
@@ -224,8 +224,8 @@ def test_install_plugin_commands_skips_missing_source_files(tmp_path):
 
 def test_run_install_install_commands_permission_error(claude_json, tmp_path):
     """PermissionError in install_commands is caught and printed (lines 139-140)."""
-    with patch("terminal_hub.install.install_commands", side_effect=PermissionError("denied")), \
-         patch("terminal_hub.plugin_loader.discover_plugins", return_value=[]), \
+    with patch("terminal_hub.cli.install.install_commands", side_effect=PermissionError("denied")), \
+         patch("terminal_hub.plugins.plugin_loader.discover_plugins", return_value=[]), \
          patch("builtins.input", return_value="y"):
         # Should not raise — error is caught and printed
         run_install(claude_json_path=claude_json, claude_dir=tmp_path)
@@ -236,15 +236,15 @@ def test_run_install_plugin_command_error(claude_json, tmp_path):
     fake_manifest = {"name": "myplugin", "version": "1.0",
                      "entry": "ext.myplugin", "commands": [],
                      "commands_dir": "commands", "_plugin_dir": str(tmp_path)}
-    with patch("terminal_hub.plugin_loader.discover_plugins", return_value=[fake_manifest]), \
-         patch("terminal_hub.install.install_plugin_commands", side_effect=OSError("perm")), \
+    with patch("terminal_hub.plugins.plugin_loader.discover_plugins", return_value=[fake_manifest]), \
+         patch("terminal_hub.cli.install.install_plugin_commands", side_effect=OSError("perm")), \
          patch("builtins.input", return_value="y"):
         run_install(claude_json_path=claude_json, claude_dir=tmp_path)
 
 
 def test_run_verify_missing_commands_prints_warning(claude_json, tmp_path, capsys):
     """verify_commands missing files prints warning (lines 174-175)."""
-    from terminal_hub.install import write_claude_json, build_mcp_config, read_claude_json
+    from terminal_hub.cli.install import write_claude_json, build_mcp_config, read_claude_json
     cfg = build_mcp_config()
     data = read_claude_json(claude_json)
     data["mcpServers"]["terminal-hub"] = cfg

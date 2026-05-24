@@ -1,4 +1,4 @@
-"""Tests for terminal_hub.platform_runner."""
+"""Tests for terminal_hub.workspace.platform_runner."""
 from __future__ import annotations
 
 import subprocess
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from terminal_hub.platform_runner import detect_distro, detect_platform, escalate_to_agent, run_extension
+from terminal_hub.workspace.platform_runner import detect_distro, detect_platform, escalate_to_agent, run_extension
 
 
 # ── detect_platform ────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ def test_detect_platform_windows():
 
 def test_detect_platform_linux_calls_detect_distro():
     with patch("platform.system", return_value="Linux"):
-        with patch("terminal_hub.platform_runner.detect_distro", return_value="ubuntu") as mock_dd:
+        with patch("terminal_hub.workspace.platform_runner.detect_distro", return_value="ubuntu") as mock_dd:
             result = detect_platform()
             mock_dd.assert_called_once()
             assert result == "ubuntu"
@@ -210,7 +210,7 @@ def test_run_extension_no_platform_no_linux():
 def test_run_extension_detects_platform_when_none(monkeypatch):
     """run_extension calls detect_platform() when platform_key is None (line 59)."""
     ext = {"id": "auto-ext", "platforms": {"darwin": ["true"]}}
-    with patch("terminal_hub.platform_runner.detect_platform", return_value="darwin") as mock_dp:
+    with patch("terminal_hub.workspace.platform_runner.detect_platform", return_value="darwin") as mock_dp:
         result = run_extension(ext, platform_key=None)
     mock_dp.assert_called_once()
     assert result["success"] is True

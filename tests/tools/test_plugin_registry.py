@@ -184,7 +184,7 @@ def test_scan_plugins_bad_description_json(workspace, tmp_path):
         server = create_server()
         # Uses real extensions/ — bad_ext is in tmp_path so not picked up by real scanner.
         # We test the skip branch by patching the extensions dir.
-        import terminal_hub.server as srv_mod
+        import terminal_hub.server.tools.plugin_registry as srv_mod
         orig_path = srv_mod.Path
         class FakePath(orig_path):
             def rglob(self, pattern):
@@ -398,7 +398,7 @@ from extensions.plugin_customization import (
     _load_config,
     _save_config,
 )
-from terminal_hub.constants import MODEL_HAIKU, MODEL_SONNET
+from terminal_hub.config.constants import MODEL_HAIKU, MODEL_SONNET
 
 
 def test_dispatch_task_import_error():

@@ -40,13 +40,13 @@ def test_env_var_takes_priority(git_project):
 
 def test_returns_cwd_when_no_env_var(tmp_path):
     with patch.dict(os.environ, {}, clear=True), \
-         patch("terminal_hub.workspace._cwd", return_value=tmp_path):
+         patch("terminal_hub.workspace.locator._cwd", return_value=tmp_path):
         result = resolve_workspace_root()
     assert result == tmp_path
 
 
 def test_cwd_used_when_valid(git_project):
     with patch.dict(os.environ, {}, clear=True), \
-         patch("terminal_hub.workspace._cwd", return_value=git_project):
+         patch("terminal_hub.workspace.locator._cwd", return_value=git_project):
         result = resolve_workspace_root()
     assert result == git_project

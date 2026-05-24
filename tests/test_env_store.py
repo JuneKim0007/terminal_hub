@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from terminal_hub.env_store import read_env, write_env
+from terminal_hub.config.env_store import read_env, write_env
 
 
 @pytest.fixture

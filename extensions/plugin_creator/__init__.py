@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-from terminal_hub.plugin_loader import validate_manifest
+from terminal_hub.plugins.plugin_loader import validate_manifest
 from terminal_hub.workspace import resolve_workspace_root
 
 _EXTENSIONS_ROOT = Path(__file__).parent.parent  # extensions/

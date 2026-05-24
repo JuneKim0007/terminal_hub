@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-import terminal_hub.workspace as _ws_mod
+import terminal_hub.workspace.locator as _ws_mod
 from terminal_hub.workspace import detect_repo, init_workspace, set_active_project_root, resolve_workspace_root
 
 

@@ -29,7 +29,7 @@ def test_initialised_when_hub_agents_exists(tmp_path):
 def test_github_repo_returned_when_configured(tmp_path):
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
     from terminal_hub.config import WorkspaceMode, save_config
-    from terminal_hub.env_store import write_env
+    from terminal_hub.config.env_store import write_env
     save_config(tmp_path, WorkspaceMode.GITHUB, "owner/repo")
     write_env(tmp_path, {"GITHUB_REPO": "owner/repo"})
     with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path):

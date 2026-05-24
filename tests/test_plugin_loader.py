@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
-from terminal_hub.plugin_loader import validate_manifest, discover_plugins, load_plugin, build_instructions
+from terminal_hub.plugins.plugin_loader import validate_manifest, discover_plugins, load_plugin, build_instructions
 
 VALID = {
     "name": "test_plugin", "version": "1.0",
@@ -207,14 +207,14 @@ def test_build_instructions_limits_subcommands_to_six():
 
 def test_command_namespace_value():
     """COMMAND_NAMESPACE is 'th' — the active prefix for all slash commands."""
-    from terminal_hub.namespace import COMMAND_NAMESPACE
+    from terminal_hub.config.namespace import COMMAND_NAMESPACE
     assert COMMAND_NAMESPACE == "th"
 
 
 def test_plugin_loader_imports_command_namespace():
     """plugin_loader uses COMMAND_NAMESPACE, not a hardcoded string."""
-    import terminal_hub.plugin_loader as pl
-    from terminal_hub.namespace import COMMAND_NAMESPACE
+    import terminal_hub.plugins.plugin_loader as pl
+    from terminal_hub.config.namespace import COMMAND_NAMESPACE
     # build_instructions with no install_namespace must produce /th: prefix
     manifest = {**VALID, "description": ""}
     result = pl.build_instructions([manifest])
@@ -223,7 +223,7 @@ def test_plugin_loader_imports_command_namespace():
 
 def test_install_imports_command_namespace():
     """install_plugin_commands uses COMMAND_NAMESPACE as fallback."""
-    import terminal_hub.install as inst
-    from terminal_hub.namespace import COMMAND_NAMESPACE
+    import terminal_hub.cli.install as inst
+    from terminal_hub.config.namespace import COMMAND_NAMESPACE
     assert hasattr(inst, "COMMAND_NAMESPACE")
     assert inst.COMMAND_NAMESPACE == COMMAND_NAMESPACE

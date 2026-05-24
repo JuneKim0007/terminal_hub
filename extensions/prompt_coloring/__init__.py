@@ -27,7 +27,7 @@ def _do_format_prompt(
     options: list[str] | None = None,
     style: str = "question",
 ) -> dict:
-    from terminal_hub.display import display as _text
+    from terminal_hub.io.display import display as _text
     icon, wrap = _STYLES.get(style, _STYLES[_DEFAULT_STYLE])
 
     if options:

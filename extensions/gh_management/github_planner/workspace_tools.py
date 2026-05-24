@@ -142,7 +142,7 @@ def _do_create_github_repo(name: str, description: str, private: bool) -> dict:
     html_url = data.get("html_url", "")
 
     from terminal_hub.config import save_config, WorkspaceMode
-    from terminal_hub.env_store import write_env as _write_env
+    from terminal_hub.config.env_store import write_env as _write_env
     _write_env(root, {"GITHUB_REPO": full_name})
     save_config(root, WorkspaceMode.GITHUB, full_name)
     write_preference(root, "github_repo_connected", True)

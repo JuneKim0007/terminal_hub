@@ -14,7 +14,7 @@ def _pkg():
     import sys
     return sys.modules['extensions.gh_management.github_planner']
 
-from terminal_hub.constants import (
+from terminal_hub.config.constants import (
     FILE_TREE_TTL,
     ANALYSIS_BATCH_SIZE,
     ANALYSIS_BATCH_SIZE_MIN,

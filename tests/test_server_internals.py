@@ -164,7 +164,7 @@ def test_assert_builtins_raises_when_file_missing():
 def test_plugin_load_warning_recorded(tmp_path):
     """A failing plugin load appends to _PLUGIN_WARNINGS (line 404)."""
     import terminal_hub.server as srv
-    from terminal_hub.plugin_loader import discover_plugins
+    from terminal_hub.plugins.plugin_loader import discover_plugins
 
     bad_manifest = {
         "name": "bad_plugin",
@@ -177,7 +177,7 @@ def test_plugin_load_warning_recorded(tmp_path):
     }
 
     with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path), \
-         patch("terminal_hub.server.discover_plugins", return_value=[bad_manifest]):
+         patch("terminal_hub.server.app.discover_plugins", return_value=[bad_manifest]):
         server = create_server()
 
     # After create_server, _PLUGIN_WARNINGS should contain at least one warning

@@ -86,7 +86,7 @@ from extensions.gh_management.github_planner.storage import (
 )
 from extensions.gh_management.github_planner.client import create_user_repo
 from terminal_hub.workspace import detect_repo
-from terminal_hub.env_store import read_env
+from terminal_hub.config.env_store import read_env
 from pathlib import Path
 
 # Plugin-level constants re-exported for patch compatibility in tests
@@ -216,7 +216,7 @@ def register(mcp) -> None:
         MUST be the very first tool call in every /th: command.
         path: Claude's actual working directory (absolute path)."""
         from terminal_hub.workspace import set_active_project_root
-        from terminal_hub.display import display as _text
+        from terminal_hub.io.display import display as _text
         set_active_project_root(path)
         return {"root": str(path), "_display": _text("project_root.set", path=path)}
 

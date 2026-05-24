@@ -21,7 +21,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from terminal_hub.constants import MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS, VALID_MODELS
+from terminal_hub.config.constants import MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS, VALID_MODELS
 from terminal_hub.workspace import resolve_workspace_root
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

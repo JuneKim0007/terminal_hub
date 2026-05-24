@@ -10,7 +10,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from terminal_hub.namespace import COMMAND_NAMESPACE
+from terminal_hub.config.namespace import COMMAND_NAMESPACE
 
 _CLAUDE_JSON = Path.home() / ".claude.json"
 
@@ -55,7 +55,7 @@ def format_diff(config: dict) -> str:
     return "\n".join(lines)
 
 
-_COMMANDS_SRC = Path(__file__).parent.parent / "extensions" / "builtin"
+_COMMANDS_SRC = Path(__file__).resolve().parent.parent.parent / "extensions" / "builtin"
 
 
 def install_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
@@ -145,8 +145,8 @@ def run_install(claude_json_path: Path = _CLAUDE_JSON, claude_dir: Path = Path.h
         print(f"⚠ Could not install slash commands: {exc}")
 
     # Install plugin commands
-    from terminal_hub.plugin_loader import discover_plugins
-    plugins_dir = Path(__file__).parent.parent / "extensions"
+    from terminal_hub.plugins.plugin_loader import discover_plugins
+    plugins_dir = Path(__file__).resolve().parent.parent.parent / "extensions"
     manifests = discover_plugins(plugins_dir)
     for manifest in manifests:
         try:

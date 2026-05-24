@@ -48,7 +48,7 @@ def test_setup_with_github_repo(tmp_path):
         result = call(server, "setup_workspace", {"github_repo": "owner/my-repo"})
     assert result["success"] is True
     assert result["github_repo"] == "owner/my-repo"
-    from terminal_hub.env_store import read_env
+    from terminal_hub.config.env_store import read_env
     assert read_env(tmp_path)["GITHUB_REPO"] == "owner/my-repo"
     assert "_display" in result
     assert "owner/my-repo" in result["_display"]

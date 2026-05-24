@@ -5,7 +5,7 @@ import importlib
 import json
 from pathlib import Path
 
-from terminal_hub.namespace import COMMAND_NAMESPACE
+from terminal_hub.config.namespace import COMMAND_NAMESPACE
 
 
 _REQUIRED_FIELDS = {"name", "version", "entry", "commands_dir", "commands"}

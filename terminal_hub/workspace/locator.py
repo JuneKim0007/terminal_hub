@@ -49,7 +49,7 @@ def detect_repo(root: Path) -> str | None:
 
     Returns None if none are available.
     """
-    from terminal_hub.env_store import read_env
+    from terminal_hub.config.env_store import read_env
     if repo := read_env(root).get("GITHUB_REPO"):
         return repo
 

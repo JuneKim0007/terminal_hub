@@ -12,10 +12,13 @@ from extensions.gh_management.github_planner import (
 )
 from extensions.gh_management.github_planner.auth import invalidate_token_cache
 
+import terminal_hub.workspace.locator as _locator
+
 
 @pytest.fixture(autouse=True)
 def clear_all_caches():
-    """Clear every module-level cache before and after each test."""
+    """Clear every module-level cache and global before and after each test."""
+    _locator._ACTIVE_PROJECT_ROOT = None
     _ANALYSIS_CACHE.clear()
     _PROJECT_DOCS_CACHE.clear()
     _FILE_TREE_CACHE.clear()
@@ -24,6 +27,7 @@ def clear_all_caches():
     _invalidate_repo_cache()
     invalidate_token_cache()
     yield
+    _locator._ACTIVE_PROJECT_ROOT = None
     _ANALYSIS_CACHE.clear()
     _PROJECT_DOCS_CACHE.clear()
     _FILE_TREE_CACHE.clear()

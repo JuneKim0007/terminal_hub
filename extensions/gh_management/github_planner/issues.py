@@ -11,7 +11,7 @@ def _pkg():
     import sys
     return sys.modules['extensions.gh_management.github_planner']
 
-from terminal_hub.constants import ISSUES_SYNC_TTL
+from terminal_hub.config.constants import ISSUES_SYNC_TTL
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _ISSUES_SYNC_TTL = ISSUES_SYNC_TTL
@@ -140,7 +140,7 @@ def _do_draft_issue(
     from extensions.gh_management.github_planner.storage import (
         IssueStatus, next_local_number
     )
-    from terminal_hub.errors import msg
+    from terminal_hub.io.errors import msg
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -208,7 +208,7 @@ def _do_submit_issue(slug: str) -> dict:
     )
     from extensions.gh_management.github_planner.client import GitHubError
     from extensions.gh_management.github_planner.milestones import _MILESTONE_CACHE
-    from terminal_hub.errors import msg
+    from terminal_hub.io.errors import msg
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -308,7 +308,7 @@ def _do_submit_issue(slug: str) -> dict:
 
 def _do_get_issue_context(slug: str) -> dict:
     from extensions.gh_management.github_planner.storage import validate_slug, read_issue_file
-    from terminal_hub.errors import msg
+    from terminal_hub.io.errors import msg
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -555,7 +555,7 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
         IssueStatus, list_issue_files, write_issue_file, update_issue_status
     )
     from extensions.gh_management.github_planner.labels import _do_save_github_local_config
-    from terminal_hub.slugify import slugify
+    from terminal_hub.io.slugify import slugify
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -658,7 +658,7 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
 
     _do_save_github_local_config({"issues_synced_at": time.time(), "issues_state": state})
 
-    from terminal_hub.display import display as _text
+    from terminal_hub.io.display import display as _text
     env = _p.read_env(root)
     repo = env.get("GITHUB_REPO", "unknown")
     return {

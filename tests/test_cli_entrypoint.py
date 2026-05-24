@@ -56,7 +56,7 @@ def test_verify_exits_nonzero_when_not_installed(tmp_path):
 
     result = subprocess.run(
         [sys.executable, "-c",
-         f"from terminal_hub.install import run_verify; from pathlib import Path; run_verify(Path('{fake_claude_json}'))"],
+         f"from terminal_hub.cli.install import run_verify; from pathlib import Path; run_verify(Path('{fake_claude_json}'))"],
         capture_output=True,
         text=True,
     )
@@ -76,7 +76,7 @@ def test_verify_exits_zero_when_installed(tmp_path):
 
     result = subprocess.run(
         [sys.executable, "-c",
-         f"from terminal_hub.install import run_verify; from pathlib import Path; run_verify(Path('{fake_claude_json}'))"],
+         f"from terminal_hub.cli.install import run_verify; from pathlib import Path; run_verify(Path('{fake_claude_json}'))"],
         capture_output=True,
         text=True,
     )

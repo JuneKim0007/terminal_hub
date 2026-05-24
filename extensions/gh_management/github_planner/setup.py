@@ -91,7 +91,7 @@ def _do_bootstrap_gh_plan(
     from extensions.gh_management.github_planner.milestones import _do_list_milestones
     from extensions.gh_management.github_planner.issues import _do_sync_github_issues
     from extensions.gh_management.github_planner.storage import list_issue_titles
-    from terminal_hub.display import display as _text
+    from terminal_hub.io.display import display as _text
 
     # Set project root
     set_active_project_root(Path(project_root).resolve())

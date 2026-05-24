@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 import pytest
-from terminal_hub.errors import msg, _MSGS
+from terminal_hub.io.errors import msg, _MSGS
 
 
 def test_msg_returns_string_for_known_key():
@@ -38,21 +38,21 @@ def test_required_keys_exist():
 
 
 def test_error_msg_json_is_valid():
-    path = Path(__file__).parent.parent / "terminal_hub" / "error_msg.json"
+    path = Path(__file__).parent.parent / "terminal_hub" / "io" / "error_msg.json"
     data = json.loads(path.read_text())
     assert isinstance(data, dict)
 
 
 def test_load_raises_runtime_error_on_missing_file(monkeypatch):
     from unittest.mock import patch
-    from terminal_hub import errors
-    with patch("terminal_hub.errors.Path.read_text", side_effect=OSError("no file")):
+    from terminal_hub.io import errors
+    with patch("terminal_hub.io.errors.Path.read_text", side_effect=OSError("no file")):
         with pytest.raises(RuntimeError, match="Failed to load error_msg.json"):
             errors._load()
 
 
 def test_msg_missing_placeholder_returns_error_string():
-    from terminal_hub import errors
+    from terminal_hub.io import errors
     original = errors._MSGS.copy()
     errors._MSGS["_test_key"] = "Hello {name} and {missing}"
     try:

@@ -7,11 +7,12 @@ about installation layout.
 """
 from __future__ import annotations
 
-from pathlib import Path
+
+from terminal_hub.config import REPO_ROOT
 
 # extensions/ sits at the project root, two levels up from this file:
 # .../terminal_hub/server/builtins.py → terminal_hub/server → terminal_hub → <root>
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_PROJECT_ROOT = REPO_ROOT
 _BUILTIN_DIR = _PROJECT_ROOT / "extensions" / "builtin"
 
 _BUILTIN_COMMANDS = ["help.md", "active.md", "converse.md"]

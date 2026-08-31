@@ -7,10 +7,7 @@ from pathlib import Path
 from extensions.gh_management.github_planner.auth import get_auth_options
 
 
-def _pkg():
-    """Return the github_planner package module so patches applied by tests are respected."""
-    import sys
-    return sys.modules['extensions.gh_management.github_planner']
+from extensions.gh_management.github_planner.pkgref import _pkg
 
 # Runtime session cache — keyed by workspace root str so switching directories re-prompts correctly.
 _SESSION_REPO_CONFIRMED: dict[str, str] = {}  # root_str -> confirmed "owner/repo"

@@ -11,9 +11,11 @@ The server is split across small focused modules:
   - ``tools.runtime_state`` — ``get_runtime_state``
   - ``tools.plugin_registry`` — ``scan_plugins`` / ``load_plugin_registry``
 
-For backward compatibility (and because the test suite patches names like
-``terminal_hub.server.get_workspace_root``), this ``__init__`` re-exports
-the entire historical surface area of the old ``server.py`` module.
+Every name below is re-exported because something reads it *through this
+module* — the ``tools.*`` handlers do ``import terminal_hub.server as _srv``
+and go through the attribute so tests can patch it, and the suite patches
+``terminal_hub.server.get_workspace_root`` directly. A name with no such
+reader does not belong here; import it from the module that defines it.
 """
 # ── State buffers (populated as plugins load) ────────────────────────────────
 from terminal_hub.server.state import _LOADED_EXTENSIONS, _PLUGIN_WARNINGS
@@ -26,25 +28,16 @@ from terminal_hub.server.builtins import (
     _load_agent,
 )
 
-# ── Plugin discovery / loading (re-export for monkeypatching) ────────────────
-from terminal_hub.plugins.plugin_loader import (
-    build_instructions,
-    discover_plugins,
-    load_plugin,
-)
+# ── Workspace root — the canonical resolver lives in terminal_hub.workspace.
+# github_planner.setup.get_workspace_root is a pure alias for it, so importing
+# it from there would make the host depend on a plugin for its own policy.
+from terminal_hub.workspace import resolve_workspace_root as get_workspace_root
 
-# ── github_planner re-exports — tests patch at ``terminal_hub.server.*`` ─────
+# ── github_planner re-exports — read via ``_srv.<name>`` by tools.* ──────────
 from extensions.gh_management.github_planner import (
     _invalidate_repo_cache,
     ensure_initialized,
     get_github_client,
-    get_workspace_root,
-    resolve_token,
-    verify_gh_cli_auth,
-)
-from extensions.gh_management.github_planner.storage import (
-    write_doc_file,
-    write_issue_file,
 )
 
 # ── Public factory ───────────────────────────────────────────────────────────
@@ -60,17 +53,10 @@ __all__ = [
     # state
     "_PLUGIN_WARNINGS",
     "_LOADED_EXTENSIONS",
-    # plugin loader re-exports
-    "discover_plugins",
-    "load_plugin",
-    "build_instructions",
-    # github_planner re-exports
+    # workspace
     "get_workspace_root",
+    # github_planner re-exports
     "get_github_client",
     "ensure_initialized",
-    "resolve_token",
-    "verify_gh_cli_auth",
     "_invalidate_repo_cache",
-    "write_issue_file",
-    "write_doc_file",
 ]

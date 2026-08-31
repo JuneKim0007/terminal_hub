@@ -18,6 +18,12 @@ from terminal_hub.config.constants import (
 )
 from terminal_hub.config.env_store import _ensure_gitignored, read_env, write_env
 from terminal_hub.config.namespace import COMMAND_NAMESPACE
+from terminal_hub.config.paths import (
+    BUILTIN_COMMANDS_DIR,
+    EXTENSIONS_DIR,
+    PACKAGE_ROOT,
+    REPO_ROOT,
+)
 from terminal_hub.config.settings import (
     WorkspaceMode,
     load_config,
@@ -51,4 +57,9 @@ __all__ = [
     "_ensure_gitignored",
     # namespace
     "COMMAND_NAMESPACE",
+    # paths
+    "PACKAGE_ROOT",
+    "REPO_ROOT",
+    "EXTENSIONS_DIR",
+    "BUILTIN_COMMANDS_DIR",
 ]

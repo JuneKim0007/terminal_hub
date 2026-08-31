@@ -181,10 +181,8 @@ from extensions.gh_management.github_planner.skills import (
 
 # ── Plugin registration ───────────────────────────────────────────────────────
 
-def register(mcp) -> None:
-    """Register all GitHub-specific MCP tools and resources on the given FastMCP instance."""
-
-    # ── Resources (workflow guides) ───────────────────────────────────────────
+def _register_resources(mcp) -> None:
+    """Workflow guide resources."""
 
     @mcp.resource("terminal-hub://workflow/init")
     def workflow_init() -> str:
@@ -206,7 +204,9 @@ def register(mcp) -> None:
         """Auth recovery guide — check_auth → gh auth login → verify_auth."""
         return _load_agent("gh-plan-auth.md")
 
-    # ── Workspace root override ───────────────────────────────────────────────
+
+def _register_workspace_root(mcp) -> None:
+    """Active project-root override."""
 
     @mcp.tool()
     def set_project_root(path: str) -> dict:
@@ -220,7 +220,9 @@ def register(mcp) -> None:
         set_active_project_root(path)
         return {"root": str(path), "_display": _text("project_root.set", path=path)}
 
-    # ── Session repo confirmation (#148) ──────────────────────────────────────
+
+def _register_session_repo(mcp) -> None:
+    """Session repo confirmation and locking (#148)."""
 
     @mcp.tool()
     def confirm_session_repo(force: bool = False) -> dict:
@@ -246,7 +248,9 @@ def register(mcp) -> None:
         """
         return _do_set_session_repo(repo)
 
-    # ── Auth tools ────────────────────────────────────────────────────────────
+
+def _register_auth_tools(mcp) -> None:
+    """GitHub authentication check and recovery."""
 
     @mcp.tool()
     def check_auth() -> dict:
@@ -261,7 +265,9 @@ def register(mcp) -> None:
         Call this after the user reports they have completed gh auth login."""
         return _do_verify_auth()
 
-    # ── Issue tools ───────────────────────────────────────────────────────────
+
+def _register_issue_tools(mcp) -> None:
+    """Issue drafting, submission, listing and context."""
 
     @mcp.tool()
     def draft_issue(
@@ -361,7 +367,9 @@ def register(mcp) -> None:
         """Read a specific issue file by slug to reload context cheaply."""
         return _do_get_issue_context(slug)
 
-    # ── Project context tools ─────────────────────────────────────────────────
+
+def _register_project_context_tools(mcp) -> None:
+    """Project description, architecture, skills and docs config."""
 
     @mcp.tool()
     def update_project_detail_section(
@@ -520,14 +528,18 @@ def register(mcp) -> None:
         """
         return _do_load_skill(name)
 
-    # ── Analyzer tool ─────────────────────────────────────────────────────────
+
+def _register_analyzer_tool(mcp) -> None:
+    """Repo snapshot analyzer."""
 
     @mcp.tool()
     def run_analyzer() -> dict:
         """Analyze the GitHub repo and write a snapshot to hub_agents/analyzer_snapshot.json."""
         return _do_run_analyzer()
 
-    # ── Repo analysis tools ────────────────────────────────────────────────────
+
+def _register_repo_analysis_tools(mcp) -> None:
+    """Incremental repo analysis and scan profiles."""
 
     @mcp.tool()
     def start_repo_analysis(repo: str | None = None) -> dict:
@@ -557,7 +569,9 @@ def register(mcp) -> None:
         """
         return _do_get_analysis_status(repo)
 
-    # ── Project docs tools ────────────────────────────────────────────────────
+
+def _register_project_docs_tools(mcp) -> None:
+    """Structured project documentation read and write."""
 
     @mcp.tool()
     def save_project_docs(
@@ -655,7 +669,9 @@ def register(mcp) -> None:
         """
         return _do_update_skill(name, description, content_hints, source_doc, dry_run)
 
-    # ── Efficient single-call repo analysis ────────────────────────────────────
+
+def _register_batch_analysis_tools(mcp) -> None:
+    """Batched analysis, labels, milestones and workspace tools."""
 
     @mcp.tool()
     def analyze_repo_full(repo: str | None = None) -> dict:
@@ -908,7 +924,9 @@ def register(mcp) -> None:
         """
         return _do_get_docs_map(view)
 
-    # ── Integrated flow tools (#218) ───────────────────────────────────────────
+
+def _register_integrated_flow_tools(mcp) -> None:
+    """Integrated multi-step flows that collapse call sequences (#218)."""
 
     @mcp.tool()
     def bootstrap_gh_plan(project_root: str, confirm_repo: bool = True, sync_issues: bool = True, full_data: bool = False) -> dict:
@@ -985,3 +1003,18 @@ def register(mcp) -> None:
         Returns {project_description_saved, repo_created, repo_url, workspace_linked, caches_warmed, ready_to_plan, _display}
         """
         return _do_bootstrap_new_repo(project_title, project_description, tech_stack, design_principles, is_private, confirm_arch_changes)
+
+
+def register(mcp) -> None:
+    """Register all GitHub-specific MCP tools and resources on the given FastMCP instance."""
+    _register_resources(mcp)
+    _register_workspace_root(mcp)
+    _register_session_repo(mcp)
+    _register_auth_tools(mcp)
+    _register_issue_tools(mcp)
+    _register_project_context_tools(mcp)
+    _register_analyzer_tool(mcp)
+    _register_repo_analysis_tools(mcp)
+    _register_project_docs_tools(mcp)
+    _register_batch_analysis_tools(mcp)
+    _register_integrated_flow_tools(mcp)

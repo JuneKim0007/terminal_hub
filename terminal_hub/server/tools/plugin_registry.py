@@ -10,7 +10,12 @@ from __future__ import annotations
 import json
 import os
 import time
-from pathlib import Path
+
+# ``Path`` is re-exported deliberately: tests patch
+# ``…tools.plugin_registry.Path`` to simulate filesystem failures.
+from pathlib import Path  # noqa: F401
+
+from terminal_hub.config import EXTENSIONS_DIR
 
 from mcp.server.fastmcp import FastMCP
 
@@ -33,7 +38,7 @@ def register(mcp: FastMCP) -> None:
             return err
 
         # extensions/ lives next to the terminal_hub package
-        extensions_dir = Path(__file__).resolve().parent.parent.parent.parent / "extensions"
+        extensions_dir = EXTENSIONS_DIR
         plugins: list[dict] = []
         unidentified: list[str] = []
 

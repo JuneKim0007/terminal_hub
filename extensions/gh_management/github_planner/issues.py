@@ -6,10 +6,7 @@ from datetime import date
 from pathlib import Path
 
 
-def _pkg():
-    """Return the github_planner package module so patches applied by tests are respected."""
-    import sys
-    return sys.modules['extensions.gh_management.github_planner']
+from extensions.gh_management.github_planner.pkgref import _pkg
 
 from terminal_hub.config.constants import ISSUES_SYNC_TTL
 

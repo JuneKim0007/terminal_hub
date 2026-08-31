@@ -3,7 +3,7 @@
 Surveyed 2026-08-31 · scope `terminal_hub/` + `extensions/` · 53 files
 Baseline: tests 1074 green · 9,672 lines · 237 comment lines · 126 commits of history
 
-Ids are permanent. Never renumber, never reuse a retired id. Next id: **R17**.
+Ids are permanent. Never renumber, never reuse a retired id. Next id: **R20**.
 
 This file is written by `/refactor-facade` and reconciled by it. Do not mark items
 closed by hand — re-run the survey after a stretch of work and let it find them.
@@ -106,9 +106,70 @@ blocked  33 tests patch ...github_planner.ensure_initialized; needs its own
 first seen 2026-08-31
 ```
 
+### R17 · Duplicate setup · 207 sites · create_server() with no fixture
+```
+status   blocked — needs a safety pass
+evidence create_server() is called 207 times across the suite with no shared
+         fixture. Measured 29.1ms each = 6.0s of what was a 14s suite. The cost
+         is not discovery (0.3ms) or instruction building (0.0ms) but
+         registering 66 tools into FastMCP — 99% of it — so it cannot be cached
+         without sharing the instance itself.
+remedy   pytest fixture -> (test infrastructure, no refactor skill)
+expect   -6.0s suite time
+blocked  create_server() calls _state.reset(), and test_server_internals.py and
+         tools/test_plugin_registry.py assert on _PLUGIN_WARNINGS /
+         _LOADED_EXTENSIONS. Mixing a shared server with fresh ones creates
+         order-dependent tests — a worse defect than the 6s it saves. Needs a
+         scoped design (session fixture + explicit opt-out) and proof of
+         order-independence before it is schedulable.
+first seen 2026-08-31
+```
+
+### R18 · Tests · zero-unique-coverage files
+```
+status   planned
+evidence per-file unique line coverage measured across 56 test files, with the
+         427-line import-time baseline subtracted. Files adding zero unique
+         line coverage: tools/test_list_issues.py (real 544),
+         tools/test_setup_status_existing.py (516), test_config.py (22),
+         test_slugify.py (8). test_plugin_customization.py was in this set and
+         is now closed.
+remedy   inspect each for behaviourally-unique assertions, then merge or delete
+expect   fewer tests, same coverage
+blocked  none — but see the note below: zero unique LINE coverage is not proof
+         of redundancy. 2 of the 9 tests in the file closed this run were
+         behaviourally unique despite contributing no unique lines.
+first seen 2026-08-31
+```
+
+### R19 · Tests · contract-shaped assertions
+```
+status   planned
+evidence 256 `assert "x" in y` key-presence assertions and 65 `_display`
+         assertions across the suite. These pin response *shape* rather than
+         behaviour, so they duplicate what the MCP schema already declares.
+remedy   judgement call per site — not a mechanical sweep
+expect   unknown; measure before acting
+blocked  none, but low value. The _display assertions in particular are the
+         only check that user-facing strings render, so they are not obviously
+         waste. Do not sweep this without a per-site read.
+first seen 2026-08-31
+```
+
 ---
 
 ## Done
+
+### R20 · Bug · tests/tools/test_setup_workspace.py:45 · live network call
+```
+closed 2026-08-31 — test_setup_with_github_repo patched get_workspace_root but
+not get_github_client, so setup_workspace ran gh.ensure_labels() against the
+real api.github.com. Proved with a socket guard: a TLS connection to
+('20.233.83.146', 443). 5.58s of a 14s suite, and a failure on any machine
+without credentials or a route. Client mocked; a permanent autouse network
+guard added to tests/conftest.py with a @pytest.mark.network opt-out.
+Not a smell — a bug, found during the smell sweep.
+```
 
 ### R1 · Speculative generality · terminal_hub/server/__init__.py
 ```
@@ -157,6 +218,17 @@ the same directory because the count depended on the caller's package depth.
 ```
 closed 2026-08-31 — the 3-arm if/elif became _RESULT_PROMOTIONS, joining the
 two lookup tables already keyed by task_type in the same file.
+```
+
+### R18a · Duplicate code · test_plugin_customization.py
+```
+closed 2026-08-31 — the file duplicated tools/test_dispatch_task.py near
+verbatim (test_file_location_returns_files_key vs
+test_file_location_promotes_files_key, and 4 more pairs). test_dispatch_task.py
+alone reaches 100% of plugin_customization. 2 of the 9 tests were
+behaviourally unique — they exercise _model_for_task directly with a known vs
+an unknown key — and were merged rather than deleted; the other 7 were removed.
+Coverage before and after: 112 statements, 0 missed, 100%.
 ```
 
 ### R13 · Dead code · 2 definitions

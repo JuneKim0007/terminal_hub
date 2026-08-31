@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import pytest
 from terminal_hub.server import create_server
 
@@ -43,7 +43,15 @@ def test_setup_local_mode(tmp_path):
 
 
 def test_setup_with_github_repo(tmp_path):
-    with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path):
+    # get_github_client must be mocked: setup_workspace calls gh.ensure_labels()
+    # against the real GitHub API otherwise. Unmocked, this test opened a live
+    # TLS connection to api.github.com and took 5.6s of the suite's 14s.
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = MagicMock(return_value=mock_gh)
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.ensure_labels.return_value = None
+    with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path), \
+         patch("terminal_hub.server.get_github_client", return_value=(mock_gh, None)):
         server = create_server()
         result = call(server, "setup_workspace", {"github_repo": "owner/my-repo"})
     assert result["success"] is True

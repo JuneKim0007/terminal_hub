@@ -1,6 +1,7 @@
 """Repo analysis helpers — file index extraction, scan profiles, file tree, and MCP tool implementations."""
 # stdlib
 import ast
+import fnmatch
 import hashlib
 import json
 import os
@@ -424,6 +425,75 @@ def _do_get_file_tree(refresh: bool = False) -> dict:
     return result
 
 
+def _make_profile_filter(profile: dict):
+    """Return a predicate deciding whether a repo path is in scope for analysis.
+
+    Excluded by directory, then by filename glob, then by extension: an explicit
+    include_extensions list is a whitelist, otherwise anything non-binary passes.
+    """
+    exclude_dirs = frozenset(profile.get("exclude_dirs", []))
+    include_exts = frozenset(profile.get("include_extensions", []))
+    exclude_patterns = profile.get("exclude_patterns", [])
+
+    def allows(path: str) -> bool:
+        p = Path(path)
+        if any(part in exclude_dirs for part in p.parts[:-1]):
+            return False
+        if any(fnmatch.fnmatch(p.name, pat) for pat in exclude_patterns):
+            return False
+        if include_exts:
+            return p.suffix.lower() in include_exts
+        return p.suffix.lower() not in _BINARY_EXTENSIONS
+
+    return allows
+
+
+def _partition_tree(tree: list[dict], allows, stored_hashes: dict[str, str]):
+    """Split the tree into (to_fetch, unchanged_hashes, skipped_count).
+
+    A file is skipped when the profile excludes it, or when its tree sha matches
+    the sha stored from the previous run — that is the incremental-analysis win.
+    """
+    to_fetch: list[dict] = []
+    unchanged: dict[str, str] = {}
+    skipped = 0
+    for f in tree:
+        path = f["path"]
+        if not allows(path):
+            skipped += 1
+            continue
+        tree_sha = f.get("sha", "")
+        if tree_sha and stored_hashes.get(path) == tree_sha:
+            skipped += 1
+            unchanged[path] = tree_sha
+        else:
+            to_fetch.append(f)
+    return to_fetch, unchanged, skipped
+
+
+def _fetch_file_index(gh, to_fetch: list[dict]):
+    """Fetch and index each file. Returns (file_index, new_hashes, skipped_errors)."""
+    file_index: list[dict] = []
+    new_hashes: dict[str, str] = {}
+    skipped_errors: list[dict] = []
+    if not to_fetch:
+        return file_index, new_hashes, skipped_errors
+    with gh:
+        for f in to_fetch:
+            path = f["path"]
+            try:
+                content = gh.get_file_content(path)
+                file_index.append(_extract_file_index(path, content))
+                new_hashes[path] = (
+                    f.get("sha") or hashlib.sha256(content.encode()).hexdigest()[:32]
+                )
+            except Exception as exc:
+                skipped_errors.append(
+                    {"path": path, "reason": getattr(exc, "error_code", "unknown")}
+                )
+    return file_index, new_hashes, skipped_errors
+
+
 def _do_analyze_repo_full(repo: str | None = None) -> dict:
     """Fetch the full repo tree, extract structured file index, return in one call."""
     _p = _pkg()
@@ -441,24 +511,8 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
     root = _p.get_workspace_root()
     stored_hashes = _load_file_hashes(root)
     profile = _load_scan_profile(root)
-    _include_exts = frozenset(profile.get("include_extensions", []))
-    _exclude_dirs = frozenset(profile.get("exclude_dirs", []))
     _max_files = profile.get("max_files", _MAX_ANALYSIS_FILES)
-
-    import fnmatch as _fnmatch
-    _exclude_patterns = profile.get("exclude_patterns", [])
-
-    def _profile_allows(path: str) -> bool:
-        p = Path(path)
-        for part in p.parts[:-1]:
-            if part in _exclude_dirs:
-                return False
-        name = p.name
-        if any(_fnmatch.fnmatch(name, pat) for pat in _exclude_patterns):
-            return False
-        if _include_exts:
-            return p.suffix.lower() in _include_exts
-        return p.suffix.lower() not in _BINARY_EXTENSIONS
+    _profile_allows = _make_profile_filter(profile)
 
     try:
         with gh:
@@ -470,38 +524,11 @@ def _do_analyze_repo_full(repo: str | None = None) -> dict:
     tree = tree[:_max_files]
     omitted_files = max(0, raw_tree_len - len(tree))
 
-    new_hashes: dict[str, str] = {}
-    to_fetch = []
-    skipped_unchanged = 0
-
-    for f in tree:
-        path = f["path"]
-        if not _profile_allows(path):
-            skipped_unchanged += 1
-            continue
-        tree_sha = f.get("sha", "")
-        if tree_sha and stored_hashes.get(path) == tree_sha:
-            skipped_unchanged += 1
-            new_hashes[path] = tree_sha
-        else:
-            to_fetch.append(f)
-
-    file_index = []
-    skipped_errors = []
-
-    if to_fetch:
-        with gh:
-            for f in to_fetch:
-                path = f["path"]
-                try:
-                    content = gh.get_file_content(path)
-                    entry = _extract_file_index(path, content)
-                    file_index.append(entry)
-                    sha = f.get("sha") or hashlib.sha256(content.encode()).hexdigest()[:32]
-                    new_hashes[path] = sha
-                except Exception as exc:
-                    reason = getattr(exc, "error_code", "unknown")
-                    skipped_errors.append({"path": path, "reason": reason})
+    to_fetch, new_hashes, skipped_unchanged = _partition_tree(
+        tree, _profile_allows, stored_hashes
+    )
+    file_index, fetched_hashes, skipped_errors = _fetch_file_index(gh, to_fetch)
+    new_hashes.update(fetched_hashes)
 
     _save_file_hashes(root, new_hashes)
 

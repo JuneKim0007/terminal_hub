@@ -3,7 +3,7 @@
 Surveyed 2026-08-31 · scope `terminal_hub/` + `extensions/` · 53 files
 Baseline: tests 1074 green · 9,672 lines · 237 comment lines · 126 commits of history
 
-Ids are permanent. Never renumber, never reuse a retired id. Next id: **R20**.
+Ids are permanent. Never renumber, never reuse a retired id. Next id: **R21**.
 
 This file is written by `/refactor-facade` and reconciled by it. Do not mark items
 closed by hand — re-run the survey after a stretch of work and let it find them.
@@ -57,9 +57,10 @@ blocked  safety gate returned ASK (46 call sites). Recommended: apply.
 first seen 2026-08-31
 ```
 
-### R8 · Long method · 8 sites · the _do_* cluster
+### R8 · Long method · 5 remaining sites · the _do_* cluster
 ```
-status   planned
+status   blocked — the 3 with adequate coverage are done; these 5 are not
+         provable yet
 evidence runtime_state.py:24 get_runtime_state 77 stmts/d4 ·
          issues.py:551 _do_sync_github_issues 72/d3 ·
          workspace_tools.py:429 _do_apply_unload_policy 71/d4 ·
@@ -70,8 +71,28 @@ evidence runtime_state.py:24 get_runtime_state 77 stmts/d4 ·
          issues.py:20 _extract_design_refs 39/d5 + control flag `in_principles`
 remedy   Extract Method, Remove Control Flag -> refactor-composing-method
 expect   no body over 40 statements
-blocked  none
+blocked  per-function coverage measured 2026-09-01. check-safety-refactoring
+         step 2 refuses a refactor whose preservation cannot be proved, and
+         these five sit below the line:
+           get_runtime_state                83.8%  (13 lines unhit)
+           _do_sync_github_issues           94.6%  (4)
+           _do_generate_milestone_knowledge 78.5%  (14)
+           _do_generate_issue_workflows     91.5%  (5)
+           _extract_design_refs             84.6%  (6)
+         Characterisation tests for the unhit lines come first, in their own
+         commit — see R21. The three that were >=95% are closed below.
 first seen 2026-08-31
+```
+
+### R21 · Tests · characterisation coverage for the R8 remainder
+```
+status   planned
+evidence the 5 functions above have 42 unhit lines between them. They are the
+         gate on R8, not optional polish.
+remedy   add tests covering the listed lines, then return to R8
+expect   all 5 above 95%, R8 unblocked
+blocked  none
+first seen 2026-09-01
 ```
 
 ### R9 · Data clumps · 5 groups × 3 sites
@@ -159,6 +180,33 @@ first seen 2026-08-31
 ---
 
 ## Done
+
+### R8a · Long method · 3 of 8 sites (the ones coverage could prove)
+```
+closed 2026-09-01 — refactored the three targets at >=95% line coverage:
+  _do_analyze_github_labels  67 -> 33 stmts  (labels.py, was 98.6% covered)
+  _do_analyze_repo_full      66 -> 28 stmts  (analysis.py, 95.6%)
+  _do_apply_unload_policy    71 -> 41 stmts  (workspace_tools.py, 95.8%)
+Extracted _label_names_with_open_issues, _label_age_days, _classify_labels,
+_persist_label_analysis, _make_profile_filter, _partition_tree,
+_fetch_file_index, _clear_caches, _render_unload_lines, _render_keep_lines.
+Coverage 89.70% -> 89.72%; 1067 tests green throughout.
+_do_apply_unload_policy is 41 stmts, one over the threshold — the remainder is
+a flat result-assembly block with no reusable group, which the bloaters skill
+excludes explicitly.
+```
+
+### R22 · Duplicate code · workspace_tools.py · _CACHE_KEY_MAP defined twice
+```
+closed 2026-09-01 — the 15-entry cache-key map and its 6 imports were spelled
+out byte-identically in _load_unload_policy (line 52) and
+_do_apply_unload_policy (line 444) of the same file. Found by accident: a
+regex written to match one of them spanned both and broke the module. Now one
+_cache_key_map() serving both. -24 lines.
+Missed by the original sweep because 6-statement window hashing found it only
+as a single collision inside one file, which ranked below the cross-file
+findings and was never read.
+```
 
 ### R20 · Bug · tests/tools/test_setup_workspace.py:45 · live network call
 ```

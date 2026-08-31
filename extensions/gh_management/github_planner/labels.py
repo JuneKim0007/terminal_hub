@@ -1,5 +1,6 @@
 """Label management — caches, analysis, config helpers, and MCP tool implementations."""
 # stdlib
+import datetime as _dt
 import json
 import os
 import time
@@ -40,9 +41,78 @@ def _local_config_path(root: Path) -> Path:
     return _gh_planner_docs_dir(root) / "github_local_config.json"
 
 
+def _label_names_with_open_issues(open_issues: list[dict]) -> set[str]:
+    """Names of every label carried by at least one open issue."""
+    return {
+        lbl.get("name", "")
+        for issue in open_issues
+        for lbl in issue.get("labels", [])
+    }
+
+
+def _label_age_days(created_at_str: str, now_ts: float) -> float | None:
+    """Age of a label in days, or None when GitHub sent no parseable timestamp."""
+    if not created_at_str:
+        return None
+    try:
+        created_ts = _dt.datetime.fromisoformat(
+            created_at_str.replace("Z", "+00:00")
+        ).timestamp()
+    except (ValueError, OSError):
+        return None
+    return (now_ts - created_ts) / 86400
+
+
+def _classify_labels(
+    raw_labels: list[dict], open_issue_label_names: set[str], now_ts: float
+) -> tuple[list[dict], list[dict]]:
+    """Split labels into (active, closed).
+
+    A label is active when it carries an open issue or was created within
+    _LABEL_ACTIVE_DAYS. Everything else is closed.
+    """
+    active: list[dict] = []
+    closed: list[dict] = []
+    for lbl in raw_labels:
+        name = lbl.get("name", "")
+        age_days = _label_age_days(lbl.get("created_at", ""), now_ts)
+        is_recent = age_days is not None and age_days < _LABEL_ACTIVE_DAYS
+        entry = {
+            "name": name,
+            "color": lbl.get("color", ""),
+            "description": lbl.get("description", ""),
+        }
+        (active if name in open_issue_label_names or is_recent else closed).append(entry)
+    return active, closed
+
+
+def _persist_label_analysis(root, active_labels, closed_labels, now_ts) -> None:
+    """Merge the label section into github_local_config.json, atomically."""
+    from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
+
+    docs_dir = _gh_planner_docs_dir(root)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    config_path = _local_config_path(root)
+
+    existing: dict = {}
+    if config_path.exists():
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+
+    existing["labels"] = {
+        "active": active_labels,
+        "closed": closed_labels,
+        "fetched_at": now_ts,
+    }
+    tmp = config_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    os.replace(tmp, config_path)
+
+
 def _do_analyze_github_labels(refresh: bool = False) -> dict:
     """Fetch labels from GitHub, classify active vs closed, save to github_local_config.json (#81)."""
-    from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -68,43 +138,10 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
         except Exception as exc:
             return {"error": "github_error", "message": str(exc)}
 
-    # Build set of label names that have open issues
-    labels_with_open_issues: set[str] = set()
-    for issue in open_issues:
-        for lbl in issue.get("labels", []):
-            labels_with_open_issues.add(lbl.get("name", ""))
-
     now_ts = time.time()
-    active_labels: list[dict] = []
-    closed_labels: list[dict] = []
-
-    for lbl in raw_labels:
-        name = lbl.get("name", "")
-        created_at_str = lbl.get("created_at", "")
-        has_open = name in labels_with_open_issues
-
-        age_days: float | None = None
-        if created_at_str:
-            try:
-                import datetime as _dt
-                created_ts = _dt.datetime.fromisoformat(
-                    created_at_str.replace("Z", "+00:00")
-                ).timestamp()
-                age_days = (now_ts - created_ts) / 86400
-            except (ValueError, OSError):
-                age_days = None
-
-        is_recent = age_days is not None and age_days < _LABEL_ACTIVE_DAYS
-
-        entry = {
-            "name": name,
-            "color": lbl.get("color", ""),
-            "description": lbl.get("description", ""),
-        }
-        if has_open or is_recent:
-            active_labels.append(entry)
-        else:
-            closed_labels.append(entry)
+    active_labels, closed_labels = _classify_labels(
+        raw_labels, _label_names_with_open_issues(open_issues), now_ts
+    )
 
     all_names = {lbl.get("name", "") for lbl in raw_labels}
     only_defaults = bool(raw_labels) and all_names.issubset(_GITHUB_DEFAULT_LABEL_NAMES)
@@ -116,25 +153,7 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
         "only_defaults": only_defaults,
     }
 
-    docs_dir = _gh_planner_docs_dir(root)
-    docs_dir.mkdir(parents=True, exist_ok=True)
-    config_path = _local_config_path(root)
-
-    existing: dict = {}
-    if config_path.exists():
-        try:
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            existing = {}
-
-    existing["labels"] = {
-        "active": active_labels,
-        "closed": closed_labels,
-        "fetched_at": now_ts,
-    }
-    tmp = config_path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    import os as _os5; _os5.replace(tmp, config_path)
+    _persist_label_analysis(root, active_labels, closed_labels, now_ts)
 
     _LABEL_CACHE[repo] = _normalise_labels(raw_labels)
     _LABEL_ANALYSIS_CACHE[repo] = {

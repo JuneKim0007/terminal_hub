@@ -173,6 +173,17 @@ creation still works in a fresh workspace.
 No migration needed: nothing read those entries back.
 tests/test_install_tree_readonly.py pins the boundary, not the fix.
 This destroyed uncommitted local edits repeatedly before the cause was found.
+
+Re-audited 2026-09-01 after the coverage work. Every runtime write path was
+checked for an install-tree target; three candidates, two false positives (the
+tier=="plugin" branch returns before writing; one was a string .replace()).
+One was real and is now fixed: _do_build_docs_map wrote docs_map.json through
+_atomic_write, which re-raises, so get_docs_map died with PermissionError on a
+read-only installation — a system-wide pip install or a read-only container.
+Unlike the original four, the LOCATION is right there: docs_map.json caches a
+scan of the installation's own commands/ and skills/, so it is install-scoped
+and gitignored as derived data. The bug was assuming the install is writable.
+The write is now best-effort, reporting cached: False.
 ```
 
 ### R4 · Duplicate code · the workspace guard preamble

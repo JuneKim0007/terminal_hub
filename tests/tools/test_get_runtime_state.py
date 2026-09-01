@@ -157,3 +157,74 @@ def test_get_runtime_state_list_tools_exception(workspace):
         result = asyncio.run(server._tool_manager.call_tool("get_runtime_state", {}))
     # registered_tools should be []
     assert result["runtime"]["registered_tools"] == []
+
+
+# ── get_runtime_state: characterisation (R21) ─────────────────────────────────
+# Reachable-but-unexercised display branches, pinned so the 77-statement
+# function can be decomposed later (R8).
+
+def test_runtime_state_local_mode_repo_line(tmp_path):
+    """mode: local with no GITHUB_REPO reports local mode, not 'not configured'."""
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
+    (tmp_path / "hub_agents" / "config.yaml").write_text("mode: local\n")
+    with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path):
+        server = create_server()
+        result = call(server, "get_runtime_state")
+    assert "Local mode (no GitHub repo connected)" in result["_display"]
+
+
+def test_runtime_state_unconfigured_repo_line(tmp_path):
+    """Neither a repo nor local mode reports the repo as not configured."""
+    (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
+    (tmp_path / "hub_agents" / "config.yaml").write_text("mode: github\n")
+    with patch("terminal_hub.server.get_workspace_root", return_value=tmp_path):
+        server = create_server()
+        result = call(server, "get_runtime_state")
+    assert "Repo: not configured" in result["_display"]
+
+
+def test_runtime_state_shows_extension_summary_from_description_json(workspace):
+    """An extension's description.json summary is shown beside its name."""
+    import terminal_hub.server as srv
+
+    manifest = workspace / "ext" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    (manifest.parent / "description.json").write_text(
+        json.dumps({"summary": "does a useful thing"}), encoding="utf-8"
+    )
+    saved = list(srv._LOADED_EXTENSIONS)
+    srv._LOADED_EXTENSIONS.append(
+        {"name": "demo_ext", "tools": ["a", "b"], "manifest_path": str(manifest)}
+    )
+    try:
+        with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+            server = create_server()
+            srv._LOADED_EXTENSIONS.append(
+                {"name": "demo_ext", "tools": ["a", "b"], "manifest_path": str(manifest)}
+            )
+            result = call(server, "get_runtime_state")
+    finally:
+        srv._LOADED_EXTENSIONS[:] = saved
+
+    assert "demo_ext — does a useful thing (2 tools)" in result["_display"]
+
+
+def test_runtime_state_tolerates_unreadable_description_json(workspace):
+    """A malformed description.json degrades to no summary rather than raising."""
+    import terminal_hub.server as srv
+
+    manifest = workspace / "bad" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    (manifest.parent / "description.json").write_text("{not json", encoding="utf-8")
+    saved = list(srv._LOADED_EXTENSIONS)
+    try:
+        with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
+            server = create_server()
+            srv._LOADED_EXTENSIONS.append(
+                {"name": "bad_ext", "tools": [], "manifest_path": str(manifest)}
+            )
+            result = call(server, "get_runtime_state")
+    finally:
+        srv._LOADED_EXTENSIONS[:] = saved
+
+    assert "bad_ext (0 tools)" in result["_display"]

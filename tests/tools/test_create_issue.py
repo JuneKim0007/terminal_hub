@@ -374,3 +374,72 @@ def test_list_issues_compact_shows_design_refs_count(workspace):
     issues = result["issues"]
     assert len(issues) == 1
     assert issues[0].get("design_refs_count") == 2
+
+
+# ── _extract_design_refs: characterisation (R21) ───────────────────────────────
+# These pin behaviour that was reachable but unexercised, so the function can be
+# safely decomposed later (R8). They assert what the code does today.
+
+def _extract(title, labels, sections=None, summary=""):
+    from extensions.gh_management.github_planner.issues import _extract_design_refs
+    import extensions.gh_management.github_planner as planner
+    planner._PROJECT_DOCS_CACHE["myrepo"] = {
+        "summary": summary,
+        "_sections": sections or {},
+        "loaded_at": 0,
+    }
+    try:
+        return _extract_design_refs(title, labels, "myrepo")
+    finally:
+        _clear_cache()
+
+
+def test_design_refs_principles_scan_stops_at_next_h2():
+    """The principles scan ends at the next '## ' heading, so later bullets
+    are not mistaken for design principles."""
+    summary = (
+        "## Design Principles\n"
+        "- caching: prefer a warm cache\n"
+        "## Non-Goals\n"
+        "- caching: never cache secrets\n"
+    )
+    refs, rules = _extract("feat: caching layer", [], summary=summary)
+    assert refs == ["project_summary.md § Design Principles"]
+    assert rules == ["caching: prefer a warm cache"]
+    assert not any("never cache secrets" in r for r in rules)
+
+
+def test_design_refs_matches_detail_sections_by_keyword():
+    """A _sections key sharing a keyword with the title yields a detail ref."""
+    refs, rules = _extract(
+        "feat: improve caching", [], sections={"Caching": "...", "Billing": "..."}
+    )
+    assert refs == ["project_detail.md § Caching"]
+    assert rules == []
+
+
+def test_design_refs_does_not_duplicate_an_existing_ref():
+    """A section ref already present is not appended twice."""
+    refs, _ = _extract(
+        "feat: caching", [], sections={"Caching": "a", "caching": "b"}
+    )
+    assert refs.count("project_detail.md § Caching") == 1
+
+
+def test_design_refs_empty_when_docs_not_cached():
+    """No cache entry for the repo means no refs and no rules."""
+    from extensions.gh_management.github_planner.issues import _extract_design_refs
+    _clear_cache()
+    assert _extract_design_refs("feat: anything", [], "absent") == ([], [])
+
+
+def test_design_refs_labels_contribute_keywords():
+    """Keywords come from the labels as well as the title."""
+    refs, _ = _extract("feat: unrelated", ["caching"], sections={"Caching": "..."})
+    assert refs == ["project_detail.md § Caching"]
+
+
+def test_design_refs_stopwords_do_not_match():
+    """Common words are stripped, so 'add' does not match every section."""
+    refs, _ = _extract("add", [], sections={"Add-ons": "..."})
+    assert refs == []

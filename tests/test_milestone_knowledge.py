@@ -207,3 +207,80 @@ def test_generate_sets_depends_on_from_prior(workspace):
     assert "## Depends On" in m2_content
     assert "M1" in m2_content, f"Expected M1 in M2 Depends On, got:\n{m2_content}"
     assert "Core Infrastructure" in m2_content
+
+
+# ── _do_generate_milestone_knowledge: characterisation (R21) ──────────────────
+# The cold-cache path, the uncached-milestone fallback, and the section-derived
+# body fields were all reachable but unexercised. Pinned so the 65-statement
+# function can be decomposed later (R8).
+
+def _generate(workspace, number=1, repo="o/r"):
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=None), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": repo}), \
+         patch("extensions.gh_management.github_planner._resolve_repo", return_value=repo):
+        return _do_generate_milestone_knowledge(number)
+
+
+def test_generate_returns_init_error_when_uninitialised(workspace):
+    """An uninitialised workspace short-circuits with the init guidance."""
+    sentinel = {"status": "needs_init"}
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.ensure_initialized", return_value=sentinel):
+        assert _do_generate_milestone_knowledge(1) == sentinel
+
+
+def test_generate_falls_back_to_mn_title_when_milestone_not_cached(workspace):
+    """With no cached milestone entry the title degrades to 'M<n>'."""
+    _PROJECT_DOCS_CACHE["o/r"] = {"summary": "", "detail": "", "loaded_at": 0.0}
+    result = _generate(workspace, 3)
+
+    assert "error" not in result
+    content = _milestone_knowledge_path(workspace, 3).read_text(encoding="utf-8")
+    assert "# M3 — M3" in content
+
+
+def test_generate_reads_docs_from_disk_when_cache_is_cold(workspace):
+    """With no _PROJECT_DOCS_CACHE entry, project docs are read from disk and
+    their H2 sections populate the generated body."""
+    from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
+
+    docs = _gh_planner_docs_dir(workspace)
+    docs.mkdir(parents=True, exist_ok=True)
+    (docs / "project_summary.md").write_text(
+        "## Design Principles\n- keep it small\n\n"
+        "## Planned Features\n- caching layer\n- audit log\n",
+        encoding="utf-8",
+    )
+    (docs / "project_detail.md").write_text(
+        "## Caching\ndetails\n\n## Audit\ndetails\n", encoding="utf-8"
+    )
+    _MILESTONE_CACHE["o/r"] = [
+        {"number": 1, "title": "First", "description": "d", "open_issues": 0}
+    ]
+
+    result = _generate(workspace, 1)
+
+    assert "error" not in result
+    content = _milestone_knowledge_path(workspace, 1).read_text(encoding="utf-8")
+    assert "keep it small" in content, "design principles came from disk"
+    assert "- caching layer" in content, "planned features came from disk"
+    assert "- Caching" in content and "- Audit" in content, "detail H2s became the contract"
+
+
+def test_generate_links_adjacent_milestones_from_the_index(workspace):
+    """A milestone with neighbours in the index reports both depends-on and
+    enables, rather than the first/last placeholders."""
+    _PROJECT_DOCS_CACHE["o/r"] = {"summary": "", "detail": "", "loaded_at": 0.0}
+    _MILESTONE_CACHE["o/r"] = [
+        {"number": n, "title": t, "description": "", "open_issues": 0}
+        for n, t in [(1, "Foundation"), (2, "Middle"), (3, "Finish")]
+    ]
+    _generate(workspace, 1)
+    _generate(workspace, 3)
+
+    _generate(workspace, 2)
+    content = _milestone_knowledge_path(workspace, 2).read_text(encoding="utf-8")
+
+    assert "M1 — Foundation" in content
+    assert "M3 — Finish" in content

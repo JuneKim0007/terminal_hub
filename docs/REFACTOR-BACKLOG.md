@@ -75,41 +75,32 @@ blocked  none, but low value. The _display assertions in particular are the
 first seen 2026-08-31
 ```
 
-### R23 · Speculative generality · 3 package-root re-exports with no consumer
-```
-status   planned
-evidence _do_assign_milestone, _do_create_milestone and _do_make_label are
-         re-exported from github_planner/__init__.py and referenced nowhere
-         else in src, tests, or docs. Surfaced by the R6 trial: they were only
-         reachable through the wrappers that moved out.
-remedy   delete -> same treatment as R1
-expect   -3 re-exports
-blocked  none. Not folded into R6 so the trial measured one thing only.
-first seen 2026-09-01
-```
-
-### R25 · Bug · terminal_hub.server._PLUGIN_WARNINGS is a stale binding
-```
-status   planned
-evidence Under a shuffled order, test_plugin_load_warning_recorded fails:
-         id(terminal_hub.server._PLUGIN_WARNINGS) != id(server.state._PLUGIN_WARNINGS)
-         and the lengths disagree (0 vs 1). server/__init__.py binds the list by
-         `from ...state import _PLUGIN_WARNINGS` at import; something later
-         rebinds the name in state (a module reload is the likely culprit), and
-         the re-export keeps pointing at the original object.
-         Reproduced on unpatched main with pytest-randomly seed 7, so it
-         predates the shared-server work. Not reachable in the default order.
-remedy   have readers reach terminal_hub.server.state directly, or expose an
-         accessor rather than re-exporting a mutable object
-expect   the suite passes under any order; pytest-randomly can be adopted
-blocked  none. Low user impact — it is a test-visible defect — but it is the
-         reason the suite cannot yet be run shuffled.
-first seen 2026-09-01
-```
-
 ---
 
 ## Done
+
+### R25 · Bug · terminal_hub.server._PLUGIN_WARNINGS was a stale binding
+```
+closed 2026-09-01 — tests/tools/test_plugin_registry.py rebound the attribute
+(`srv_mod._PLUGIN_WARNINGS = [...]`) instead of mutating it. server/__init__.py
+binds that list at import, so assigning to the name detached the re-export from
+state's list for the rest of the session — and the "cleanup" line installed a
+third list rather than restoring anything. Later readers saw a stale empty list;
+at the failure point the two ids differed and lengths were 0 vs 1.
+Fixed in place, plus an autouse guard asserting both buffers are still the state
+module's own lists, so the next rebind fails in the test that caused it.
+Seeds 7/1/42/99 now all pass. Seed 7 previously failed on unpatched main.
+The suite can now be run shuffled; pytest-randomly is deliberately NOT a
+dependency — it changes every run, and it is a verification tool.
+```
+
+### R23 · Speculative generality · 3 package-root re-exports with no consumer
+```
+closed 2026-09-01 — _do_assign_milestone, _do_create_milestone and _do_make_label
+deleted. Surfaced by the R6 trial, which moved the only wrappers that reached
+them. Verified against src, tests, docs and agents: the sole remaining mention
+was this backlog's own entry describing them.
+```
 
 ### R24 · Bug · the test suite overwrote tracked repo files
 ```

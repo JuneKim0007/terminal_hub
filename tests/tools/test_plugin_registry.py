@@ -245,10 +245,13 @@ def test_get_setup_status_with_plugin_warnings(workspace):
 
     with patch("terminal_hub.server.get_workspace_root", return_value=workspace):
         server = create_server()
-        # Inject a warning directly into the module-level list
-        srv_mod._PLUGIN_WARNINGS = ["test warning"]
+        # Mutate the list in place. Rebinding the attribute
+        # (srv_mod._PLUGIN_WARNINGS = [...]) would detach terminal_hub.server's
+        # re-export from terminal_hub.server.state's list for the rest of the
+        # session, and every later reader would see a stale empty list (R25).
+        srv_mod._PLUGIN_WARNINGS[:] = ["test warning"]
         result = call(server, "get_setup_status", {})
-        srv_mod._PLUGIN_WARNINGS = []  # cleanup
+        srv_mod._PLUGIN_WARNINGS[:] = []
 
     assert "plugin_warnings" in result
     assert "test warning" in result["plugin_warnings"]

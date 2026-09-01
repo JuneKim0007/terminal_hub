@@ -121,3 +121,25 @@ def _server_freshness(request):
     _want_fresh["on"] = request.node.get_closest_marker("fresh_server") is not None
     yield
     _want_fresh["on"] = False
+
+
+@pytest.fixture(autouse=True)
+def _state_buffers_not_rebound():
+    """The server's re-exported buffers must stay the state module's own lists.
+
+    terminal_hub/server/__init__.py re-exports two *mutable* objects. Assigning
+    to them (`srv._PLUGIN_WARNINGS = [...]`) rather than mutating them in place
+    silently detaches the re-export, and every later reader sees a stale list —
+    a defect that only shows up once the test order changes (R25). This catches
+    it in the test that caused it rather than in some unrelated one later.
+    """
+    import terminal_hub.server as _srv
+    import terminal_hub.server.state as _st
+
+    yield
+    assert _srv._PLUGIN_WARNINGS is _st._PLUGIN_WARNINGS, (
+        "terminal_hub.server._PLUGIN_WARNINGS was rebound; mutate it in place"
+    )
+    assert _srv._LOADED_EXTENSIONS is _st._LOADED_EXTENSIONS, (
+        "terminal_hub.server._LOADED_EXTENSIONS was rebound; mutate it in place"
+    )

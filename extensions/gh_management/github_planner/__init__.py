@@ -113,12 +113,9 @@ from extensions.gh_management.github_planner.labels import (
     _do_save_github_local_config,
     _do_get_github_config,
     _do_list_repo_labels,
-    _do_make_label,
 )
 from extensions.gh_management.github_planner.milestones import (
     _do_list_milestones,
-    _do_create_milestone,
-    _do_assign_milestone,
     _do_generate_milestone_knowledge,
     _do_load_milestone_knowledge,
 )

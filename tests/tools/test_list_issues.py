@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch
 import pytest
 from terminal_hub.server import create_server
-from extensions.gh_management.github_planner.storage import write_issue_file
+from extensions.gh_management.github_planner.storage import IssueFrontmatter, write_issue_file
 
 
 def call(server, tool_name, args):
@@ -24,8 +24,12 @@ def test_list_issues_empty(workspace):
 
 
 def test_list_issues_returns_all(workspace):
-    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug",
-                     body="body", assignees=[], labels=[], created_at=date(2026, 3, 15))
+    write_issue_file(
+        root=workspace,
+        slug="fix-bug",
+        body="body",
+        fm=IssueFrontmatter(title="Fix bug", assignees=[], labels=[], created_at=date(2026, 3, 15)),
+    )
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "list_issues", {})
@@ -35,8 +39,12 @@ def test_list_issues_returns_all(workspace):
 
 def test_list_issues_sorted_desc(workspace):
     for slug, day in [("issue-a", 10), ("issue-b", 15), ("issue-c", 5)]:
-        write_issue_file(root=workspace, slug=slug, title=slug,
-                         body="body", assignees=[], labels=[], created_at=date(2026, 3, day))
+        write_issue_file(
+        root=workspace,
+        slug=slug,
+        body="body",
+        fm=IssueFrontmatter(title=slug, assignees=[], labels=[], created_at=date(2026, 3, day)),
+    )
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "list_issues", {})

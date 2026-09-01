@@ -17,7 +17,7 @@ from mcp.server.fastmcp import FastMCP
 from extensions.gh_management.github_planner import get_github_client, get_workspace_root, ensure_initialized
 from extensions.gh_management.github_planner.storage import (
     _issues_dir, _atomic_write, validate_slug,
-    read_issue_frontmatter, list_issue_files, IssueStatus, write_issue_file,
+    read_issue_frontmatter, list_issue_files, IssueStatus, IssueFrontmatter, write_issue_file,
 )
 from terminal_hub.config.env_store import read_env
 from terminal_hub.config.constants import COVERAGE_THRESHOLD
@@ -195,17 +195,19 @@ def _do_fetch_github_issues(state: str = "open", limit: int = 30) -> dict:
         labels = [l["name"] for l in issue.get("labels", [])]
         assignees = [a["login"] for a in issue.get("assignees", [])]
         write_issue_file(
-            root=root,
-            slug=slug,
+        root=root,
+        slug=slug,
+        body=issue.get("body") or "",
+        fm=IssueFrontmatter(
             title=issue.get("title", ""),
-            body=issue.get("body") or "",
             assignees=assignees,
             labels=labels,
             created_at=date.today(),
             status=IssueStatus.OPEN,
             issue_number=number,
             github_url=issue.get("html_url"),
-        )
+        ),
+    )
         created.append(slug)
 
     n = len(created)

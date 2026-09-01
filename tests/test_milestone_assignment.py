@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from terminal_hub.server import create_server
-from extensions.gh_management.github_planner.storage import STATUS_PENDING, write_issue_file
+from extensions.gh_management.github_planner.storage import STATUS_PENDING, IssueFrontmatter, write_issue_file
 
 
 def call(server, tool_name, args):
@@ -38,9 +38,17 @@ def test_submit_with_missing_milestone_returns_error(workspace):
     _MILESTONE_CACHE["o/r"] = [{"number": 1, "title": "M1", "description": "", "open_issues": 0}]
 
     write_issue_file(
-        root=workspace, slug="5", title="My issue", body="body",
-        assignees=[], labels=[], created_at=date(2026, 3, 19), status=STATUS_PENDING,
-        milestone_number=5,
+        root=workspace,
+        slug="5",
+        body="body",
+        fm=IssueFrontmatter(
+            title="My issue",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 19),
+            status=STATUS_PENDING,
+            milestone_number=5,
+        ),
     )
 
     mock_gh = _mock_gh()
@@ -72,9 +80,17 @@ def test_submit_with_valid_milestone_proceeds(workspace):
     _MILESTONE_CACHE["o/r"] = [{"number": 2, "title": "M2", "description": "", "open_issues": 0}]
 
     write_issue_file(
-        root=workspace, slug="10", title="Valid milestone issue", body="body",
-        assignees=[], labels=[], created_at=date(2026, 3, 19), status=STATUS_PENDING,
-        milestone_number=2,
+        root=workspace,
+        slug="10",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Valid milestone issue",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 19),
+            status=STATUS_PENDING,
+            milestone_number=2,
+        ),
     )
 
     mock_gh = _mock_gh(number=10)

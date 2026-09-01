@@ -3,7 +3,7 @@
 Surveyed 2026-08-31 · scope `terminal_hub/` + `extensions/` · 53 files
 Baseline: tests 1074 green · 9,672 lines · 237 comment lines · 126 commits of history
 
-Ids are permanent. Never renumber, never reuse a retired id. Next id: **R21**.
+Ids are permanent. Never renumber, never reuse a retired id. Next id: **R23**.
 
 This file is written by `/refactor-facade` and reconciled by it. Do not mark items
 closed by hand — re-run the survey after a stretch of work and let it find them.
@@ -55,44 +55,6 @@ remedy   Introduce Parameter Object -> refactor-simplifying-method
 expect   17 params -> 4 + one IssueFrontmatter
 blocked  safety gate returned ASK (46 call sites). Recommended: apply.
 first seen 2026-08-31
-```
-
-### R8 · Long method · 5 remaining sites · the _do_* cluster
-```
-status   blocked — the 3 with adequate coverage are done; these 5 are not
-         provable yet
-evidence runtime_state.py:24 get_runtime_state 77 stmts/d4 ·
-         issues.py:551 _do_sync_github_issues 72/d3 ·
-         workspace_tools.py:429 _do_apply_unload_policy 71/d4 ·
-         labels.py:54 _do_analyze_github_labels 67/d3 ·
-         analysis.py:430 _do_analyze_repo_full 66/d4 ·
-         milestones.py:326 _do_generate_milestone_knowledge 65/d1 ·
-         issues.py:372 _do_generate_issue_workflows 59/d5 ·
-         issues.py:20 _extract_design_refs 39/d5 + control flag `in_principles`
-remedy   Extract Method, Remove Control Flag -> refactor-composing-method
-expect   no body over 40 statements
-blocked  per-function coverage measured 2026-09-01. check-safety-refactoring
-         step 2 refuses a refactor whose preservation cannot be proved, and
-         these five sit below the line:
-           get_runtime_state                83.8%  (13 lines unhit)
-           _do_sync_github_issues           94.6%  (4)
-           _do_generate_milestone_knowledge 78.5%  (14)
-           _do_generate_issue_workflows     91.5%  (5)
-           _extract_design_refs             84.6%  (6)
-         Characterisation tests for the unhit lines come first, in their own
-         commit — see R21. The three that were >=95% are closed below.
-first seen 2026-08-31
-```
-
-### R21 · Tests · characterisation coverage for the R8 remainder
-```
-status   planned
-evidence the 5 functions above have 42 unhit lines between them. They are the
-         gate on R8, not optional polish.
-remedy   add tests covering the listed lines, then return to R8
-expect   all 5 above 95%, R8 unblocked
-blocked  none
-first seen 2026-09-01
 ```
 
 ### R9 · Data clumps · 5 groups × 3 sites
@@ -180,6 +142,36 @@ first seen 2026-08-31
 ---
 
 ## Done
+
+### R8 · Long method · the _do_* cluster — complete
+```
+closed 2026-09-01 — the five that R8a could not prove, refactored after R21
+supplied the coverage:
+  get_runtime_state                 77 -> 36 stmts  (depth 4 -> 1)
+  _do_sync_github_issues            72 -> 38
+  _do_generate_milestone_knowledge  65 -> 39
+  _do_generate_issue_workflows      59 -> 37  (depth 5 -> 1)
+  _extract_design_refs              39 -> 18  (depth 5 -> 3)
+No non-registry body in scope now exceeds 40 statements. _extract_design_refs
+also lost its `in_principles` control flag — extracting the scan made the flag
+local to it, which is Remove Control Flag falling out of Extract Method rather
+than being applied separately.
+Six stale imports dropped as a side effect.
+```
+
+### R21 · Tests · characterisation coverage for the R8 remainder
+```
+closed 2026-09-01 — 17 tests, written before any of the code they cover was
+touched:
+  _extract_design_refs              84.6% -> 100.0%
+  _do_generate_milestone_knowledge  78.5% -> 100.0%
+  _do_generate_issue_workflows      91.5% -> 100.0%
+  _do_sync_github_issues            94.6% -> 100.0%
+  get_runtime_state                 83.8% ->  96.2%
+get_runtime_state keeps 3 unhit lines: two are an ImportError guard around an
+optional cache import, one an else that the config schema makes unreachable.
+Suite 1067 -> 1084 tests, coverage 89.72% -> 91.11%.
+```
 
 ### R8a · Long method · 3 of 8 sites (the ones coverage could prove)
 ```

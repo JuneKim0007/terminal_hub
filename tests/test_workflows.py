@@ -1164,14 +1164,11 @@ def test_detection_silent_when_clean(tmp_path):
 
 
 def test_creation_writes_file_and_registry(tmp_path):
-    """Creation mode writes skill file and updates SKILLS.md registry."""
-    import shutil
+    """Creation writes the skill and its registry row under the workspace (R24)."""
     from extensions.gh_management.github_planner import _do_update_skill_create
-    from extensions.gh_management.github_planner.storage import _atomic_write
-    from pathlib import Path
+    from extensions.gh_management.github_planner.skills import _PLUGIN_DIR
 
-    # Set up a minimal skills dir with SKILLS.md
-    skills_dir = Path(__file__).parent.parent / "extensions" / "gh_management" / "github_planner" / "skills"
+    shipped_before = (_PLUGIN_DIR / "skills" / "SKILLS.md").read_bytes()
 
     result = _do_update_skill_create(
         root=tmp_path,
@@ -1181,27 +1178,22 @@ def test_creation_writes_file_and_registry(tmp_path):
         source_doc=None,
         dry_run=False,
     )
-    skill_path = skills_dir / "test-skill-xyz.md"
-    try:
-        assert result["name"] == "test-skill-xyz"
-        assert result["registry_updated"] is True
-        assert skill_path.exists()
-        content = skill_path.read_text()
-        assert "test-skill-xyz" in content
-        assert "testing" in content
-        # Check SKILLS.md was updated
-        skills_md = skills_dir / "SKILLS.md"
-        assert "test-skill-xyz" in skills_md.read_text()
-    finally:
-        # Cleanup
-        if skill_path.exists():
-            skill_path.unlink()
-        # Remove from SKILLS.md
-        skills_md = skills_dir / "SKILLS.md"
-        if skills_md.exists():
-            text = skills_md.read_text()
-            lines = [l for l in text.split("\n") if "test-skill-xyz" not in l]
-            skills_md.write_text("\n".join(lines))
+
+    assert result["name"] == "test-skill-xyz"
+    assert result["registry_updated"] is True
+    assert result["tier"] == "project"
+
+    skill_path = tmp_path / "hub_agents" / "skills" / "test-skill-xyz.md"
+    assert skill_path.exists(), "skill must land under the workspace"
+    content = skill_path.read_text()
+    assert "test-skill-xyz" in content
+    assert "testing" in content
+
+    registry = (tmp_path / "hub_agents" / "skills" / "SKILLS.md").read_text()
+    assert "test-skill-xyz" in registry
+
+    assert (_PLUGIN_DIR / "skills" / "SKILLS.md").read_bytes() == shipped_before, \
+        "the shipped registry must not be touched"
 
 
 def test_creation_dry_run_does_not_write(tmp_path):
@@ -1292,82 +1284,38 @@ def test_silent_skill_detection_swallows_exceptions(tmp_path):
 # ── _do_update_skill_create with source_doc ───────────────────────────────────
 
 def test_creation_with_source_doc_replaces_block(tmp_path):
-    """source_doc provided and matching heading → block replaced with SKILL comment."""
-    import shutil
+    """A matching heading in source_doc is replaced by a SKILL pointer comment.
+
+    source_doc resolves under the workspace root, so this no longer has to write
+    a scratch file into the repository to exercise the path (R24).
+    """
     from extensions.gh_management.github_planner import _do_update_skill_create
-    from pathlib import Path
 
-    skills_dir = Path(__file__).parent.parent / "extensions" / "gh_management" / "github_planner" / "skills"
-    skill_path = skills_dir / "test-src-doc-skill.md"
-
-    # Create a fake source doc with a large matching section
-    fake_doc_content = (
+    source_rel = "docs/auth-commands.md"
+    source_path = tmp_path / source_rel
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
         "# Commands\n\n"
         "## authentication rules\n\n"
         + ("This is a big block of inline auth knowledge. " * 5) + "\n\n"
-        "## Something else\n\nOther content.\n"
+        "## Something else\n\nOther content.\n",
+        encoding="utf-8",
     )
-    # Write to a temp path within the project root simulation
-    fake_doc_rel = "fake_commands/auth-commands.md"
-    import extensions.gh_management.github_planner as _pg_mod
-    orig_parent = Path(_pg_mod.__file__).parent.parent.parent
 
-    fake_source_path = tmp_path / fake_doc_rel
-    fake_source_path.parent.mkdir(parents=True)
-    fake_source_path.write_text(fake_doc_content, encoding="utf-8")
+    result = _do_update_skill_create(
+        root=tmp_path,
+        name="test-src-doc-skill",
+        description="Auth skill from source doc.",
+        content_hints=["authentication"],
+        source_doc=source_rel,
+        dry_run=False,
+    )
 
-    # Patch Path(__file__).parent.parent.parent inside _do_update_skill_create
-    # by patching the source path resolution
-    original_func = _do_update_skill_create
-
-    try:
-        with patch(
-            "extensions.gh_management.github_planner.Path",
-            side_effect=lambda *a: _patched_path(tmp_path, orig_parent, *a),
-        ):
-            # Use a simpler approach: patch via monkeypatching the file path lookup
-            pass
-
-        # Direct approach: call with a real tmp source doc
-        # We need to put the fake doc relative to the plugin's parent parent parent
-        real_root = orig_parent
-        rel_from_real = "tests/_tmp_auth_skill_test.md"
-        real_source = real_root / rel_from_real
-        real_source.parent.mkdir(parents=True, exist_ok=True)
-        real_source.write_text(fake_doc_content, encoding="utf-8")
-
-        result = _do_update_skill_create(
-            root=tmp_path,
-            name="test-src-doc-skill",
-            description="Auth skill from source doc.",
-            content_hints=["authentication"],
-            source_doc=rel_from_real,
-            dry_run=False,
-        )
-
-        assert result["name"] == "test-src-doc-skill"
-        assert result["source_doc_updated"] == rel_from_real
-        # Source doc should now contain the SKILL comment
-        updated = real_source.read_text(encoding="utf-8")
-        assert 'load_skill("test-src-doc-skill")' in updated
-
-    finally:
-        if skill_path.exists():
-            skill_path.unlink()
-        if real_source.exists():
-            real_source.unlink()
-        # Clean up SKILLS.md
-        skills_md = skills_dir / "SKILLS.md"
-        if skills_md.exists():
-            text = skills_md.read_text()
-            lines = [l for l in text.split("\n") if "test-src-doc-skill" not in l]
-            skills_md.write_text("\n".join(lines))
-
-
-def _patched_path(tmp_path, orig_parent, *args):
-    """Helper — not used directly, kept for reference."""
-    from pathlib import Path
-    return Path(*args)
+    assert result["source_doc_updated"] == source_rel
+    updated = source_path.read_text(encoding="utf-8")
+    assert 'load_skill("test-src-doc-skill")' in updated
+    assert "big block of inline auth knowledge" not in updated
+    assert "## Something else" in updated, "unrelated sections are left alone"
 
 
 def test_creation_with_source_doc_no_match_leaves_source_unchanged(tmp_path):

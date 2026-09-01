@@ -231,30 +231,44 @@ def test_ensure_milestone_label_swallows_github_error(workspace):
         _ensure_milestone_label(3, "Some Milestone")
 
 
-def test_ensure_milestone_label_syncs_labels_json(workspace, tmp_path):
-    """Newly created milestone label is appended to labels.json."""
+def test_ensure_milestone_label_records_label_in_workspace(workspace):
+    """A new milestone label is recorded under the workspace, not the install (R24)."""
     import json as _json
     from extensions.gh_management.github_planner import _MILESTONE_LABEL_PALETTE
-
-    labels_file = tmp_path / "labels.json"
-    labels_file.write_text(_json.dumps([{"name": "bug", "color": "d73a4a", "description": "..."}]), encoding="utf-8")
+    from extensions.gh_management.github_planner.milestones import _milestone_labels_path
 
     mock_gh = _mock_gh()
     mock_gh.get_labels.return_value = set()
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, None)), \
-         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}), \
-         patch("extensions.gh_management.github_planner._PLUGIN_DIR", tmp_path):
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
         from extensions.gh_management.github_planner import _ensure_milestone_label
         _ensure_milestone_label(1, "Core Auth")
 
+    labels_file = _milestone_labels_path(workspace)
+    assert labels_file.is_relative_to(workspace), "must not write into the install tree"
     written = _json.loads(labels_file.read_text(encoding="utf-8"))
-    names = [e["name"] for e in written]
-    assert "m1" in names
     m1 = next(e for e in written if e["name"] == "m1")
     assert m1["description"] == "Core Auth"
     assert m1["color"] == _MILESTONE_LABEL_PALETTE[0]
+
+
+def test_ensure_milestone_label_never_touches_the_install_tree(workspace):
+    """The shipped labels.json is reference data and must stay byte-identical."""
+    from extensions.gh_management.github_planner.client import _LABELS_FILE
+
+    before = _LABELS_FILE.read_bytes()
+    mock_gh = _mock_gh()
+    mock_gh.get_labels.return_value = set()
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, None)), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "o/r"}):
+        from extensions.gh_management.github_planner import _ensure_milestone_label
+        _ensure_milestone_label(9, "Ninth")
+
+    assert _LABELS_FILE.read_bytes() == before
 
 
 # ── create_milestone triggers label creation ──────────────────────────────────

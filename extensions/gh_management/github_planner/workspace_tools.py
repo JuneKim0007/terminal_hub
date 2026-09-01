@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 
-from extensions.gh_management.github_planner.pkgref import _pkg
+from extensions.gh_management.github_planner.pkgref import _pkg, _resolve_root
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _DOC_LIKE_PATTERNS = frozenset([
@@ -109,10 +109,8 @@ def detect_existing_docs(file_index: list[dict]) -> list[dict]:
 def _do_set_preference(key: str, value: bool) -> dict:
     """Persist a user preference in hub_agents/config.yaml."""
     from terminal_hub.config import write_preference
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     if key not in _ALLOWED_PREFERENCES:
         return {
@@ -131,8 +129,8 @@ def _do_create_github_repo(name: str, description: str, private: bool) -> dict:
     from terminal_hub.config import write_preference
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     token, source = _p.resolve_token()
@@ -174,10 +172,8 @@ def _do_save_docs_strategy(
 ) -> dict:
     """Persist existing-docs strategy to hub_agents/extensions/gh_planner/docs_strategy.json (#84)."""
     from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     valid = {"refer", "overwrite", "merge", "ignore"}
@@ -207,10 +203,8 @@ def _do_save_docs_strategy(
 def _do_load_docs_strategy() -> dict:
     """Load existing-docs strategy from disk, or return default (#84)."""
     from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     strategy_path = _gh_planner_docs_dir(root) / "docs_strategy.json"
@@ -261,10 +255,8 @@ def _do_connect_docs(
     others: list[str] | None = None,
 ) -> dict:
     from extensions.gh_management.github_planner.project_docs import _load_docs_config, _save_docs_config
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     others = others or []
     for ref_path in others:
@@ -499,11 +491,10 @@ def _do_apply_unload_policy(command: str) -> dict:
     from extensions.gh_management.github_planner.setup import _REPO_CACHE
     from extensions.gh_management.github_planner.session import _SESSION_REPO_CONFIRMED
     _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if command not in ("init",):
-        if err := _p.ensure_initialized(root):
-            return err
+    root, err = _resolve_root()
+    # `init` is the command that creates hub_agents/, so it must run pre-setup.
+    if err and command != "init":
+        return err
 
     _CACHE_KEY_MAP = _cache_key_map()
 

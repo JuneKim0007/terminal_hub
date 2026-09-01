@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 
-from extensions.gh_management.github_planner.pkgref import _pkg
+from extensions.gh_management.github_planner.pkgref import _pkg, _resolve_root
 
 # Label cache — Key: "owner/repo" string, Value: list[{"name", "color", "description"}]
 _LABEL_CACHE: dict[str, list[dict]] = {}
@@ -115,8 +115,8 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
     """Fetch labels from GitHub, classify active vs closed, save to github_local_config.json (#81)."""
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     repo = _p.read_env(root).get("GITHUB_REPO", "")
@@ -179,10 +179,8 @@ def _do_analyze_github_labels(refresh: bool = False) -> dict:
 
 def _do_load_github_local_config() -> dict:
     """Load github_local_config.json from disk, or return empty config (#81)."""
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     config_path = _local_config_path(root)
@@ -215,8 +213,8 @@ def _do_load_github_global_config() -> dict:
     """Load hub_agents/github_global_config.json — creates with defaults if absent (#80)."""
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     path = _global_config_path(root)
@@ -243,10 +241,8 @@ def _do_load_github_global_config() -> dict:
 def _do_save_github_local_config(data: dict) -> dict:
     """Merge data into hub_agents/extensions/gh_planner/github_local_config.json (#80)."""
     from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     docs_dir = _gh_planner_docs_dir(root)
@@ -274,10 +270,8 @@ def _do_save_github_local_config(data: dict) -> dict:
 
 def _do_get_github_config(scope: str = "both") -> dict:
     """Return GitHub config for scope: 'global', 'local', or 'both' (#80)."""
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     valid = {"global", "local", "both"}
@@ -299,8 +293,8 @@ def _do_list_repo_labels() -> dict:
     """Fetch labels from GitHub and cache them."""
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     repo = _p.read_env(root).get("GITHUB_REPO", "")
 
@@ -337,8 +331,8 @@ def _do_make_label(name: str, color: str, description: str = "") -> dict:
     """Create a label on GitHub (idempotent). Updates the label cache."""
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     if not name:
         return {"error": "missing_field", "message": "name is required"}

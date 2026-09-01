@@ -168,6 +168,9 @@ def _do_set_implementation_session_flag(key: str, value: bool, persist: bool = F
 
 
 def _do_fetch_github_issues(state: str = "open", limit: int = 30) -> dict:
+    # Not _resolve_root(): this module's tests patch
+    # ``…gh_implementation.get_workspace_root``, its own namespace, so a helper
+    # resolving through github_planner would bypass those patches.
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err
@@ -236,6 +239,9 @@ def _do_update_issue_frontmatter(slug: str, fields: dict[str, Any]) -> dict:
 
 
 def _do_close_github_issue(issue_number: int, comment: str | None = None) -> dict:
+    # Not _resolve_root(): this module's tests patch
+    # ``…gh_implementation.get_workspace_root``, its own namespace, so a helper
+    # resolving through github_planner would bypass those patches.
     root = get_workspace_root()
     if err := ensure_initialized(root):
         return err

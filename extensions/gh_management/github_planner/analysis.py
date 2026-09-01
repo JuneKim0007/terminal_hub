@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 
 
-from extensions.gh_management.github_planner.pkgref import _pkg
+from extensions.gh_management.github_planner.pkgref import _pkg, _resolve_root
 
 from terminal_hub.config.constants import (
     FILE_TREE_TTL,
@@ -572,8 +572,8 @@ def _do_run_analyzer() -> dict:
     from extensions.gh_management.github_planner.labels import _LABEL_CACHE, _normalise_labels
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     gh, error_message = _p._get_github_client()

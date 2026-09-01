@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 
-from extensions.gh_management.github_planner.pkgref import _pkg
+from extensions.gh_management.github_planner.pkgref import _pkg, _resolve_root
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _MILESTONE_CACHE: dict[str, list[dict]] = {}  # repo -> [{number, title, description}]
@@ -215,8 +215,8 @@ def _check_detail_gaps(detail_sections: dict, milestone_title: str) -> list[str]
 def _do_list_milestones(state: str = "open") -> dict:
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     repo = _p.read_env(root).get("GITHUB_REPO", "")
     if repo in _MILESTONE_CACHE:
@@ -245,8 +245,8 @@ def _do_list_milestones(state: str = "open") -> dict:
 def _do_create_milestone(title: str, description: str = "", due_on: str | None = None) -> dict:
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     if not title:
         return {"error": "missing_field", "message": "title is required"}
@@ -279,8 +279,8 @@ def _do_assign_milestone(slug: str, milestone_number: int) -> dict:
     import yaml as _yaml
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     repo = _p.read_env(root).get("GITHUB_REPO", "")
     ms = _MILESTONE_CACHE.get(repo, [])
@@ -385,8 +385,8 @@ def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
     from datetime import datetime, timezone
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     repo = _p.read_env(root).get("GITHUB_REPO", "")
@@ -468,10 +468,8 @@ def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
 
 def _do_load_milestone_knowledge(milestone_number: int) -> dict:
     """Load the knowledge file for a milestone."""
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     path = _milestone_knowledge_path(root, milestone_number)

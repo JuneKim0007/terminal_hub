@@ -124,3 +124,21 @@ def build_instructions(plugins: list[dict]) -> str:
     lines.append("")
     lines.append("On first use in a project: call get_setup_status to check initialisation.")
     return "\n".join(lines)
+
+
+def extension_summary(manifest_path: str) -> str:
+    """One-line summary for an extension, from the description.json beside it.
+
+    Returns "" when the path is empty, the file is absent or unreadable, or it
+    carries no summary — callers degrade to the bare extension name.
+    """
+    if not manifest_path:
+        return ""
+    desc_path = Path(manifest_path).parent / "description.json"
+    if not desc_path.exists():
+        return ""
+    try:
+        raw = json.loads(desc_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — a malformed manifest is not fatal
+        return ""
+    return raw.get("summary") or (raw.get("entry") or {}).get("use_when") or ""

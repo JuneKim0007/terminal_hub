@@ -6,10 +6,11 @@ the entry-point handshake.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+
+from terminal_hub.plugins.plugin_loader import extension_summary
 
 
 def register(mcp: FastMCP) -> None:
@@ -34,16 +35,7 @@ def register(mcp: FastMCP) -> None:
         ext_lines = []
         for ext in _srv._LOADED_EXTENSIONS:
             n = len(ext["tools"])
-            desc = ""
-            mp = ext.get("manifest_path", "")
-            if mp:
-                desc_path = Path(mp).parent / "description.json"
-                if desc_path.exists():
-                    try:
-                        raw = json.loads(desc_path.read_text(encoding="utf-8"))
-                        desc = raw.get("summary") or ""
-                    except Exception:
-                        pass
+            desc = extension_summary(ext.get("manifest_path", ""))
             summary = f" — {desc}" if desc else ""
             ext_lines.append(f"  • {ext['name']}{summary} ({n} tool{'s' if n != 1 else ''})")
 

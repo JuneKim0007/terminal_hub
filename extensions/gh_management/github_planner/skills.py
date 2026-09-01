@@ -362,13 +362,28 @@ def _do_build_docs_map() -> dict:
                 skills_data[skill_name]["used_by_commands"].append(f.name)
 
     docs_map = {"skills": skills_data, "commands": commands_data}
-    map_path = _p._PLUGIN_DIR / "docs_map.json"
-    _atomic_write(map_path, json.dumps(docs_map, indent=2))
+
+    # docs_map.json caches a scan of the installation's own commands/ and
+    # skills/, so the install tree is the right home for it — but the install
+    # is not necessarily writable (a system-wide pip install, a read-only
+    # container). The cache is derived data: failing to store it must not fail
+    # the call, which previously raised PermissionError out of get_docs_map.
+    cached = True
+    try:
+        _atomic_write(_p._PLUGIN_DIR / "docs_map.json", json.dumps(docs_map, indent=2))
+    except OSError:
+        cached = False
 
     return {
         "skills": skills_data,
         "commands": commands_data,
-        "_display": f"✅ **docs_map.json built** — {len(skills_data)} skills, {len(commands_data)} commands",
+        "cached": cached,
+        "_display": (
+            f"✅ **docs_map.json built** — {len(skills_data)} skills, {len(commands_data)} commands"
+            if cached else
+            f"✅ **docs map built** — {len(skills_data)} skills, {len(commands_data)} commands "
+            f"(not cached: the installation is read-only)"
+        ),
     }
 
 

@@ -80,7 +80,17 @@ def _update_skills_registry(
         registry_path = root / "hub_agents" / "skills" / "SKILLS.md"
 
     if not registry_path.exists():
-        return False
+        if tier == "plugin":
+            return False
+        # A project registry is created on demand: skill creation must work in a
+        # fresh workspace, and this file is the workspace's own index.
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(
+            "# Project skills\n\n"
+            "| skill | file | always | triggers |\n"
+            "|---|---|---|---|\n",
+            encoding="utf-8",
+        )
 
     text = registry_path.read_text(encoding="utf-8")
     if f"| {name} |" in text:
@@ -192,7 +202,13 @@ def _do_update_skill_create(
     """Create a new skill file and update SKILLS.md registry."""
     import re as _re_sk
 
-    skill_dir = Path(__file__).parent / "skills"
+    # A user-created skill is project content, so it belongs under the workspace
+    # root. It used to be written into the plugin's own skills/ directory, which
+    # made the installation self-modifying: a reinstall dropped the skill, two
+    # projects sharing an install saw each other's, and creating one from the
+    # test suite edited files tracked in this repo (R24).
+    skill_dir = root / "hub_agents" / "skills"
+    skill_dir.mkdir(parents=True, exist_ok=True)
     skill_path = skill_dir / f"{name}.md"
 
     if not description:
@@ -237,10 +253,11 @@ triggers: {triggers_yaml}
     if not dry_run:
         from extensions.gh_management.github_planner.storage import _atomic_write
         _atomic_write(skill_path, skill_content)
-        _update_skills_registry(root, name, "plugin", False, triggers)
+        _update_skills_registry(root, name, "project", False, triggers)
 
         if source_doc:
-            source_path = Path(__file__).parent.parent.parent / source_doc
+            # Resolved under the workspace, never the install tree.
+            source_path = root / source_doc
             if source_path.exists():
                 source_text = source_path.read_text(encoding="utf-8")
                 replacement = f'\n<!-- SKILL: load_skill("{name}") — {description[:80]} -->\n'
@@ -259,8 +276,8 @@ triggers: {triggers_yaml}
 
     return {
         "name": name,
-        "path": str(skill_path.relative_to(Path(__file__).parent.parent.parent)),
-        "tier": "plugin",
+        "path": str(skill_path.relative_to(root)),
+        "tier": "project",
         "registry_updated": not dry_run,
         "source_doc_updated": source_doc_updated,
         "dry_run": dry_run,

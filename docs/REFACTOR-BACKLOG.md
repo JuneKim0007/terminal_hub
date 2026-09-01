@@ -3,7 +3,7 @@
 Surveyed 2026-08-31 · scope `terminal_hub/` + `extensions/` · 53 files
 Baseline: tests 1074 green · 9,672 lines · 237 comment lines · 126 commits of history
 
-Ids are permanent. Never renumber, never reuse a retired id. Next id: **R25**.
+Ids are permanent. Never renumber, never reuse a retired id. Next id: **R26**.
 
 This file is written by `/refactor-facade` and reconciled by it. Do not mark items
 closed by hand — re-run the survey after a stretch of work and let it find them.
@@ -75,28 +75,6 @@ blocked  none, but low value. The _display assertions in particular are the
 first seen 2026-08-31
 ```
 
-### R24 · Bug · the test suite overwrites tracked repo files
-```
-status   OPEN — highest priority in this file
-evidence Production code writes into the *installed plugin directory*, not the
-         user's workspace:
-           milestones.py:58  labels_file = _p._PLUGIN_DIR / "labels.json"
-           skills.py:78      Path(__file__).parent / "skills" / "SKILLS.md"
-         So running pytest mutates two files tracked in this repo. Proved:
-         restore labels.json, run the suite -> 1 failed; run it again with no
-         other change -> 1084 passed, because run 1 rewrote the file the test
-         reads. The suite's result depends on a file the suite edits.
-         This destroyed uncommitted local edits to labels.json repeatedly during
-         the 2026-09-01 session before the cause was found.
-remedy   route both writes through the workspace root, as every other write in
-         this codebase already does; the plugin directory should be read-only
-         at runtime
-expect   pytest leaves `git status` clean; the order-dependent failure goes away
-blocked  none — this is a bug, not a smell, and it is worth doing before any
-         further refactor
-first seen 2026-09-01
-```
-
 ### R23 · Speculative generality · 3 package-root re-exports with no consumer
 ```
 status   planned
@@ -110,9 +88,45 @@ blocked  none. Not folded into R6 so the trial measured one thing only.
 first seen 2026-09-01
 ```
 
+### R25 · Bug · terminal_hub.server._PLUGIN_WARNINGS is a stale binding
+```
+status   planned
+evidence Under a shuffled order, test_plugin_load_warning_recorded fails:
+         id(terminal_hub.server._PLUGIN_WARNINGS) != id(server.state._PLUGIN_WARNINGS)
+         and the lengths disagree (0 vs 1). server/__init__.py binds the list by
+         `from ...state import _PLUGIN_WARNINGS` at import; something later
+         rebinds the name in state (a module reload is the likely culprit), and
+         the re-export keeps pointing at the original object.
+         Reproduced on unpatched main with pytest-randomly seed 7, so it
+         predates the shared-server work. Not reachable in the default order.
+remedy   have readers reach terminal_hub.server.state directly, or expose an
+         accessor rather than re-exporting a mutable object
+expect   the suite passes under any order; pytest-randomly can be adopted
+blocked  none. Low user impact — it is a test-visible defect — but it is the
+         reason the suite cannot yet be run shuffled.
+first seen 2026-09-01
+```
+
 ---
 
 ## Done
+
+### R24 · Bug · the test suite overwrote tracked repo files
+```
+closed 2026-09-01 — four writes went into the plugin's own directory instead of
+the workspace: milestone labels into labels.json, created skills and their
+registry row into skills/, and source_doc patching into the repo root. All are
+tracked, so pytest edited the working tree and one test's result depended on a
+file it had itself rewritten. It also meant a reinstall discarded user data and
+two projects sharing an install collided.
+All four now resolve under the workspace root. A user-created skill is
+registered as tier "project", not "plugin" — writing user content into shipped
+skill space was the root of it. The project registry is created on demand so
+creation still works in a fresh workspace.
+No migration needed: nothing read those entries back.
+tests/test_install_tree_readonly.py pins the boundary, not the fix.
+This destroyed uncommitted local edits repeatedly before the cause was found.
+```
 
 ### R4 · Duplicate code · the workspace guard preamble
 ```

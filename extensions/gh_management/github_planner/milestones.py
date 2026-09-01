@@ -29,6 +29,13 @@ def _milestone_label_color(number: int) -> str:
     return _MILESTONE_LABEL_PALETTE[(number - 1) % len(_MILESTONE_LABEL_PALETTE)]
 
 
+def _milestone_labels_path(root):
+    """Where this project's generated m{N} labels are recorded."""
+    from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
+
+    return _gh_planner_docs_dir(root) / "milestone_labels.json"
+
+
 def _ensure_milestone_label(number: int, title: str) -> None:
     """Idempotently create or update the m{N} label on GitHub and sync labels.json."""
     from extensions.gh_management.github_planner.labels import _LABEL_CACHE, _LABEL_ANALYSIS_CACHE
@@ -55,7 +62,13 @@ def _ensure_milestone_label(number: int, title: str) -> None:
     except Exception:
         pass  # best-effort
 
-    labels_file = _p._PLUGIN_DIR / "labels.json"
+    # Milestone labels are per-project, so they belong under the workspace root.
+    # They used to be appended to the plugin's own labels.json, which made the
+    # installation self-modifying: a reinstall dropped them, two projects
+    # sharing an install overwrote each other, and running the test suite
+    # rewrote a file tracked in this repo (R24).
+    labels_file = _milestone_labels_path(root)
+    labels_file.parent.mkdir(parents=True, exist_ok=True)
     try:
         existing: list[dict] = json.loads(labels_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

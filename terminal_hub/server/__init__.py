@@ -34,15 +34,6 @@ from terminal_hub.server.builtins import (
 from terminal_hub.workspace import ensure_initialized
 from terminal_hub.workspace import resolve_workspace_root as get_workspace_root
 
-# ── github_planner re-exports — read via ``_srv.<name>`` by tools.* ──────────
-# Both are genuinely GitHub-specific. They remain here because setup_workspace
-# configures a repo and warms its labels; moving that branch behind a plugin
-# hook is the rest of R16.
-from extensions.gh_management.github_planner import (
-    _invalidate_repo_cache,
-    get_github_client,
-)
-
 # ── Public factory ───────────────────────────────────────────────────────────
 from terminal_hub.server.app import create_server
 

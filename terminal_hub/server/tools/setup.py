@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 from terminal_hub.config.env_store import _ensure_gitignored, read_env, write_env
 from terminal_hub.config.settings import WorkspaceMode, load_config, save_config
+from terminal_hub.plugins import hooks
 from terminal_hub.workspace.init_state import G_INIT, is_initialized
 from terminal_hub.workspace.locator import init_workspace, set_active_project_root
 
@@ -62,8 +63,6 @@ def register(mcp: FastMCP) -> None:
 
         github_repo: optional 'owner/repo' — omit for local-only mode.
         project_root: optional absolute path to the user's project directory."""
-        from extensions.gh_management.github_planner.client import load_default_labels
-
         if project_root is not None:
             set_active_project_root(project_root)
         root = _srv.get_workspace_root()
@@ -79,15 +78,15 @@ def register(mcp: FastMCP) -> None:
 
         mode = WorkspaceMode.GITHUB if github_repo else WorkspaceMode.LOCAL
         save_config(root, mode, github_repo)
-        _srv._invalidate_repo_cache()  # new repo → flush cached detect_repo result
 
-        label_warning: str | None = None
-        if github_repo:
-            gh, _ = _srv.get_github_client()
-            if gh is not None:
-                all_names = [d["name"] for d in load_default_labels()]
-                with gh:
-                    label_warning = gh.ensure_labels(all_names)
+        # Announce rather than act: plugins decide what a configured workspace
+        # means to them. github_planner warms the repo's labels here (R26).
+        warnings = [
+            w for _plugin, w in hooks.call_all(
+                hooks.ON_WORKSPACE_CONFIGURED, root, github_repo
+            ) if w
+        ]
+        label_warning = warnings[0] if warnings else None
 
         repo = github_repo or "none"
         result: dict = {

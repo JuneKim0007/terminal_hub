@@ -312,7 +312,12 @@ def _do_pre_implementation(issue_slug: str, flags_override: dict | None = None) 
     # 3. Load connected docs from docs_config.json (pre_load: true entries)
     connected_docs_loaded = []
     try:
-        docs_config_path = root / "hub_agents" / "docs_config.json"
+        # Ask the planner where it keeps this, rather than assuming: it writes
+        # to hub_agents/extensions/gh_planner/, and hardcoding hub_agents/ here
+        # meant connected_docs_loaded was always empty (found by test, #217).
+        from extensions.gh_management.github_planner.project_docs import _docs_config_path
+
+        docs_config_path = _docs_config_path(root)
         if docs_config_path.exists():
             import json
             docs_config = json.loads(docs_config_path.read_text(encoding="utf-8"))

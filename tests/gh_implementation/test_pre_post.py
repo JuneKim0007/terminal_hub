@@ -104,3 +104,46 @@ def test_load_persistent_flags_from_config(tmp_path):
     assert flags["run_verify"] is False
     assert flags["close_automatically_on_gh"] is False
     _SESSION_FLAGS.clear()
+
+
+def test_pre_implementation_lists_docs_marked_for_preload(tmp_path):
+    """docs_config entries flagged pre_load are reported so Claude loads them."""
+    from extensions.gh_management.gh_implementation import _do_pre_implementation
+    import json
+
+    from extensions.gh_management.github_planner.project_docs import _docs_config_path
+
+    config_path = _docs_config_path(tmp_path)
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps({
+        "architecture": {"path": "docs/arch.md", "pre_load": True},
+        "changelog": {"path": "docs/changelog.md", "pre_load": False},
+    }), encoding="utf-8")
+
+    ctx = {"workspace_ready": True, "repo_confirmed": "o/r", "project_summary": "",
+           "issue_content": {"slug": "42"}, "design_sections": {},
+           "has_agent_workflow": True, "context_ready": True}
+    with patch("extensions.gh_management.gh_implementation.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.gh_management.gh_implementation._load_persistent_flags"), \
+         patch("extensions.gh_management.gh_implementation._get_flags", return_value={}), \
+         patch("extensions.gh_management.github_planner._do_apply_unload_policy",
+               return_value={"cleared": []}), \
+         patch("extensions.gh_management.github_planner.workspace_tools._do_load_implementation_context",
+               return_value=ctx):
+        result = _do_pre_implementation("42")
+
+    assert result["connected_docs_loaded"] == ["docs/arch.md"], "only pre_load docs are listed"
+
+
+def test_post_implementation_derives_affected_files_from_the_git_diff(tmp_path):
+    """With no explicit file list, the changed files come from git diff."""
+    from extensions.gh_management.gh_implementation import _do_post_implementation
+
+    proc = MagicMock(stdout="a.py\nb.py\n\n", stderr="", returncode=0)
+    with patch("extensions.gh_management.gh_implementation.get_workspace_root", return_value=tmp_path), \
+         patch("extensions.gh_management.gh_implementation._load_persistent_flags"), \
+         patch("extensions.gh_management.gh_implementation._get_flags", return_value={}), \
+         patch("subprocess.run", return_value=proc):
+        result = _do_post_implementation("42")
+
+    assert result["affected_files"] == ["a.py", "b.py"], "blank lines are dropped"

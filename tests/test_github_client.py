@@ -575,3 +575,129 @@ def test_get_file_content_raises_on_404():
         with pytest.raises(GitHubError) as exc_info:
             client.get_file_content("missing.py")
     assert exc_info.value.error_code == "repo_not_found"
+
+
+# ── label / milestone / issue mutations ───────────────────────────────────────
+# These GitHub calls shipped without coverage. The interesting behaviour is the
+# 422 path: GitHub returns "unprocessable" when the thing already exists, and
+# the client treats that as success by fetching what is already there.
+
+def _resp(status, payload=None):
+    r = MagicMock()
+    r.status_code = status
+    r.json.return_value = payload if payload is not None else {}
+    return r
+
+
+def test_create_label_returns_the_existing_label_on_422():
+    """A duplicate label is not an error — the existing one is fetched."""
+    client = make_client()
+    existing = {"name": "bug", "color": "d73a4a"}
+    with patch.object(client._client, "post", return_value=_resp(422)), \
+         patch.object(client._client, "get", return_value=_resp(200, existing)):
+        assert client.create_label("bug", "#d73a4a") == existing
+
+
+def test_create_label_raises_when_creation_genuinely_fails():
+    client = make_client()
+    with patch.object(client._client, "post", return_value=_resp(500)):
+        with pytest.raises(GitHubError, match="Failed to create label"):
+            client.create_label("bug", "d73a4a")
+
+
+def test_create_milestone_finds_the_existing_one_by_title_on_422():
+    client = make_client()
+    listing = [{"title": "M1", "number": 1}, {"title": "M2", "number": 2}]
+    with patch.object(client._client, "post", return_value=_resp(422)), \
+         patch.object(client._client, "get", return_value=_resp(200, listing)):
+        assert client.create_milestone("M2")["number"] == 2
+
+
+def test_create_milestone_raises_when_the_title_is_not_found_either():
+    client = make_client()
+    with patch.object(client._client, "post", return_value=_resp(422)), \
+         patch.object(client._client, "get", return_value=_resp(200, [])):
+        with pytest.raises(GitHubError, match="Failed to create milestone"):
+            client.create_milestone("Missing")
+
+
+def test_close_issue_posts_the_comment_before_closing():
+    """Order matters: the comment must land while the issue is still open."""
+    client = make_client()
+    with patch.object(client._client, "post") as post, \
+         patch.object(client._client, "patch", return_value=_resp(200, {"state": "closed"})) as patch_:
+        client.close_issue(7, comment="done in #8")
+
+    assert post.call_args.kwargs["json"] == {"body": "done in #8"}
+    assert patch_.call_args.kwargs["json"] == {"state": "closed"}
+
+
+def test_close_issue_raises_on_a_failed_close():
+    client = make_client()
+    with patch.object(client._client, "patch", return_value=_resp(410)):
+        with pytest.raises(GitHubError, match="Failed to close issue #7"):
+            client.close_issue(7)
+
+
+def test_update_label_raises_when_the_label_is_missing():
+    client = make_client()
+    with patch.object(client._client, "patch", return_value=_resp(404)):
+        with pytest.raises(GitHubError, match="Failed to update label"):
+            client.update_label("ghost", "new description")
+
+
+def test_list_milestones_raises_on_a_failed_fetch():
+    client = make_client()
+    with patch.object(client._client, "get", return_value=_resp(503)):
+        with pytest.raises(GitHubError, match="Failed to list milestones"):
+            client.list_milestones()
+
+
+def test_update_issue_milestone_raises_on_failure():
+    client = make_client()
+    with patch.object(client._client, "patch", return_value=_resp(422)):
+        with pytest.raises(GitHubError, match="Failed to assign milestone"):
+            client.update_issue_milestone(7, 1)
+
+
+# ── create_user_repo ──────────────────────────────────────────────────────────
+# Creates a real repo under the authenticated user, and shipped untested.
+# Each failure mode maps to a distinct error_code the caller branches on.
+
+@pytest.mark.parametrize("raised,expected_code", [
+    (httpx.ConnectError("no route"), "network_error"),
+    (httpx.TimeoutException("slow"), "timeout"),
+])
+def test_create_user_repo_maps_transport_failures_to_error_codes(raised, expected_code):
+    from extensions.gh_management.github_planner.client import create_user_repo
+
+    with patch("httpx.post", side_effect=raised):
+        with pytest.raises(GitHubError) as exc:
+            create_user_repo("tok", "new-repo", "desc", True)
+    assert exc.value.error_code == expected_code
+
+
+def test_create_user_repo_maps_an_http_error_through_parse_error():
+    from extensions.gh_management.github_planner.client import create_user_repo
+
+    resp = MagicMock()
+    resp.status_code = 401
+    resp.text = "Bad credentials"
+    resp.raise_for_status.side_effect = httpx.HTTPStatusError("401", request=MagicMock(), response=resp)
+    with patch("httpx.post", return_value=resp):
+        with pytest.raises(GitHubError) as exc:
+            create_user_repo("bad-token", "new-repo", "desc", True)
+    assert exc.value.error_code == "auth_failed"
+
+
+def test_create_user_repo_returns_the_created_repo():
+    from extensions.gh_management.github_planner.client import create_user_repo
+
+    resp = MagicMock()
+    resp.status_code = 201
+    resp.raise_for_status.return_value = None
+    resp.json.return_value = {"full_name": "me/new-repo"}
+    with patch("httpx.post", return_value=resp) as post:
+        assert create_user_repo("tok", "new-repo", "desc", True)["full_name"] == "me/new-repo"
+
+    assert post.call_args.kwargs["json"]["auto_init"] is True, "repo must be initialised"

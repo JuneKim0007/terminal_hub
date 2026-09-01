@@ -7,33 +7,14 @@ extension.
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from terminal_hub.plugins import hooks
+from terminal_hub.plugins.plugin_loader import extension_summary
 
 from terminal_hub.config.env_store import read_env
 from terminal_hub.config.settings import load_config
-
-
-def _extension_summary(manifest_path: str) -> str:
-    """One-line summary for an extension, from the description.json beside it.
-
-    Returns "" when the file is absent, unreadable, or carries no summary —
-    the display degrades to the bare extension name.
-    """
-    if not manifest_path:
-        return ""
-    desc_path = Path(manifest_path).parent / "description.json"
-    if not desc_path.exists():
-        return ""
-    try:
-        raw = json.loads(desc_path.read_text(encoding="utf-8"))
-    except Exception:
-        return ""
-    return raw.get("summary") or (raw.get("entry") or {}).get("use_when") or ""
 
 
 def _repo_line(github_repo: str | None, mode: str) -> str:
@@ -136,7 +117,7 @@ def register(mcp: FastMCP) -> None:
 
         ext_lines = []
         for e in _srv._LOADED_EXTENSIONS:
-            desc = _extension_summary(e.get("manifest_path", ""))
+            desc = extension_summary(e.get("manifest_path", ""))
             summary = f" — {desc}" if desc else ""
             ext_lines.append(f"  • {e['name']}{summary} ({len(e.get('tools', []))} tools)")
 

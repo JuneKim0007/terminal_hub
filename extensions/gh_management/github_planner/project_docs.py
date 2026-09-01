@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 
-from extensions.gh_management.github_planner.pkgref import _pkg
+from extensions.gh_management.github_planner.pkgref import _pkg, _resolve_root
 
 from terminal_hub.config.constants import SECONDS_PER_HOUR
 
@@ -201,8 +201,8 @@ def _do_update_project_description(title: str, description: str, notes: str = ""
     from terminal_hub.io.errors import msg
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     content = _render_description(title, description, notes)
     try:
@@ -216,8 +216,8 @@ def _do_update_architecture(overview: str, components: list[str] | None = None, 
     from terminal_hub.io.errors import msg
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     content = _render_architecture(overview, components, notes)
     try:
@@ -236,10 +236,8 @@ def _do_update_project_detail_section(
 ) -> dict:
     """Merge a single H2 section into project_detail.md without rewriting the full file (#65)."""
     content = _render_detail_section(feature_name, overview, milestone, guidelines, anti_patterns)
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     if not feature_name or not feature_name.strip():
@@ -305,10 +303,8 @@ def _do_update_project_summary_section(
 ) -> dict:
     """Merge a single H2 section into project_summary.md without rewriting the full file (#137)."""
     content = _render_summary_section(items=items, table_rows=table_rows)
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     if not section_name or not section_name.strip():
@@ -365,10 +361,8 @@ def _do_update_project_summary_section(
 
 
 def _do_get_project_context(doc_key: str) -> dict:
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     if doc_key == "all":
         loaded = _do_load_project_docs(doc="all")
@@ -394,10 +388,8 @@ def _do_save_project_docs(
     repo: str | None = None,
 ) -> dict:
     from extensions.gh_management.github_planner.analysis import _ANALYSIS_CACHE
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     summary_md = _render_project_summary(goal, tech_stack, notes, design_principles)

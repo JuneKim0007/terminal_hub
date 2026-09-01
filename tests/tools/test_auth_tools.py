@@ -63,10 +63,14 @@ def test_submit_issue_no_repo_detected(workspace):
     """Cover get_github_client path where token exists but no repo is found."""
     import json
     from extensions.gh_management.github_planner.auth import TokenSource
-    from extensions.gh_management.github_planner.storage import write_issue_file
+    from extensions.gh_management.github_planner.storage import IssueFrontmatter, write_issue_file
     from datetime import date
-    write_issue_file(root=workspace, slug="x", title="x", body="y",
-                     assignees=[], labels=[], created_at=date.today())
+    write_issue_file(
+        root=workspace,
+        slug="x",
+        body="y",
+        fm=IssueFrontmatter(title="x", assignees=[], labels=[], created_at=date.today()),
+    )
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.gh_management.github_planner.resolve_token", return_value=("tok", TokenSource.ENV)), \
          patch("extensions.gh_management.github_planner.detect_repo", return_value=None):

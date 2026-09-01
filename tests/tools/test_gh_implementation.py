@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from terminal_hub.server import create_server
-from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING, STATUS_OPEN
+from extensions.gh_management.github_planner.storage import IssueFrontmatter, write_issue_file, STATUS_PENDING, STATUS_OPEN
 
 
 def call(server, tool_name, args):
@@ -55,8 +55,16 @@ def test_set_flag_unknown_key_returns_error(workspace):
 
 def test_update_issue_frontmatter_writes_fields(workspace):
     write_issue_file(
-        root=workspace, slug="my-issue", title="Test", body="body",
-        assignees=[], labels=[], created_at=date(2026, 3, 18), status=STATUS_PENDING,
+        root=workspace,
+        slug="my-issue",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Test",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 18),
+            status=STATUS_PENDING,
+        ),
     )
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.gh_management.gh_implementation.get_workspace_root", return_value=workspace):
@@ -84,8 +92,16 @@ def test_update_issue_frontmatter_missing_file_returns_error(workspace):
 
 def test_delete_local_issue_removes_file(workspace):
     write_issue_file(
-        root=workspace, slug="to-delete", title="Delete me", body="body",
-        assignees=[], labels=[], created_at=date(2026, 3, 18), status=STATUS_PENDING,
+        root=workspace,
+        slug="to-delete",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Delete me",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 18),
+            status=STATUS_PENDING,
+        ),
     )
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
          patch("extensions.gh_management.gh_implementation.get_workspace_root", return_value=workspace):
@@ -128,8 +144,16 @@ def test_fetch_github_issues_writes_files(workspace):
 def test_fetch_github_issues_skips_existing(workspace):
     # Pre-create issue 1
     write_issue_file(
-        root=workspace, slug="1", title="Existing", body="body",
-        assignees=[], labels=[], created_at=date(2026, 3, 18), status=STATUS_OPEN,
+        root=workspace,
+        slug="1",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Existing",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 18),
+            status=STATUS_OPEN,
+        ),
     )
     mock_gh = MagicMock()
     mock_gh.__enter__ = lambda s: s

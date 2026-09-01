@@ -387,10 +387,20 @@ def test_draft_issue_display_is_just_title(workspace):
 
 def test_submit_issue_display_is_number_and_title(workspace):
     from extensions.gh_management.github_planner import _do_submit_issue
-    from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
+    from extensions.gh_management.github_planner.storage import IssueFrontmatter, write_issue_file, STATUS_PENDING
     from datetime import date
-    write_issue_file(root=workspace, slug="my-feature", title="My feature", body="body",
-                     assignees=[], labels=[], created_at=date(2026, 3, 17), status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="my-feature",
+        body="body",
+        fm=IssueFrontmatter(
+            title="My feature",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 17),
+            status=STATUS_PENDING,
+        ),
+    )
     mock_gh = MagicMock()
     mock_gh.__enter__ = lambda s: s
     mock_gh.__exit__ = MagicMock(return_value=False)
@@ -690,9 +700,18 @@ def test_get_session_header_is_cached(workspace):
 
 def test_list_issues_compact_returns_minimal_fields(workspace):
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
-    write_issue_file(root=workspace, slug="foo-bar", title="Foo Bar", body="body",
-                     assignees=[], labels=[], created_at=__import__("datetime").date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="foo-bar",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Foo Bar",
+            assignees=[],
+            labels=[],
+            created_at=__import__("datetime").date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_list_issues(compact=True)
@@ -705,9 +724,18 @@ def test_list_issues_compact_returns_minimal_fields(workspace):
 
 def test_list_issues_full_returns_all_fields(workspace):
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
-    write_issue_file(root=workspace, slug="foo-bar", title="Foo Bar", body="body",
-                     assignees=[], labels=[], created_at=__import__("datetime").date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="foo-bar",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Foo Bar",
+            assignees=[],
+            labels=[],
+            created_at=__import__("datetime").date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_list_issues(compact=False)
@@ -726,13 +754,32 @@ def test_list_pending_drafts_returns_unsubmitted(workspace):
     from extensions.gh_management.github_planner import _do_list_pending_drafts
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING, STATUS_OPEN
     import datetime
-    write_issue_file(root=workspace, slug="draft-one", title="Draft One", body="body",
-                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="draft-one",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Draft One",
+            assignees=[],
+            labels=[],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
     # Write an issue with a github number (submitted)
-    write_issue_file(root=workspace, slug="submitted", title="Submitted", body="body",
-                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 2),
-                     status=STATUS_OPEN, issue_number=42)
+    write_issue_file(
+        root=workspace,
+        slug="submitted",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Submitted",
+            assignees=[],
+            labels=[],
+            created_at=datetime.date(2026, 1, 2),
+            status=STATUS_OPEN,
+            issue_number=42,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_list_pending_drafts()
@@ -745,9 +792,19 @@ def test_list_pending_drafts_empty_when_all_submitted(workspace):
     from extensions.gh_management.github_planner import _do_list_pending_drafts
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_OPEN
     import datetime
-    write_issue_file(root=workspace, slug="submitted", title="Done", body="body",
-                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_OPEN, issue_number=7)
+    write_issue_file(
+        root=workspace,
+        slug="submitted",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Done",
+            assignees=[],
+            labels=[],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_OPEN,
+            issue_number=7,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_list_pending_drafts()
@@ -759,9 +816,19 @@ def test_list_pending_drafts_empty_when_all_submitted(workspace):
 def test_list_issues_submitted_has_no_local_only(workspace):
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_OPEN
     import datetime
-    write_issue_file(root=workspace, slug="gh-issue", title="On GitHub", body="body",
-                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_OPEN, issue_number=99)
+    write_issue_file(
+        root=workspace,
+        slug="gh-issue",
+        body="body",
+        fm=IssueFrontmatter(
+            title="On GitHub",
+            assignees=[],
+            labels=[],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_OPEN,
+            issue_number=99,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_list_issues(compact=False)
@@ -925,9 +992,18 @@ def test_generate_issue_workflows_appends_scaffold(workspace):
     from extensions.gh_management.github_planner import _do_generate_issue_workflows
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
     import datetime
-    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug", body="Repro steps here.",
-                     assignees=[], labels=["bug"], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="fix-bug",
+        body="Repro steps here.",
+        fm=IssueFrontmatter(
+            title="Fix bug",
+            assignees=[],
+            labels=["bug"],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_generate_issue_workflows("fix-bug")
@@ -943,9 +1019,18 @@ def test_generate_issue_workflows_idempotent(workspace):
     from extensions.gh_management.github_planner import _do_generate_issue_workflows
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
     import datetime
-    write_issue_file(root=workspace, slug="fix-bug", title="Fix bug", body="body",
-                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="fix-bug",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Fix bug",
+            assignees=[],
+            labels=[],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         _do_generate_issue_workflows("fix-bug")
@@ -970,9 +1055,18 @@ def test_generate_issue_workflows_updates_frontmatter_fields(workspace):
     from extensions.gh_management.github_planner import _do_generate_issue_workflows
     from extensions.gh_management.github_planner.storage import write_issue_file, read_issue_frontmatter, STATUS_PENDING
     import datetime
-    write_issue_file(root=workspace, slug="my-task", title="My Task", body="Do it.",
-                     assignees=[], labels=["enhancement"], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="my-task",
+        body="Do it.",
+        fm=IssueFrontmatter(
+            title="My Task",
+            assignees=[],
+            labels=["enhancement"],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         _do_generate_issue_workflows("my-task")
@@ -997,6 +1091,7 @@ def test_analyze_repo_full_and_get_session_header_registered(workspace):
 # ── _parse_h2_sections + _do_lookup_feature_section ─────────────────────────
 
 from extensions.gh_management.github_planner import _parse_h2_sections, _do_lookup_feature_section
+from extensions.gh_management.github_planner.storage import IssueFrontmatter
 
 
 def test_parse_h2_sections_basic():
@@ -1778,7 +1873,17 @@ def test_generate_issue_workflows_feature_label(workspace):
     (workspace / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
     from extensions.gh_management.github_planner.storage import write_issue_file
     from datetime import date
-    write_issue_file(workspace, "add-dark-mode", "Add dark mode", "Body.", [], ["enhancement"], date.today())
+    write_issue_file(
+        root=workspace,
+        slug="add-dark-mode",
+        body="Body.",
+        fm=IssueFrontmatter(
+            title="Add dark mode",
+            assignees=[],
+            labels=["enhancement"],
+            created_at=date.today(),
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_generate_issue_workflows("add-dark-mode")
@@ -1792,7 +1897,17 @@ def test_generate_issue_workflows_refactor_label(workspace):
     (workspace / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
     from extensions.gh_management.github_planner.storage import write_issue_file
     from datetime import date
-    write_issue_file(workspace, "refactor-auth", "Refactor auth", "Body.", [], ["refactor"], date.today())
+    write_issue_file(
+        root=workspace,
+        slug="refactor-auth",
+        body="Body.",
+        fm=IssueFrontmatter(
+            title="Refactor auth",
+            assignees=[],
+            labels=["refactor"],
+            created_at=date.today(),
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_generate_issue_workflows("refactor-auth")
@@ -1804,7 +1919,12 @@ def test_generate_issue_workflows_test_label(workspace):
     (workspace / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
     from extensions.gh_management.github_planner.storage import write_issue_file
     from datetime import date
-    write_issue_file(workspace, "add-tests", "Add tests", "Body.", [], ["testing"], date.today())
+    write_issue_file(
+        root=workspace,
+        slug="add-tests",
+        body="Body.",
+        fm=IssueFrontmatter(title="Add tests", assignees=[], labels=["testing"], created_at=date.today()),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_generate_issue_workflows("add-tests")
@@ -1816,7 +1936,17 @@ def test_generate_issue_workflows_docs_label(workspace):
     (workspace / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
     from extensions.gh_management.github_planner.storage import write_issue_file
     from datetime import date
-    write_issue_file(workspace, "update-docs", "Update docs", "Body.", [], ["documentation"], date.today())
+    write_issue_file(
+        root=workspace,
+        slug="update-docs",
+        body="Body.",
+        fm=IssueFrontmatter(
+            title="Update docs",
+            assignees=[],
+            labels=["documentation"],
+            created_at=date.today(),
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         result = _do_generate_issue_workflows("update-docs")
@@ -1935,8 +2065,18 @@ def test_generate_issue_workflows_file_missing_after_frontmatter(workspace):
 
     from datetime import date
     from extensions.gh_management.github_planner.storage import write_issue_file, IssueStatus
-    write_issue_file(workspace, "some-slug", "Some Title", "Body", [], [],
-                     date.today(), IssueStatus.OPEN)
+    write_issue_file(
+        root=workspace,
+        slug="some-slug",
+        body="Body",
+        fm=IssueFrontmatter(
+            title="Some Title",
+            assignees=[],
+            labels=[],
+            created_at=date.today(),
+            status=IssueStatus.OPEN,
+        ),
+    )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
          patch.object(RealPath, "exists", patched_exists):
@@ -2547,9 +2687,18 @@ def test_generate_issue_workflows_prepends_intent_expansion_step(workspace):
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
     import datetime
 
-    write_issue_file(root=workspace, slug="with-skill", title="Fix login bug", body="body",
-                     assignees=[], labels=["bug"], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="with-skill",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Fix login bug",
+            assignees=[],
+            labels=["bug"],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
     _SKILL_REGISTRY[str(workspace)] = {"intent-expansion": {"tier": 1}}
     try:
         with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
@@ -2570,9 +2719,18 @@ def test_generate_issue_workflows_lists_reusable_components(workspace):
     from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
     import datetime
 
-    write_issue_file(root=workspace, slug="reuse", title="Add caching layer", body="body",
-                     assignees=[], labels=["enhancement"], created_at=datetime.date(2026, 1, 1),
-                     status=STATUS_PENDING)
+    write_issue_file(
+        root=workspace,
+        slug="reuse",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Add caching layer",
+            assignees=[],
+            labels=["enhancement"],
+            created_at=datetime.date(2026, 1, 1),
+            status=STATUS_PENDING,
+        ),
+    )
 
     findings = {
         "reusable": [{"name": "CacheStore", "path": "app/cache.py"}, {"path": "no/name.py"}],
@@ -2601,11 +2759,21 @@ def test_sync_github_issues_closes_local_issue_when_closed_on_github(workspace):
     )
     import datetime
 
-    write_issue_file(root=workspace, slug="7", title="Fix auth bug", body="body",
-                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
-                     status=IssueStatus.OPEN, issue_number=7,
-                     github_url="https://github.com/owner/repo/issues/7",
-                     updated_at="2026-01-02T00:00:00Z")
+    write_issue_file(
+        root=workspace,
+        slug="7",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Fix auth bug",
+            assignees=[],
+            labels=[],
+            created_at=datetime.date(2026, 1, 1),
+            status=IssueStatus.OPEN,
+            issue_number=7,
+            github_url="https://github.com/owner/repo/issues/7",
+            updated_at="2026-01-02T00:00:00Z",
+        ),
+    )
 
     mock_gh = MagicMock()
     mock_gh.__enter__ = lambda s: s

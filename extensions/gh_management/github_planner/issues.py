@@ -6,7 +6,8 @@ from datetime import date
 from pathlib import Path
 
 
-from extensions.gh_management.github_planner.pkgref import _pkg
+from extensions.gh_management.github_planner.pkgref import _pkg, _resolve_root
+from extensions.gh_management.github_planner.storage import IssueFrontmatter
 
 from terminal_hub.config.constants import ISSUES_SYNC_TTL
 
@@ -159,8 +160,8 @@ def _do_draft_issue(
     from terminal_hub.io.errors import msg
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     if not title:
@@ -182,16 +183,18 @@ def _do_draft_issue(
         _p.write_issue_file(
             root=root,
             slug=slug,
-            title=title,
             body=full_body,
-            assignees=assignees,
-            labels=labels,
-            created_at=date.today(),
-            status=IssueStatus.PENDING,
-            note=note,
-            agent_workflow=agent_workflow,
-            milestone_number=milestone_number,
-            design_refs=design_refs or None,
+            fm=IssueFrontmatter(
+                title=title,
+                assignees=assignees,
+                labels=labels,
+                created_at=date.today(),
+                status=IssueStatus.PENDING,
+                note=note,
+                agent_workflow=agent_workflow,
+                milestone_number=milestone_number,
+                design_refs=design_refs or None,
+            ),
         )
     except OSError as exc:
         return {"error": "draft_failed", "message": msg("draft_failed", detail=str(exc)), "_hook": None}
@@ -227,8 +230,8 @@ def _do_submit_issue(slug: str) -> dict:
     from terminal_hub.io.errors import msg
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     try:
@@ -325,10 +328,8 @@ def _do_submit_issue(slug: str) -> dict:
 def _do_get_issue_context(slug: str) -> dict:
     from extensions.gh_management.github_planner.storage import validate_slug, read_issue_file
     from terminal_hub.io.errors import msg
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     try:
@@ -439,8 +440,8 @@ def _do_generate_issue_workflows(slug: str) -> dict:
     from extensions.gh_management.github_planner.storage import read_issue_frontmatter
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     fm = read_issue_frontmatter(root, slug)
@@ -533,10 +534,8 @@ def _do_generate_issue_workflows(slug: str) -> dict:
 
 def _do_list_issues(compact: bool = False) -> dict:
     from extensions.gh_management.github_planner.storage import list_issue_files
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     issues = list_issue_files(root)
     for issue in issues:
@@ -566,10 +565,8 @@ def _do_list_issues(compact: bool = False) -> dict:
 def _do_list_pending_drafts() -> dict:
     """Return only local-only (unsubmitted) issues."""
     from extensions.gh_management.github_planner.storage import list_issue_files
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     issues = list_issue_files(root)
     pending = [
@@ -619,7 +616,7 @@ def _issue_slug(number, title: str, local_index: dict) -> str:
 
 def _write_synced_issue(root, raw: dict, local_index: dict) -> None:
     """Write one GitHub issue to its local file."""
-    from extensions.gh_management.github_planner.storage import IssueStatus, write_issue_file
+    from extensions.gh_management.github_planner.storage import IssueStatus, IssueFrontmatter, write_issue_file
 
     number = raw.get("number")
     title = raw.get("title", "")
@@ -627,17 +624,19 @@ def _write_synced_issue(root, raw: dict, local_index: dict) -> None:
     write_issue_file(
         root=root,
         slug=_issue_slug(number, title, local_index),
-        title=title,
         body=raw.get("body") or "",
-        assignees=[a["login"] for a in raw.get("assignees", [])],
-        labels=[lbl["name"] for lbl in raw.get("labels", [])],
-        created_at=_parse_created_date(raw.get("created_at", "")),
-        status=IssueStatus.OPEN if raw.get("state", "open") == "open" else IssueStatus.CLOSED,
-        issue_number=number,
-        github_url=raw.get("html_url", ""),
-        milestone_number=milestone.get("number") if milestone else None,
-        milestone_title=milestone.get("title") if milestone else None,
-        updated_at=raw.get("updated_at", ""),
+        fm=IssueFrontmatter(
+            title=title,
+            assignees=[a["login"] for a in raw.get("assignees", [])],
+            labels=[lbl["name"] for lbl in raw.get("labels", [])],
+            created_at=_parse_created_date(raw.get("created_at", "")),
+            status=IssueStatus.OPEN if raw.get("state", "open") == "open" else IssueStatus.CLOSED,
+            issue_number=number,
+            github_url=raw.get("html_url", ""),
+            milestone_number=milestone.get("number") if milestone else None,
+            milestone_title=milestone.get("title") if milestone else None,
+            updated_at=raw.get("updated_at", ""),
+        ),
     )
 
 
@@ -672,8 +671,8 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
     from extensions.gh_management.github_planner.labels import _do_save_github_local_config
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     valid_states = {"open", "closed", "all"}

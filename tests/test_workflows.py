@@ -40,7 +40,7 @@ from extensions.gh_management.github_planner import (
 )
 from extensions.gh_management.github_planner.storage import (
     IssueStatus,
-    write_issue_file,
+    IssueFrontmatter, write_issue_file,
 )
 from extensions.plugin_creator import (
     _do_validate_plugin,
@@ -91,8 +91,16 @@ def mock_gh():
 def _seed_issue(workspace, slug="fix-login-bug", title="Fix login bug",
                 body="Steps to reproduce...", status=IssueStatus.PENDING):
     write_issue_file(
-        root=workspace, slug=slug, title=title, body=body,
-        assignees=[], labels=[], created_at=date(2026, 3, 17), status=status,
+        root=workspace,
+        slug=slug,
+        body=body,
+        fm=IssueFrontmatter(
+            title=title,
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 17),
+            status=status,
+        ),
     )
     return slug
 
@@ -1245,9 +1253,15 @@ def test_generate_issue_workflows_calls_silent_skill_detection(workspace):
     from extensions.gh_management.github_planner.storage import write_issue_file
 
     write_issue_file(
-        root=workspace, slug="1", title="Add login",
-        body="Implement login flow", assignees=[], labels=["enhancement"],
-        created_at=__import__("datetime").date.today(),
+        root=workspace,
+        slug="1",
+        body="Implement login flow",
+        fm=IssueFrontmatter(
+            title="Add login",
+            assignees=[],
+            labels=["enhancement"],
+            created_at=__import__("datetime").date.today(),
+        ),
     )
 
     called = []

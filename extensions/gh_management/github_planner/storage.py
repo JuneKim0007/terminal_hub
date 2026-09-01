@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 from datetime import date
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -100,63 +101,83 @@ _AGENT_WORKFLOW_NOTE = (
 )
 
 
-def write_issue_file(
-    root: Path,
-    slug: str,
-    title: str,
-    body: str,
-    assignees: list[str],
-    labels: list[str],
-    created_at: date,
-    status: IssueStatus | str = IssueStatus.PENDING,
-    issue_number: int | None = None,
-    github_url: str | None = None,
-    workflow: list[str] | None = None,
-    agent_workflow: list[str] | None = None,
-    note: str | None = None,
-    milestone_number: int | None = None,
-    milestone_title: str | None = None,
-    design_refs: list[str] | None = None,
-    updated_at: str | None = None,
-) -> Path:
-    """Write an issue .md file with YAML front matter atomically. Returns the file path.
+@dataclass
+class IssueFrontmatter:
+    """The YAML front matter of an issue file.
+
+    Every field here ends up in the front matter and nowhere else, which is why
+    they travel together: write_issue_file used to take all fourteen as separate
+    parameters and do nothing with them but assemble this dict.
 
     agent_workflow: ordered steps for how an agent should resolve this issue.
-      Stored in YAML frontmatter and rendered as a ## Agent Workflow body section.
+      Also rendered as a "## Agent Workflow" body section.
       Example: ["Scan all files and cache project structure",
                 "Build knowledge base separating relevant vs unrelated files",
                 "Implement the fix", "Write tests", "Verify suite passes"]
     """
+
+    title: str
+    created_at: date
+    assignees: list[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list)
+    status: "IssueStatus | str" = IssueStatus.PENDING
+    issue_number: int | None = None
+    github_url: str | None = None
+    workflow: list[str] | None = None
+    agent_workflow: list[str] | None = None
+    note: str | None = None
+    milestone_number: int | None = None
+    milestone_title: str | None = None
+    design_refs: list[str] | None = None
+    updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Front matter as YAML-ready keys.
+
+        The always-present keys come first; the rest appear only when set, so an
+        issue file carries no empty issue_number/github_url noise.
+        """
+        fm: dict[str, Any] = {
+            "title": self.title,
+            "status": str(self.status),
+            "created_at": self.created_at.strftime("%Y-%m-%d"),
+            "assignees": self.assignees,
+            "labels": self.labels,
+            "workflow": self.workflow if self.workflow is not None else [],
+            "agent_workflow": self.agent_workflow,
+            "note": self.note,
+            "milestone_number": self.milestone_number,
+            "milestone_title": self.milestone_title,
+        }
+        if self.issue_number is not None:
+            fm["issue_number"] = self.issue_number
+        if self.github_url is not None:
+            fm["github_url"] = self.github_url
+        if self.design_refs:
+            fm["design_refs"] = self.design_refs
+        if self.updated_at is not None:
+            fm["updated_at"] = self.updated_at
+        return fm
+
+
+def write_issue_file(
+    root: Path,
+    slug: str,
+    body: str,
+    fm: IssueFrontmatter,
+) -> Path:
+    """Write an issue .md file with YAML front matter atomically. Returns the file path."""
     validate_slug(slug)
     path = _issues_dir(root) / f"{slug}.md"
-    frontmatter: dict[str, Any] = {
-        "title": title,
-        "status": str(status),
-        "created_at": created_at.strftime("%Y-%m-%d"),
-        "assignees": assignees,
-        "labels": labels,
-        "workflow": workflow if workflow is not None else [],
-        "agent_workflow": agent_workflow,
-        "note": note,
-        "milestone_number": milestone_number,
-        "milestone_title": milestone_title,
-    }
-    if issue_number is not None:
-        frontmatter["issue_number"] = issue_number
-    if github_url is not None:
-        frontmatter["github_url"] = github_url
-    if design_refs:
-        frontmatter["design_refs"] = design_refs
-    if updated_at is not None:
-        frontmatter["updated_at"] = updated_at
+    frontmatter = fm.to_dict()
 
     # Prefix body with issue identifier header for easy agent orientation
-    header = f"# Issue #{slug}: {title}\n\n"
+    header = f"# Issue #{slug}: {fm.title}\n\n"
 
     # Append Agent Workflow section when steps are provided
     workflow_section = ""
-    if agent_workflow:
-        steps = "\n".join(f"{i + 1}. {step}" for i, step in enumerate(agent_workflow))
+    if fm.agent_workflow:
+        steps = "\n".join(f"{i + 1}. {step}" for i, step in enumerate(fm.agent_workflow))
         workflow_section = f"\n\n---\n\n## Agent Workflow\n\n{_AGENT_WORKFLOW_NOTE}\n\n{steps}"
 
     content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{header}{body}{workflow_section}\n"

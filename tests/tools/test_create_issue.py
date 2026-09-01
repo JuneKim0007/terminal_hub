@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from terminal_hub.server import create_server
-from extensions.gh_management.github_planner.storage import STATUS_OPEN, STATUS_PENDING, write_issue_file
+from extensions.gh_management.github_planner.storage import STATUS_OPEN, STATUS_PENDING, IssueFrontmatter, write_issue_file
 
 
 def call(server, tool_name, args):
@@ -149,9 +149,16 @@ def test_draft_issue_no_agent_workflow_no_section(workspace):
 
 def _make_pending(workspace, slug="my-issue", title="My Issue", body="body", labels=None):
     write_issue_file(
-        root=workspace, slug=slug, title=title, body=body,
-        assignees=[], labels=labels or [],
-        created_at=date(2026, 3, 15), status=STATUS_PENDING,
+        root=workspace,
+        slug=slug,
+        body=body,
+        fm=IssueFrontmatter(
+            title=title,
+            assignees=[],
+            labels=labels or [],
+            created_at=date(2026, 3, 15),
+            status=STATUS_PENDING,
+        ),
     )
 
 
@@ -359,15 +366,16 @@ def test_list_issues_compact_shows_design_refs_count(workspace):
     import extensions.gh_management.github_planner.storage as storage
     from datetime import date
     storage.write_issue_file(
-        root=workspace,
-        slug="1",
-        title="Test issue",
-        body="body",
-        assignees=[],
-        labels=["feature"],
-        created_at=date.today(),
-        design_refs=["project_summary.md § Design Principles", "project_detail.md § Auth"],
-    )
+            root=workspace,
+            slug="1",
+            body="body",
+            fm=IssueFrontmatter(
+                title="Test issue",
+                assignees=[],
+                labels=["feature"],
+                created_at=date.today(),
+                design_refs=["project_summary.md § Design Principles", "project_detail.md § Auth"],
+            )        )
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
         server = create_server()
         result = call(server, "list_issues", {"compact": True})

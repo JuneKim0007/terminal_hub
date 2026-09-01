@@ -3,7 +3,7 @@
 Surveyed 2026-08-31 · scope `terminal_hub/` + `extensions/` · 53 files
 Baseline: tests 1074 green · 9,672 lines · 237 comment lines · 126 commits of history
 
-Ids are permanent. Never renumber, never reuse a retired id. Next id: **R23**.
+Ids are permanent. Never renumber, never reuse a retired id. Next id: **R25**.
 
 This file is written by `/refactor-facade` and reconciled by it. Do not mark items
 closed by hand — re-run the survey after a stretch of work and let it find them.
@@ -11,51 +11,6 @@ closed by hand — re-run the survey after a stretch of work and let it find the
 ---
 
 ## Open
-
-### R4 · Duplicate code · 34 sites across 7 files · workspace guard preamble
-```
-status   blocked — awaiting user answer
-evidence the 3-line opening `_p = _pkg(); root = _p.get_workspace_root();
-         if err := _p.ensure_initialized(root): return err` occurs 34 times —
-         labels ×7, issues ×7, project_docs ×6, workspace_tools ×6,
-         milestones ×5, gh_implementation ×2, analysis ×1
-remedy   Extract Method -> refactor-composing-method
-expect   −68…−102 lines
-blocked  safety gate returned ASK (34 call sites, threshold 20). Question put
-         to the user 2026-08-31: decorator / plain helper / leave.
-         Recommended: plain helper, so the ~600-patch-site indirection stays
-         visible at the call site instead of hiding inside a decorator.
-first seen 2026-08-31
-```
-
-### R6 · Shotgun surgery · tool wrapper + implementation + command docs + json
-```
-status   blocked — awaiting user answer
-evidence one concept (a tool) spans 4 artefacts. Co-occurrence over 126 commits:
-         __init__+commands 19x · +storage 7x · +client 7x · +plugin.json 6x ·
-         +unload_policy.json 5x. 8 commits touch wrapper AND domain module AND
-         command doc together.
-remedy   Move Method -> refactor-moving-feats-btw-objects
-expect   a tool change lands in 1 file instead of 2
-blocked  safety gate returned ASK (62 tools relocate, crosses module
-         boundaries). Recommended: move 2 domains (labels, milestones) as a
-         trial, re-survey, then decide the other 9.
-depends  R5 (done) — the registrars must exist before they can move
-first seen 2026-08-31
-```
-
-### R7 · Long parameter list · storage.py:104 · write_issue_file
-```
-status   blocked — awaiting user answer
-evidence 17 named parameters, 7 required. 10 of them (title, status, created_at,
-         assignees, labels, workflow, agent_workflow, note, milestone_number,
-         milestone_title) are assigned straight into one `frontmatter` dict and
-         never read individually.
-remedy   Introduce Parameter Object -> refactor-simplifying-method
-expect   17 params -> 4 + one IssueFrontmatter
-blocked  safety gate returned ASK (46 call sites). Recommended: apply.
-first seen 2026-08-31
-```
 
 ### R9 · Data clumps · 5 groups × 3 sites
 ```
@@ -86,25 +41,6 @@ remedy   Move Method into terminal_hub.workspace -> refactor-moving-feats-btw-ob
 expect   terminal_hub stops naming any plugin
 blocked  33 tests patch ...github_planner.ensure_initialized; needs its own
          safety pass
-first seen 2026-08-31
-```
-
-### R17 · Duplicate setup · 207 sites · create_server() with no fixture
-```
-status   blocked — needs a safety pass
-evidence create_server() is called 207 times across the suite with no shared
-         fixture. Measured 29.1ms each = 6.0s of what was a 14s suite. The cost
-         is not discovery (0.3ms) or instruction building (0.0ms) but
-         registering 66 tools into FastMCP — 99% of it — so it cannot be cached
-         without sharing the instance itself.
-remedy   pytest fixture -> (test infrastructure, no refactor skill)
-expect   -6.0s suite time
-blocked  create_server() calls _state.reset(), and test_server_internals.py and
-         tools/test_plugin_registry.py assert on _PLUGIN_WARNINGS /
-         _LOADED_EXTENSIONS. Mixing a shared server with fresh ones creates
-         order-dependent tests — a worse defect than the 6s it saves. Needs a
-         scoped design (session fixture + explicit opt-out) and proof of
-         order-independence before it is schedulable.
 first seen 2026-08-31
 ```
 
@@ -139,9 +75,95 @@ blocked  none, but low value. The _display assertions in particular are the
 first seen 2026-08-31
 ```
 
+### R24 · Bug · the test suite overwrites tracked repo files
+```
+status   OPEN — highest priority in this file
+evidence Production code writes into the *installed plugin directory*, not the
+         user's workspace:
+           milestones.py:58  labels_file = _p._PLUGIN_DIR / "labels.json"
+           skills.py:78      Path(__file__).parent / "skills" / "SKILLS.md"
+         So running pytest mutates two files tracked in this repo. Proved:
+         restore labels.json, run the suite -> 1 failed; run it again with no
+         other change -> 1084 passed, because run 1 rewrote the file the test
+         reads. The suite's result depends on a file the suite edits.
+         This destroyed uncommitted local edits to labels.json repeatedly during
+         the 2026-09-01 session before the cause was found.
+remedy   route both writes through the workspace root, as every other write in
+         this codebase already does; the plugin directory should be read-only
+         at runtime
+expect   pytest leaves `git status` clean; the order-dependent failure goes away
+blocked  none — this is a bug, not a smell, and it is worth doing before any
+         further refactor
+first seen 2026-09-01
+```
+
+### R23 · Speculative generality · 3 package-root re-exports with no consumer
+```
+status   planned
+evidence _do_assign_milestone, _do_create_milestone and _do_make_label are
+         re-exported from github_planner/__init__.py and referenced nowhere
+         else in src, tests, or docs. Surfaced by the R6 trial: they were only
+         reachable through the wrappers that moved out.
+remedy   delete -> same treatment as R1
+expect   -3 re-exports
+blocked  none. Not folded into R6 so the trial measured one thing only.
+first seen 2026-09-01
+```
+
 ---
 
 ## Done
+
+### R4 · Duplicate code · the workspace guard preamble
+```
+closed 2026-09-01 — one _resolve_root() in pkgref.py replaces 33 of 34 copies.
+The 2 sites in gh_implementation are deliberately left and now say why: its
+tests patch ...gh_implementation.get_workspace_root, its own namespace, so a
+helper resolving through github_planner silently bypasses them — attempting it
+broke 20 tests. Also removed 15 `_p = _pkg()` bindings the change orphaned,
+found by AST because ruff's F841 does not flag a call-valued assignment.
+Chose the plain helper over the decorator, as recommended: a decorator would
+hide the ~600-patch-site indirection where a reader could not see it. Line
+count is roughly flat (-9); the win is DRY. The earlier "-68..-102 lines"
+estimate was for the decorator form and was wrong for this one.
+```
+
+### R6 · Shotgun surgery · tool wrapper vs implementation — 2-domain trial
+```
+closed 2026-09-01 (trial only) — labels and milestones now own their wrappers:
+  labels.py      register_label_tools(mcp)      7 wrappers beside 7 impls
+  milestones.py  register_milestone_tools(mcp)  5 beside 5
+  _register_batch_analysis_tools  67 -> 31 stmts, 22 -> 10 tools
+A labels or milestones tool change now lands in one file. Wire surface verified
+identical: 66 callables, same names, decorators, signatures and docstrings —
+the docstring IS the MCP schema, so moving a wrapper moves the contract.
+The remaining 9 domains are NOT done. Re-run the survey to measure whether the
+co-occurrence counts actually fell before moving them.
+```
+
+### R7 · Long parameter list · write_issue_file
+```
+closed 2026-09-01 — IssueFrontmatter parameter object; 17 params -> 4. Fourteen
+of the seventeen existed only to assemble one front-matter dict, and to_dict()
+now owns the "always present" vs "only when set" distinction. 48 call sites
+rewritten by codemod, then rewrapped (it emitted lines up to 577 chars).
+Behaviour proved beyond the suite: an issue written with every field populated
+is byte-identical to the previous implementation's output, YAML key order
+included. That mattered because the file is a stored format.
+```
+
+### R17 · Duplicate setup · create_server() with no fixture
+```
+closed 2026-09-01 — 228 calls at 29ms = 7.18s of a 9.18s suite. Now one shared
+instance: suite 9.48s -> 1.93s, coverage unchanged at 91.14%.
+Safe because tool bodies resolve get_workspace_root() at call time, so later
+patches still apply. _state is the part that is not safe, so the template
+snapshots _LOADED_EXTENSIONS/_PLUGIN_WARNINGS and every handout restores them.
+@pytest.mark.fresh_server opts out; exactly one test needs it.
+Installed at conftest import time, not in a fixture — `from terminal_hub.server
+import create_server` binds at module import, before fixtures run.
+Order-independence checked with pytest-randomly seeds 1/42/7.
+```
 
 ### R8 · Long method · the _do_* cluster — complete
 ```

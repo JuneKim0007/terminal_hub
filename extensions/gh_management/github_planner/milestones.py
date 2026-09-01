@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 
-from extensions.gh_management.github_planner.pkgref import _pkg
+from extensions.gh_management.github_planner.pkgref import _pkg, _resolve_root
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _MILESTONE_CACHE: dict[str, list[dict]] = {}  # repo -> [{number, title, description}]
@@ -215,8 +215,8 @@ def _check_detail_gaps(detail_sections: dict, milestone_title: str) -> list[str]
 def _do_list_milestones(state: str = "open") -> dict:
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     repo = _p.read_env(root).get("GITHUB_REPO", "")
     if repo in _MILESTONE_CACHE:
@@ -245,8 +245,8 @@ def _do_list_milestones(state: str = "open") -> dict:
 def _do_create_milestone(title: str, description: str = "", due_on: str | None = None) -> dict:
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     if not title:
         return {"error": "missing_field", "message": "title is required"}
@@ -279,8 +279,8 @@ def _do_assign_milestone(slug: str, milestone_number: int) -> dict:
     import yaml as _yaml
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
     repo = _p.read_env(root).get("GITHUB_REPO", "")
     ms = _MILESTONE_CACHE.get(repo, [])
@@ -385,8 +385,8 @@ def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
     from datetime import datetime, timezone
     _p = _pkg()
 
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     repo = _p.read_env(root).get("GITHUB_REPO", "")
@@ -468,10 +468,8 @@ def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
 
 def _do_load_milestone_knowledge(milestone_number: int) -> dict:
     """Load the knowledge file for a milestone."""
-    _p = _pkg()
-
-    root = _p.get_workspace_root()
-    if err := _p.ensure_initialized(root):
+    root, err = _resolve_root()
+    if err:
         return err
 
     path = _milestone_knowledge_path(root, milestone_number)
@@ -489,3 +487,75 @@ def _do_load_milestone_knowledge(milestone_number: int) -> dict:
         "exists": True,
         "_display": f"📄 Loaded M{milestone_number} knowledge",
     }
+
+
+def register_milestone_tools(mcp) -> None:
+    """Register the milestone MCP tools."""
+    @mcp.tool()
+    def list_milestones(state: str = "open") -> dict:
+        """List GitHub milestones. Uses in-memory cache if populated — no API call needed.
+
+        If _MILESTONE_CACHE is populated for this repo, return cached data directly.
+        Only call this when you genuinely don't know the current milestones.
+        state: 'open' | 'closed' | 'all'
+        """
+        return _do_list_milestones(state)
+
+
+    @mcp.tool()
+    def create_milestone(title: str, description: str = "", due_on: str | None = None) -> dict:
+        """Create a GitHub milestone (idempotent — returns existing if title already taken).
+
+        **Convention:** Only create a milestone when a coherent group of related features
+        warrants a named release phase — typically >= 3 issues with a shared theme.
+        Name pattern: descriptive theme (e.g. "Core Auth", "Posting & Feed", "Launch Polish").
+        Avoid generic names like "Milestone 1" or "Phase A".
+
+        **Auto-label:** After creation, a milestone label `m{N}` is automatically created
+        on GitHub and synced to labels.json so issues can be tagged by milestone.
+
+        title: short descriptive theme (e.g. "Core Auth")
+        description: one sentence — what the user can do after this milestone ships
+        due_on: optional ISO 8601 date string (e.g. '2026-04-01T00:00:00Z')
+        """
+        return _do_create_milestone(title, description, due_on)
+
+
+    @mcp.tool()
+    def assign_milestone(slug: str, milestone_number: int) -> dict:
+        """Assign a milestone to a local issue and update GitHub if the issue is submitted.
+
+        slug: local issue slug (e.g. '1', 'fix-auth-bug')
+        milestone_number: GitHub milestone number (from create_milestone or list_milestones)
+
+        Updates both local front matter and GitHub. Idempotent — safe to call multiple times.
+        """
+        return _do_assign_milestone(slug, milestone_number)
+
+
+    @mcp.tool()
+    def generate_milestone_knowledge(milestone_number: int) -> dict:
+        """Generate a structured knowledge file for a milestone at hub_agents/milestones/M{n}.md.
+
+        Reads milestone details from _MILESTONE_CACHE and project docs from _PROJECT_DOCS_CACHE.
+        Writes a structured markdown file covering: Goal, Features Governed, Interface Contract,
+        Depends On, Enables, and Design Principles Applicable.
+
+        Also updates milestone_index.json, syncs project_summary.md Milestones table,
+        and updates Enables/Depends On links in adjacent milestone knowledge files.
+
+        milestone_number: GitHub milestone number (e.g. 1, 2, 3)
+        """
+        return _do_generate_milestone_knowledge(milestone_number)
+
+
+    @mcp.tool()
+    def load_milestone_knowledge(milestone_number: int) -> dict:
+        """Load the knowledge file for a milestone from hub_agents/milestones/M{n}.md.
+
+        Returns {milestone_number, content, exists, _display}.
+        If the file does not exist, returns exists=False with instructions to generate it.
+
+        milestone_number: GitHub milestone number (e.g. 1, 2, 3)
+        """
+        return _do_load_milestone_knowledge(milestone_number)

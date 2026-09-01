@@ -13,7 +13,7 @@ from extensions.gh_management.github_planner.storage import (
     resolve_slug,
     update_issue_status,
     write_doc_file,
-    write_issue_file,
+    IssueFrontmatter, write_issue_file,
 )
 
 
@@ -27,9 +27,10 @@ def workspace(tmp_path):
 
 def test_write_pending_issue_has_status(workspace):
     write_issue_file(
-        root=workspace, slug="fix-auth-bug", title="Fix auth bug",
-        body="## Overview\nFix it.", assignees=[], labels=[],
-        created_at=date(2026, 3, 15),
+        root=workspace,
+        slug="fix-auth-bug",
+        body="## Overview\nFix it.",
+        fm=IssueFrontmatter(title="Fix auth bug", assignees=[], labels=[], created_at=date(2026, 3, 15)),
     )
     fm = read_issue_frontmatter(workspace, "fix-auth-bug")
     assert fm["title"] == "Fix auth bug"
@@ -41,12 +42,18 @@ def test_write_pending_issue_has_status(workspace):
 
 def test_write_open_issue_includes_number_and_url(workspace):
     write_issue_file(
-        root=workspace, slug="open-issue", title="Open issue",
-        body="body", assignees=[], labels=[],
-        created_at=date(2026, 3, 15),
-        status=STATUS_OPEN,
-        issue_number=42,
-        github_url="https://github.com/o/r/issues/42",
+        root=workspace,
+        slug="open-issue",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Open issue",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 15),
+            status=STATUS_OPEN,
+            issue_number=42,
+            github_url="https://github.com/o/r/issues/42",
+        ),
     )
     fm = read_issue_frontmatter(workspace, "open-issue")
     assert fm["status"] == STATUS_OPEN
@@ -56,8 +63,10 @@ def test_write_open_issue_includes_number_and_url(workspace):
 
 def test_read_issue_file_returns_full_content(workspace):
     write_issue_file(
-        root=workspace, slug="my-issue", title="My issue",
-        body="body text", assignees=[], labels=[], created_at=date(2026, 3, 15),
+        root=workspace,
+        slug="my-issue",
+        body="body text",
+        fm=IssueFrontmatter(title="My issue", assignees=[], labels=[], created_at=date(2026, 3, 15)),
     )
     content = read_issue_file(workspace, "my-issue")
     assert "My issue" in content
@@ -72,8 +81,10 @@ def test_read_issue_file_returns_none_when_missing(workspace):
 
 def test_update_issue_status_to_open(workspace):
     write_issue_file(
-        root=workspace, slug="pending-issue", title="Pending",
-        body="body", assignees=[], labels=[], created_at=date(2026, 3, 15),
+        root=workspace,
+        slug="pending-issue",
+        body="body",
+        fm=IssueFrontmatter(title="Pending", assignees=[], labels=[], created_at=date(2026, 3, 15)),
     )
     update_issue_status(workspace, "pending-issue", STATUS_OPEN, issue_number=7, github_url="https://gh/7")
     fm = read_issue_frontmatter(workspace, "pending-issue")
@@ -84,8 +95,10 @@ def test_update_issue_status_to_open(workspace):
 
 def test_update_issue_status_preserves_body(workspace):
     write_issue_file(
-        root=workspace, slug="body-issue", title="Body issue",
-        body="important body text", assignees=[], labels=[], created_at=date(2026, 3, 15),
+        root=workspace,
+        slug="body-issue",
+        body="important body text",
+        fm=IssueFrontmatter(title="Body issue", assignees=[], labels=[], created_at=date(2026, 3, 15)),
     )
     update_issue_status(workspace, "body-issue", STATUS_OPEN)
     content = read_issue_file(workspace, "body-issue")
@@ -101,10 +114,11 @@ def test_update_issue_status_returns_none_when_missing(workspace):
 def test_list_issue_files_sorted_by_date_desc(workspace):
     for slug, day in [("issue-a", 10), ("issue-b", 15), ("issue-c", 5)]:
         write_issue_file(
-            root=workspace, slug=slug, title=slug,
-            body="body", assignees=[], labels=[],
-            created_at=date(2026, 3, day),
-        )
+        root=workspace,
+        slug=slug,
+        body="body",
+        fm=IssueFrontmatter(title=slug, assignees=[], labels=[], created_at=date(2026, 3, day)),
+    )
     issues = list_issue_files(workspace)
     assert [i["slug"] for i in issues] == ["issue-b", "issue-a", "issue-c"]
 
@@ -115,9 +129,15 @@ def test_list_issue_files_empty(workspace):
 
 def test_list_issue_files_includes_status(workspace):
     write_issue_file(
-        root=workspace, slug="full-issue", title="Full issue",
-        body="b", assignees=["alice"], labels=["bug"],
-        created_at=date(2026, 3, 15),
+        root=workspace,
+        slug="full-issue",
+        body="b",
+        fm=IssueFrontmatter(
+            title="Full issue",
+            assignees=["alice"],
+            labels=["bug"],
+            created_at=date(2026, 3, 15),
+        ),
     )
     issues = list_issue_files(workspace)
     assert issues[0]["status"] == STATUS_PENDING
@@ -204,10 +224,11 @@ def test_write_issue_file_raises_on_oserror(tmp_path):
     with patch("extensions.gh_management.github_planner.storage.os.replace", side_effect=OSError("disk full")):
         with pytest.raises(OSError, match="disk full"):
             write_issue_file(
-                root=tmp_path, slug="my-issue", title="My Issue",
-                body="body", assignees=[], labels=[],
-                created_at=date(2026, 3, 15),
-            )
+        root=tmp_path,
+        slug="my-issue",
+        body="body",
+        fm=IssueFrontmatter(title="My Issue", assignees=[], labels=[], created_at=date(2026, 3, 15)),
+    )
 
 
 # ── read_issue_frontmatter: no YAML separator ─────────────────────────────────
@@ -263,9 +284,10 @@ def test_list_issue_files_ignores_files_with_invalid_slugs(workspace):
 def test_update_issue_status_writes_number_and_url(workspace):
     """Lines 201, 211, 217-218: update_issue_status persists issue_number and github_url."""
     write_issue_file(
-        root=workspace, slug="pending-update", title="Pending",
-        body="body text", assignees=[], labels=[],
-        created_at=date(2026, 3, 15),
+        root=workspace,
+        slug="pending-update",
+        body="body text",
+        fm=IssueFrontmatter(title="Pending", assignees=[], labels=[], created_at=date(2026, 3, 15)),
     )
     result = update_issue_status(
         workspace, "pending-update",
@@ -368,9 +390,15 @@ def test_read_doc_file_oserror_on_read_returns_none(workspace):
 
 def test_list_issue_titles_returns_minimal_fields(workspace):
     write_issue_file(
-        root=workspace, slug="lean-issue", title="Lean Title",
-        body="body", assignees=["alice"], labels=["feature"],
-        created_at=date(2026, 3, 10),
+        root=workspace,
+        slug="lean-issue",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Lean Title",
+            assignees=["alice"],
+            labels=["feature"],
+            created_at=date(2026, 3, 10),
+        ),
     )
     titles = list_issue_titles(workspace)
     assert len(titles) == 1
@@ -397,19 +425,21 @@ def test_list_issue_titles_missing_dir(tmp_path):
 def test_list_issue_titles_sorted_by_date_desc(workspace):
     for slug, day in [("t-a", 5), ("t-b", 20), ("t-c", 12)]:
         write_issue_file(
-            root=workspace, slug=slug, title=slug,
-            body="b", assignees=[], labels=[],
-            created_at=date(2026, 3, day),
-        )
+        root=workspace,
+        slug=slug,
+        body="b",
+        fm=IssueFrontmatter(title=slug, assignees=[], labels=[], created_at=date(2026, 3, day)),
+    )
     titles = list_issue_titles(workspace)
     assert [t["slug"] for t in titles] == ["t-b", "t-c", "t-a"]
 
 
 def test_list_issue_files_includes_milestone_number(workspace):
     write_issue_file(
-        root=workspace, slug="ms-issue", title="Milestone Issue",
-        body="b", assignees=[], labels=[],
-        created_at=date(2026, 3, 1),
+        root=workspace,
+        slug="ms-issue",
+        body="b",
+        fm=IssueFrontmatter(title="Milestone Issue", assignees=[], labels=[], created_at=date(2026, 3, 1)),
     )
     # Patch in a milestone_number via direct frontmatter write
     issue_path = workspace / "hub_agents" / "issues" / "ms-issue.md"

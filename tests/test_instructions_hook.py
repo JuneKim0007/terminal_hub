@@ -133,10 +133,14 @@ def test_github_unavailable_includes_guidance(tmp_path):
     import json
     from datetime import date
     from extensions.gh_management.github_planner.auth import TokenSource
-    from extensions.gh_management.github_planner.storage import write_issue_file
+    from extensions.gh_management.github_planner.storage import IssueFrontmatter, write_issue_file
     (tmp_path / "hub_agents" / "issues").mkdir(parents=True)
-    write_issue_file(root=tmp_path, slug="x", title="x", body="y",
-                     assignees=[], labels=[], created_at=date.today())
+    write_issue_file(
+        root=tmp_path,
+        slug="x",
+        body="y",
+        fm=IssueFrontmatter(title="x", assignees=[], labels=[], created_at=date.today()),
+    )
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=tmp_path), \
          patch("extensions.gh_management.github_planner.resolve_token", return_value=(None, TokenSource.NONE)):
         s = create_server()

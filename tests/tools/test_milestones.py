@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from terminal_hub.server import create_server
-from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
+from extensions.gh_management.github_planner.storage import IssueFrontmatter, write_issue_file, STATUS_PENDING
 
 
 def call(server, tool_name, args):
@@ -107,8 +107,16 @@ def test_assign_milestone_updates_frontmatter(workspace):
     _MILESTONE_CACHE["o/r"] = [{"number": 2, "title": "Posting", "description": "...", "open_issues": 0}]
 
     write_issue_file(
-        root=workspace, slug="my-issue", title="Add post", body="body",
-        assignees=[], labels=[], created_at=date(2026, 3, 18), status=STATUS_PENDING,
+        root=workspace,
+        slug="my-issue",
+        body="body",
+        fm=IssueFrontmatter(
+            title="Add post",
+            assignees=[],
+            labels=[],
+            created_at=date(2026, 3, 18),
+            status=STATUS_PENDING,
+        ),
     )
 
     with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \

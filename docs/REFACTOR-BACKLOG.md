@@ -3,7 +3,7 @@
 Surveyed 2026-08-31 · scope `terminal_hub/` + `extensions/` · 53 files
 Baseline: tests 1074 green · 9,672 lines · 237 comment lines · 126 commits of history
 
-Ids are permanent. Never renumber, never reuse a retired id. Next id: **R26**.
+Ids are permanent. Never renumber, never reuse a retired id. Next id: **R27**.
 
 This file is written by `/refactor-facade` and reconciled by it. Do not mark items
 closed by hand — re-run the survey after a stretch of work and let it find them.
@@ -11,55 +11,6 @@ closed by hand — re-run the survey after a stretch of work and let it find the
 ---
 
 ## Open
-
-### R9 · Data clumps · 5 groups × 3 sites
-```
-status   planned
-evidence (name,color,description) __init__/labels/client ·
-         (title,description,due_on) __init__/milestones/client ·
-         (feature_name,overview,milestone,guidelines,anti_patterns) ×3 ·
-         (title,description,notes) ×3 · (overview,components,notes) ×3.
-         Deletion test passes on all five.
-remedy   Introduce Parameter Object -> refactor-simplifying-method
-expect   5 groups -> 5 value types; the MCP wrapper keeps flat params (wire)
-blocked  interacts with R6 — decide the wrapper location first
-first seen 2026-08-31
-```
-
-### R16 · Inappropriate intimacy · terminal_hub/server/__init__.py · residual host→plugin dependency
-```
-status   planned
-evidence after R1/R2 the host still imports 3 names from the plugin —
-         ensure_initialized, get_github_client, _invalidate_repo_cache — read
-         via `_srv.<name>` by tools.setup, tools.runtime_state,
-         tools.plugin_registry. These are genuine plugin functions, not
-         aliases, so the cycle is narrowed (8 names / 2 blocks -> 3 / 1) and
-         not closed. ensure_initialized only checks `(root/"hub_agents")
-         .exists()` — hub_agents/ is terminal-hub's own directory, so this
-         looks like core policy living in a plugin.
-remedy   Move Method into terminal_hub.workspace -> refactor-moving-feats-btw-objects
-expect   terminal_hub stops naming any plugin
-blocked  33 tests patch ...github_planner.ensure_initialized; needs its own
-         safety pass
-first seen 2026-08-31
-```
-
-### R18 · Tests · zero-unique-coverage files
-```
-status   planned
-evidence per-file unique line coverage measured across 56 test files, with the
-         427-line import-time baseline subtracted. Files adding zero unique
-         line coverage: tools/test_list_issues.py (real 544),
-         tools/test_setup_status_existing.py (516), test_config.py (22),
-         test_slugify.py (8). test_plugin_customization.py was in this set and
-         is now closed.
-remedy   inspect each for behaviourally-unique assertions, then merge or delete
-expect   fewer tests, same coverage
-blocked  none — but see the note below: zero unique LINE coverage is not proof
-         of redundancy. 2 of the 9 tests in the file closed this run were
-         behaviourally unique despite contributing no unique lines.
-first seen 2026-08-31
-```
 
 ### R19 · Tests · contract-shaped assertions
 ```
@@ -75,9 +26,87 @@ blocked  none, but low value. The _display assertions in particular are the
 first seen 2026-08-31
 ```
 
+### R9 · Data clumps · 5 groups x 3 sites
+```
+dropped 2026-09-01 — the original survey counted a tool's wrapper and its
+implementation as two independent sites. They are not: the wrapper's signature
+IS the MCP schema, so it must mirror the implementation. Re-measured, all 22
+repeated signature groups contain a wrapper->impl mirror, and the residual
+third member of each x3 group has exactly one call site passing everything
+straight through:
+  _render_description, _render_architecture, _render_detail_section  1 site each
+  create_milestone                                                   1 site
+  create_label                                                       3 sites
+A parameter object would therefore have one producer and one consumer for four
+of the five — Lazy Class, which check-safety-refactoring lists as a fix that
+introduces its own smell. The fifth (create_label) has a latent record type in
+labels.json, but formalising it crosses a stored format, the same reason R11
+and R15 were dropped.
+```
+
+### R18 · Tests · zero-unique-coverage files
+```
+dropped 2026-09-01 — zero unique LINE coverage is not evidence of redundancy in
+this codebase, and acting on it would delete real assertions.
+test_slugify.py contributes 0 unique lines and is the ONLY file asserting
+slugify's behaviour: 10 parametrised cases covering unicode stripping, the
+60-char cap and hyphen trimming. It scores zero because slugify is 8 lines that
+other tests execute incidentally.
+test_config.py is the same shape — 8 focused tests of config save/load and
+preferences, all lines touched elsewhere.
+The one genuine duplicate this line of enquiry ever found (R18a) was identified
+by reading test NAMES, not coverage. Use that method if the question returns.
+```
+
+### R26 · Inappropriate intimacy · the host still does GitHub work
+```
+status   planned
+evidence server/__init__.py imports get_github_client and _invalidate_repo_cache
+         from github_planner, and tools/setup.py imports load_default_labels.
+         Both are genuinely GitHub-specific, so the names are not the problem —
+         the problem is that setup_workspace configures a repo and warms its
+         labels, which is the host performing plugin work. The plugin loader
+         exists precisely so the host need not know its plugins.
+remedy   a post-setup plugin hook the plugin registers, so the host announces
+         "a workspace was configured" and github_planner reacts
+expect   terminal_hub stops naming any plugin
+blocked  none, but it is a design change rather than a move; wants its own pass
+first seen 2026-09-01
+```
+
 ---
 
 ## Done
+
+### R6 · Shotgun surgery · tool wrapper vs implementation — complete
+```
+closed 2026-09-01 — the trial said re-measure before moving the rest. Measured
+12 wrappers beside their implementation and 49 not, all 49 with the same clean
+one-wrapper-one-_do_ shape. After the move: 61 beside, 0 split. Adding or
+changing a tool now touches one file.
+Nine _register_* husks left holding only a docstring were removed.
+__init__.py 987 -> 416 lines.
+Wire surface identical: 66 callables, same names/decorators/signatures/
+docstrings; the built server still exposes 91 tools with no load warnings.
+Side effect: 23 orphaned package-root re-exports deleted (no consumer by any
+access style, suite as detector), and the 108 that remain declared in __all__
+instead of looking like dead imports. Lint 100 -> 29.
+```
+
+### R16 · Inappropriate intimacy · host importing plugin functions
+```
+closed 2026-09-01 (partially — see R26) — workspace-initialisation policy moved
+to terminal_hub/workspace/init_state.py. The host had been importing
+ensure_initialized from a plugin to answer a question about itself: whether
+hub_agents/, its own directory addressed by its own terminal-hub:// scheme,
+exists. github_planner re-exports the name so ~35 patch sites keep working and
+the response text is byte-identical.
+Also removed a duplicate: get_setup_status re-implemented the hub_agents/ check
+and kept its own copy of the terminal-hub://workflow/init constant. The
+condition is now shared; the two messages stay different on purpose, and the
+code says why.
+server/__init__.py's plugin import: 3 names -> 2.
+```
 
 ### R25 · Bug · terminal_hub.server._PLUGIN_WARNINGS was a stale binding
 ```
@@ -131,19 +160,6 @@ Chose the plain helper over the decorator, as recommended: a decorator would
 hide the ~600-patch-site indirection where a reader could not see it. Line
 count is roughly flat (-9); the win is DRY. The earlier "-68..-102 lines"
 estimate was for the decorator form and was wrong for this one.
-```
-
-### R6 · Shotgun surgery · tool wrapper vs implementation — 2-domain trial
-```
-closed 2026-09-01 (trial only) — labels and milestones now own their wrappers:
-  labels.py      register_label_tools(mcp)      7 wrappers beside 7 impls
-  milestones.py  register_milestone_tools(mcp)  5 beside 5
-  _register_batch_analysis_tools  67 -> 31 stmts, 22 -> 10 tools
-A labels or milestones tool change now lands in one file. Wire surface verified
-identical: 66 callables, same names, decorators, signatures and docstrings —
-the docstring IS the MCP schema, so moving a wrapper moves the contract.
-The remaining 9 domains are NOT done. Re-run the survey to measure whether the
-co-occurrence counts actually fell before moving them.
 ```
 
 ### R7 · Long parameter list · write_issue_file

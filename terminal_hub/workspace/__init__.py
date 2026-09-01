@@ -13,6 +13,12 @@ from terminal_hub.workspace.locator import (
     resolve_workspace_root,
     set_active_project_root,
 )
+from terminal_hub.workspace.init_state import (
+    G_INIT,
+    ensure_initialized,
+    hub_agents_dir,
+    is_initialized,
+)
 from terminal_hub.workspace.platform_runner import (
     detect_distro,
     detect_platform,
@@ -26,6 +32,10 @@ __all__ = [
     "is_valid_project",
     "init_workspace",
     "detect_repo",
+    "ensure_initialized",
+    "is_initialized",
+    "hub_agents_dir",
+    "G_INIT",
     "detect_distro",
     "detect_platform",
     "escalate_to_agent",

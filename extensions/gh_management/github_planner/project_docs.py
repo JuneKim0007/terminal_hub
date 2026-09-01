@@ -632,3 +632,157 @@ def _do_get_session_header() -> dict:
         result["total_sections"] = total_sections
     _SESSION_HEADER_CACHE[root_key] = result
     return result
+
+
+def register_project_docs_tools(mcp) -> None:
+    """Register the structured project-documentation tools."""
+    @mcp.tool()
+    def update_project_detail_section(
+        feature_name: str,
+        overview: str,
+        milestone: str | None = None,
+        guidelines: list[str] | None = None,
+        anti_patterns: list[str] | None = None,
+    ) -> dict:
+        """Merge a single H2 section into project_detail.md without rewriting the full file.
+
+        feature_name: H2 heading for this section (e.g. "Tab Navigation & Routing")
+        overview: 1-3 sentence description of this feature area
+        milestone: optional milestone label e.g. "M1 — Core Auth"
+        guidelines: bullet-point rules for this feature (rendered as "- item")
+        anti_patterns: things to avoid (rendered as "- item")
+
+        If '## {feature_name}' already exists, replaces that section only.
+        Otherwise appends a new section. Use instead of save_project_docs when
+        adding/updating a single feature area to avoid accidental truncation (#65).
+
+        Decision rule for when to call:
+        - Issue labels include 'enhancement' or 'feature' → call this
+        - Issue labels include 'architecture' → call this for Design Principles section
+        - Labels are only 'bug', 'chore', 'refactor', 'docs' → do NOT call (no doc update)
+        - No labels → ask user first"""
+        return _do_update_project_detail_section(feature_name, overview, milestone, guidelines, anti_patterns)
+
+
+    @mcp.tool()
+    def update_project_summary_section(
+        section_name: str,
+        items: list[str] | None = None,
+        table_rows: list[dict] | None = None,
+    ) -> dict:
+        """Merge a single H2 section into project_summary.md without rewriting the full file (#137).
+
+        section_name: H2 heading (e.g. "Design Principles", "Milestones")
+        items: list of bullet-point strings — use for Design Principles, feature lists, etc.
+        table_rows: list of dicts for table sections — use for Milestones
+                    e.g. [{"#": "M1", "Name": "Core Auth", "Delivers": "Users can sign up"}]
+
+        If '## {section_name}' already exists, replaces that section only.
+        Otherwise appends a new section. Use this to persist Milestones, Design Principles,
+        or other top-level summary sections without overwriting the rest of the file.
+
+        Primary use cases:
+        - After milestone creation: section_name='Milestones', table_rows=[{"#":"M1","Name":"...","Delivers":"..."}]
+        - Design principles: section_name='Design Principles', items=["No global state", ...]
+        - When project goals change: update the relevant section only"""
+        return _do_update_project_summary_section(section_name, items, table_rows)
+
+
+    @mcp.tool()
+    def update_project_description(title: str, description: str, notes: str = "") -> dict:
+        """Overwrite hub_agents/project_description.md with structured fields.
+
+        title: project name
+        description: 1-3 sentence project overview
+        notes: optional constraints or deployment notes
+        Call get_project_context first to preserve existing content."""
+        return _do_update_project_description(title, description, notes)
+
+
+    @mcp.tool()
+    def update_architecture(overview: str, components: list[str] | None = None, notes: str = "") -> dict:
+        """Overwrite hub_agents/architecture_design.md with structured fields.
+
+        overview: 1-3 sentence architecture summary
+        components: list of key components (rendered as bullet list)
+        notes: optional notes
+        Call get_project_context first to preserve existing content."""
+        return _do_update_architecture(overview, components, notes)
+
+
+    @mcp.tool()
+    def get_project_context(doc_key: str) -> dict:
+        """Read project_description.md and/or architecture_design.md from hub_agents/.
+        doc_key: 'project_description', 'architecture', or 'all'."""
+        return _do_get_project_context(doc_key)
+
+
+    @mcp.tool()
+    def save_project_docs(
+        goal: str,
+        tech_stack: list[str],
+        notes: str = "",
+        design_principles: list[str] | None = None,
+        repo: str | None = None,
+    ) -> dict:
+        """Initialise project_summary.md with structured fields — no raw markdown blobs.
+
+        goal: one-sentence description of what the project does
+        tech_stack: list of framework/language names e.g. ["React 19", "TypeScript", "Vite"]
+        notes: optional deployment/constraint note (short string)
+        design_principles: list of architectural rules e.g. ["No global state", "Color tokens only"]
+
+        After calling this, use update_project_summary_section() to add further H2 sections
+        (Milestones, Feature Sections, etc.) and update_project_detail_section() for per-feature notes.
+        """
+        return _do_save_project_docs(goal, tech_stack, notes, design_principles, repo)
+
+
+    @mcp.tool()
+    def load_project_docs(doc: str = "summary", repo: str | None = None, force_reload: bool = False) -> dict:
+        """Read project docs from cache (fast) or disk.
+
+        doc: 'summary', 'detail', or 'all'.
+        force_reload: bypass cache and re-read from disk.
+        Returns {summary: str|None, detail: str|None}.
+        """
+        return _do_load_project_docs(doc, repo, force_reload)
+
+
+    @mcp.tool()
+    def docs_exist(repo: str | None = None) -> dict:
+        """Check whether project_summary.md and project_detail.md exist on disk.
+
+        Returns {summary_exists, detail_exists, summary_age_hours, sections}.
+        sections: list of H2 headings from project_detail.md — use to decide
+        whether a relevant feature section exists before calling lookup_feature_section.
+        """
+        return _do_docs_exist(repo)
+
+
+    @mcp.tool()
+    def lookup_feature_section(feature: str, repo: str | None = None) -> dict:
+        """Return the project_detail.md section whose heading best matches `feature`.
+
+        Matching order: exact → substring → prefix. Uses section-level cache so
+        only the matching section (not the full detail doc) is returned to Claude.
+
+        Returns:
+          matched=True:  {feature, section, global_rules, available_features}
+          matched=False: {available_features, global_rules, reason?}
+
+        Call this BEFORE drafting any issue body when project_detail.md exists.
+        If matched=False, show available_features and ask the user whether to add
+        rules for this feature before proceeding.
+        """
+        return _do_lookup_feature_section(feature, repo)
+
+
+    @mcp.tool()
+    def get_session_header() -> dict:
+        """Return a ≤80-token context blob for session start. Cached after first call.
+
+        Returns {docs: bool, age_hours?, title?, stale?}.
+        Call at session start to decide whether to load full project docs.
+        """
+        return _do_get_session_header()

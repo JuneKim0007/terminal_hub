@@ -621,3 +621,88 @@ def _do_run_analyzer() -> dict:
         "summary": summary,
         "_display": display,
     }
+
+
+def register_analysis_tools(mcp) -> None:
+    """Register the repo-analysis and scan-profile tools."""
+    @mcp.tool()
+    def run_analyzer() -> dict:
+        """Analyze the GitHub repo and write a snapshot to hub_agents/analyzer_snapshot.json."""
+        return _do_run_analyzer()
+
+
+    @mcp.tool()
+    def start_repo_analysis(repo: str | None = None) -> dict:
+        """Fetch the full file tree for a GitHub repo and queue files for analysis.
+
+        Partitions files: markdown/docs first, code second (smallest first).
+        Caps at 200 files. Stores state in the MCP server runtime cache.
+        repo: 'owner/repo' — omit to use the configured GITHUB_REPO.
+        """
+        return _do_start_repo_analysis(repo)
+
+
+    @mcp.tool()
+    def fetch_analysis_batch(repo: str | None = None, batch_size: int = 5) -> dict:
+        """Fetch the next batch of files from the analysis queue and return their contents.
+
+        Call start_repo_analysis first. Markdown files are returned before code files.
+        Repeat until done==True. batch_size: 1–20 (default 5).
+        Returns {files: [{path, content, is_markdown}], analyzed_count, remaining_count, done}.
+        """
+        return _do_fetch_analysis_batch(repo, batch_size)
+
+
+    @mcp.tool()
+    def get_analysis_status(repo: str | None = None) -> dict:
+        """Return the current analysis progress from the runtime cache (no I/O).
+
+        Returns {analyzed_count, remaining_count, analyzed_paths, remaining_paths, done}.
+        """
+        return _do_get_analysis_status(repo)
+
+
+    @mcp.tool()
+    def analyze_repo_full(repo: str | None = None) -> dict:
+        """Fetch the full repo tree and return a compact structured file index in one call.
+
+        Python fetches files and extracts structural metadata (exports, headings, imports).
+        Claude receives ~30 tokens/file instead of ~150 tokens/file of raw content.
+        Uses blob SHA comparison to skip unchanged files on re-analysis.
+        Returns {repo, file_index, total_files, fetched, skipped_unchanged, skipped_errors}.
+        """
+        return _do_analyze_repo_full(repo)
+
+
+    @mcp.tool()
+    def get_file_tree(refresh: bool = False) -> dict:
+        """Return an organized file-tree index of the workspace root.
+
+        Cached in memory and on disk (TTL 1 hour). Use refresh=True to force
+        a re-walk of the filesystem. Excludes .git, __pycache__, venv, etc.
+
+        Returns {tree, flat_index, total_files, fetched_at, root}.
+        Use flat_index for quick path lookups; tree for navigating structure.
+        """
+        return _do_get_file_tree(refresh)
+
+
+    @mcp.tool()
+    def get_scan_profile_status() -> dict:
+        """Check if hub_agents/scan_profile.yaml exists.
+
+        Returns {exists, needs_creation, profile, _display}.
+        If needs_creation=true, print _display and ask user to create it before analyzing.
+        Call this at the start of gh-plan-analyze before running analysis.
+        """
+        return _do_get_scan_profile_status()
+
+
+    @mcp.tool()
+    def create_scan_profile(content: str | None = None) -> dict:
+        """Create hub_agents/scan_profile.yaml.
+
+        content: optional custom YAML string. If omitted, writes the default profile.
+        Default includes common code/doc extensions, excludes node_modules/.git/venv/etc.
+        """
+        return _do_create_scan_profile(content)

@@ -645,3 +645,145 @@ def _do_load_implementation_context(
         "context_ready": True,
         "_display": f"✅ **Context loaded** — issue #{issue_slug}, {len(design_sections)} design sections",
     }
+
+
+def register_workspace_tools(mcp) -> None:
+    """Register workspace, preference, docs-strategy and unload tools."""
+    @mcp.tool()
+    def set_preference(key: str, value: bool) -> dict:
+        """Persist a user preference in hub_agents/config.yaml.
+        Supported keys: confirm_arch_changes (bool), github_repo_connected (bool).
+        confirm_arch_changes=True → always ask before auto-updating project docs.
+        confirm_arch_changes=False → auto-update docs silently.
+        github_repo_connected tracks whether a GitHub repo has been linked."""
+        return _do_set_preference(key, value)
+
+
+    @mcp.tool()
+    def create_github_repo(name: str, description: str, private: bool = True) -> dict:
+        """Create a new GitHub repo under the authenticated user and link it to this workspace.
+
+        Call this when the user wants terminal-hub to set up their GitHub repo automatically.
+        Ask for public/private preference before calling.
+        name: repo name (no owner prefix — GitHub adds it automatically)
+        description: short repo description (used as the GitHub repo description)
+        private: True for private, False for public"""
+        return _do_create_github_repo(name, description, private)
+
+
+    @mcp.tool()
+    def save_docs_strategy(strategy: str, referred_docs: list[str] | None = None) -> dict:
+        """Persist how to handle existing .md docs found during repo analysis (#84).
+
+        strategy: 'refer' | 'overwrite' | 'merge' | 'ignore'
+        referred_docs: paths of docs to use as context (only for strategy='refer').
+        Saved to hub_agents/extensions/gh_planner/docs_strategy.json."""
+        return _do_save_docs_strategy(strategy, referred_docs)
+
+
+    @mcp.tool()
+    def load_docs_strategy() -> dict:
+        """Load the saved existing-docs strategy for this project (#84).
+        Returns {strategy, referred_docs} or {strategy: null} if not set."""
+        return _do_load_docs_strategy()
+
+
+    @mcp.tool()
+    def search_project_docs() -> dict:
+        """Search the project for useful .md documentation files to connect as references (#164).
+
+        Returns a ranked list of candidates with path, size_kb, and headings.
+        Use with connect_docs() to set a primary reference."""
+        return _do_search_project_docs()
+
+
+    @mcp.tool()
+    def connect_docs(
+        primary: str | None = None,
+        detail: str | None = None,
+        skills: str | None = None,
+        others: list[str] | None = None,
+    ) -> dict:
+        """Connect existing project docs as references for planning and implementation (#164).
+
+        primary: path (relative to project root) to the primary summary doc (default: hub_agents/project_summary.md)
+        detail: path to the detail doc (default: hub_agents/project_detail.md)
+        skills: path to a SKILLS.md index file for Tier 2 project skills
+        others: list of paths to additional reference docs
+        Saved to hub_agents/extensions/gh_planner/docs_config.json."""
+        return _do_connect_docs(primary, detail, skills, others)
+
+
+    @mcp.tool()
+    def load_connected_docs(section: str | None = None) -> dict:
+        """Load the primary connected reference doc (or a specific section from it) (#164).
+
+        section: optional H2 heading name to extract a specific section.
+        Call connect_docs() first to set a primary reference.
+        Returns {content, path}."""
+        return _do_load_connected_docs(section)
+
+
+    @mcp.tool()
+    def list_plugin_state(plugin: str = "gh_planner") -> dict:
+        """Inventory all resources loaded by a plugin: in-memory caches and disk files.
+
+        Use before unload_plugin to see what will be cleared.
+        Returns {caches: [...], disk_files: [...], total_caches, total_disk_files}.
+        """
+        return _do_list_plugin_state(plugin)
+
+
+    @mcp.tool()
+    def unload_plugin(plugin: str = "gh_planner") -> dict:
+        """Clear all in-memory caches and volatile disk files for a plugin.
+
+        Does NOT remove project docs (project_summary.md, project_detail.md) or issues.
+        On success returns {success: true, cleared: [...], _display: "Unloading successful!"}.
+        On error returns {success: false, errors: [...]} — analyze errors and retry.
+        """
+        return _do_unload_plugin(plugin)
+
+
+    @mcp.tool()
+    def apply_unload_policy(command: str) -> dict:
+        """Apply the unload policy for a command from unload_policy.json.
+
+        Selectively clears only the caches listed in the command's unload[] array,
+        preserving everything in keep[]. Persistent state (issues, project docs,
+        config.yaml, .env) is never touched.
+
+        Returns {cleared: [...], kept: [...], _display: "..."}.
+
+        Common command values: 'gh-plan', 'gh-plan-analyze',
+        'gh-plan-create', 'gh-plan-unload', 'create-github-repo'.
+        """
+        return _do_apply_unload_policy(command)
+
+
+    @mcp.tool()
+    def initialize_implementation_session(project_root: str, previous_command: str = "gh-plan") -> dict:
+        """Initialize gh-implementation session in one call.
+
+        Replaces the 7-call startup sequence: unload previous command, confirm repo,
+        load project docs, and list issues.
+
+        project_root: absolute path to the project
+        previous_command: command to unload (default: 'gh-plan')
+        Returns {workspace_ready, cache_cleared, repo_confirmed, project_summary, issues, issue_count, next_action, _display}
+        """
+        return _do_initialize_implementation_session(project_root, previous_command)
+
+
+    @mcp.tool()
+    def load_implementation_context(project_root: str, issue_slug: str, lookup_design_refs: bool = True) -> dict:
+        """Load full implementation context in one call.
+
+        Replaces 8-call sequence: initialize session + load active issue + design ref sections.
+
+        project_root: absolute path to project
+        issue_slug: issue slug to load (e.g. '42')
+        lookup_design_refs: if True, load design_ref sections from project_detail.md
+        Returns {workspace_ready, repo_confirmed, project_summary, issue_content, design_sections, has_agent_workflow, context_ready, _display}
+        """
+        return _do_load_implementation_context(project_root, issue_slug, lookup_design_refs)

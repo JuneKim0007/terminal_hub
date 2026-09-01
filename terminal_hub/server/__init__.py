@@ -31,12 +31,15 @@ from terminal_hub.server.builtins import (
 # ── Workspace root — the canonical resolver lives in terminal_hub.workspace.
 # github_planner.setup.get_workspace_root is a pure alias for it, so importing
 # it from there would make the host depend on a plugin for its own policy.
+from terminal_hub.workspace import ensure_initialized
 from terminal_hub.workspace import resolve_workspace_root as get_workspace_root
 
 # ── github_planner re-exports — read via ``_srv.<name>`` by tools.* ──────────
+# Both are genuinely GitHub-specific. They remain here because setup_workspace
+# configures a repo and warms its labels; moving that branch behind a plugin
+# hook is the rest of R16.
 from extensions.gh_management.github_planner import (
     _invalidate_repo_cache,
-    ensure_initialized,
     get_github_client,
 )
 

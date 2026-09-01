@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 from terminal_hub.config.env_store import _ensure_gitignored, read_env, write_env
 from terminal_hub.config.settings import WorkspaceMode, load_config, save_config
+from terminal_hub.workspace.init_state import G_INIT, is_initialized
 from terminal_hub.workspace.locator import init_workspace, set_active_project_root
 
 
@@ -29,16 +30,17 @@ def register(mcp: FastMCP) -> None:
         if project_root is not None:
             set_active_project_root(project_root)
         root = _srv.get_workspace_root()
-        hub_dir = root / "hub_agents"
-        _G_INIT = "terminal-hub://workflow/init"
-        if not hub_dir.exists():
+        if not is_initialized(root):
+            # A different message from ensure_initialized's on purpose: this
+            # tool is the explicit "have I been set up?" check, so it answers
+            # rather than instructing. The *condition* is shared.
             return {
                 "initialised": False,
                 "message": (
                     "hub_agents/ not found. "
                     "Ask the user if they want GitHub integration and call setup_workspace."
                 ),
-                "_guidance": _G_INIT,
+                "_guidance": G_INIT,
             }
         cfg = load_config(root)
         env = read_env(root)

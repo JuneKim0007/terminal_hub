@@ -406,3 +406,68 @@ def _do_get_docs_map(view: str) -> dict:
         display = "\n".join(lines)
 
     return {"view": view, "data": data, "_display": display}
+
+
+def register_skill_tools(mcp) -> None:
+    """Register the skill and docs-map tools."""
+    @mcp.tool()
+    def load_skill(name: str) -> dict:
+        """Load a skill file from the registry by name.
+
+        Searches Tier 1 (plugin skills at extensions/gh_management/github_planner/skills/)
+        and Tier 2 (project skills from docs_config["skills"] path).
+        Tier 2 overrides Tier 1 on name collision.
+
+        name: skill name (e.g. 'creating-issues', 'plugin-architecture')
+        Returns {name, content, tier, _display} or {error, available}.
+        """
+        return _do_load_skill(name)
+
+
+    @mcp.tool()
+    def update_skill(
+        name: str | None = None,
+        description: str | None = None,
+        content_hints: list[str] | None = None,
+        source_doc: str | None = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """Detect knowledge that should be a skill, or create a new skill file.
+
+        Detection mode (name=None): scans command files and open issues for
+        inline knowledge blocks > 50 lines or domain clusters with no skill.
+        Returns candidate list. Prompts user to create skill files.
+
+        Creation mode (name provided): creates skill file using create-skill.md
+        authoring rules, updates SKILLS.md registry, optionally extracts from
+        source_doc and replaces with <!-- SKILL: load_skill("name") --> comment.
+
+        Returns {name, path, registry_updated, source_doc_updated, dry_run, _display}
+        or {candidates, message} in detection mode.
+        """
+        return _do_update_skill(name, description, content_hints, source_doc, dry_run)
+
+
+    @mcp.tool()
+    def build_docs_map() -> dict:
+        """Scan plugin skills and command files, build docs_map.json in the plugin directory.
+
+        Extracts: skill metadata (alwaysApply, triggers), which commands load each skill
+        (via load_skill() calls), and which MCP tools each command references.
+        Writes results to extensions/gh_management/github_planner/docs_map.json.
+        Returns {skills, commands, _display}.
+        """
+        return _do_build_docs_map()
+
+
+    @mcp.tool()
+    def get_docs_map(view: str = "skills") -> dict:
+        """Read docs_map.json and return a formatted table.
+
+        Rebuilds docs_map.json automatically if not present.
+
+        view: "skills" — shows all skills, which commands load them, alwaysApply, triggers
+              "commands" — shows all commands, skills they load, MCP tools they reference
+        Returns {view, data, _display}.
+        """
+        return _do_get_docs_map(view)

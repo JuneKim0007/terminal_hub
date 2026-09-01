@@ -4,10 +4,17 @@ from pathlib import Path
 
 # internal
 from extensions.gh_management.github_planner.client import GitHubClient
-from terminal_hub.workspace import resolve_workspace_root
+
+# ensure_initialized is core policy re-exported here, not defined here:
+# hub_agents/ is terminal-hub's own directory and terminal-hub:// its own URI
+# scheme. The name stays on this module because the suite patches
+# ...github_planner.ensure_initialized at ~35 sites (R16).
+from terminal_hub.workspace import ensure_initialized, resolve_workspace_root
 
 
 from extensions.gh_management.github_planner.pkgref import _pkg
+
+__all__ = ["ensure_initialized"]  # re-export, see above
 
 # ── Guidance URIs ─────────────────────────────────────────────────────────────
 _G_INIT    = "terminal-hub://workflow/init"
@@ -30,23 +37,7 @@ def _load_agent(name: str) -> str:
 
 
 def get_workspace_root() -> Path:
-    from terminal_hub.workspace import resolve_workspace_root
     return resolve_workspace_root()
-
-
-def ensure_initialized(root: Path) -> dict | None:
-    """Return a needs_init response if hub_agents/ is absent, else None."""
-    if not (root / "hub_agents").exists():
-        return {
-            "status": "needs_init",
-            "message": (
-                "This project hasn't been set up with terminal-hub yet. "
-                "Ask the user: would they like GitHub integration? If yes, what is their repo (owner/repo format)? "
-                "Then call setup_workspace to initialise."
-            ),
-            "_guidance": _G_INIT,
-        }
-    return None
 
 
 def get_github_client() -> tuple[GitHubClient | None, str]:

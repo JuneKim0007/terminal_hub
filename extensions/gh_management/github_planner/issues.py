@@ -14,6 +14,48 @@ from terminal_hub.config.constants import ISSUES_SYNC_TTL
 _ISSUES_SYNC_TTL = ISSUES_SYNC_TTL
 
 
+def _issue_keywords(title: str, labels: list[str]) -> set[str]:
+    """Significant lowercase words from an issue's title and labels."""
+    stopwords = {"fix", "feat", "add", "update", "the", "a", "an", "for", "in",
+                 "to", "of", "and", "or", "with", "from", "on", "at", "by", "is"}
+    raw = set(
+        (title + " " + " ".join(labels)).lower().replace("-", " ").replace(":", " ").split()
+    )
+    return raw - stopwords
+
+
+def _matching_principles(summary: str, keywords: set[str]) -> list[str]:
+    """Design-principle bullets from project_summary.md matching any keyword.
+
+    Scans only the '## Design Principles' section — it stops at the next H2 so
+    bullets from later sections are not mistaken for principles.
+    """
+    if not summary or not keywords:
+        return []
+    matched: list[str] = []
+    in_principles = False
+    for line in summary.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("## design principles"):
+            in_principles = True
+            continue
+        if not in_principles:
+            continue
+        if stripped.startswith("## "):
+            break
+        if stripped.startswith("- "):
+            principle = stripped[2:]
+            if any(kw in principle.lower() for kw in keywords):
+                matched.append(principle)
+    return matched
+
+
+def _truncate_words(text: str, limit: int = 12) -> str:
+    """First `limit` words, with an ellipsis when anything was dropped."""
+    words = text.split()
+    return " ".join(words[:limit]) + ("…" if len(words) > limit else "")
+
+
 def _extract_design_refs(
     title: str,
     labels: list[str],
@@ -26,40 +68,17 @@ def _extract_design_refs(
     if not entry:
         return [], []
 
-    _STOPWORDS = {"fix", "feat", "add", "update", "the", "a", "an", "for", "in",
-                  "to", "of", "and", "or", "with", "from", "on", "at", "by", "is"}
-    raw_words = set((title + " " + " ".join(labels)).lower().replace("-", " ").replace(":", " ").split())
-    keywords = raw_words - _STOPWORDS
-
+    keywords = _issue_keywords(title, labels)
     refs: list[str] = []
     rules: list[str] = []
 
-    summary = entry.get("summary", "") or ""
-    if summary and keywords:
-        in_principles = False
-        matched_rules: list[str] = []
-        for line in summary.splitlines():
-            stripped = line.strip()
-            if stripped.lower().startswith("## design principles"):
-                in_principles = True
-                continue
-            if in_principles:
-                if stripped.startswith("## "):
-                    break
-                if stripped.startswith("- "):
-                    principle = stripped[2:]
-                    if any(kw in principle.lower() for kw in keywords):
-                        matched_rules.append(principle)
-        if matched_rules:
-            refs.append("project_summary.md § Design Principles")
-            for p in matched_rules[:5]:
-                words = p.split()
-                rules.append(" ".join(words[:12]) + ("…" if len(words) > 12 else ""))
+    matched_rules = _matching_principles(entry.get("summary", "") or "", keywords)
+    if matched_rules:
+        refs.append("project_summary.md § Design Principles")
+        rules = [_truncate_words(p) for p in matched_rules[:5]]
 
-    sections = entry.get("_sections") or {}
-    for section_name in sections:
-        section_lower = section_name.lower()
-        if any(kw in section_lower for kw in keywords):
+    for section_name in entry.get("_sections") or {}:
+        if any(kw in section_name.lower() for kw in keywords):
             ref = f"project_detail.md § {section_name}"
             if ref not in refs:
                 refs.append(ref)
@@ -366,10 +385,58 @@ def _do_scan_issue_context(feature_areas: list[str]) -> dict:
     return findings
 
 
+def _change_type_from_labels(labels: list[str]) -> str:
+    """Classify the kind of change an issue represents from its labels."""
+    lowered = [lbl.lower() for lbl in labels]
+    if any("bug" in lbl for lbl in lowered):
+        return "bug fix"
+    if any(lbl in ("enhancement", "feature") for lbl in labels):
+        return "feature"
+    for needle, kind in (("refactor", "refactor"), ("test", "test"), ("doc", "documentation")):
+        if any(needle in lbl for lbl in lowered):
+            return kind
+    return "implementation"
+
+
+def _base_workflow_steps(root) -> list[str]:
+    """The program workflow, with intent-expansion prepended when registered."""
+    from extensions.gh_management.github_planner.skills import _SKILL_REGISTRY
+
+    steps = [
+        "orient: re-read issue, identify affected files",
+        "plan: list changes, confirm approach fits codebase patterns",
+        "implement: atomic, test-verified changes",
+        "verify: all tests pass, coverage ≥ 80%, acceptance criteria met",
+    ]
+    if "intent-expansion" in (_SKILL_REGISTRY.get(str(root)) or {}):
+        steps.insert(0, "expand-intent: apply intent-expansion skill — map to domain, "
+                        "apply conventions, filter by stack + design principles")
+    return steps
+
+
+def _affected_components_text(title: str) -> str:
+    """Reusable components and patterns the context scan found for this title.
+
+    Falls back to a fill-in placeholder when the scan turns up nothing.
+    """
+    import re
+
+    keywords = [w for w in re.split(r"[\s:/\-]+", title) if len(w) > 3]
+    findings = _do_scan_issue_context(keywords[:4])
+    refs = [
+        f"- {r['name']} ({r['path']})"
+        for r in findings.get("reusable") or []
+        if r.get("name")
+    ]
+    refs += [f"- {p}" for p in findings.get("patterns") or []]
+    if not refs:
+        return "<!-- Fill in: list files/modules that need to change -->"
+    return "\n".join(refs[:8])
+
+
 def _do_generate_issue_workflows(slug: str) -> dict:
     """Append agent + program workflow scaffolding to an existing issue file (#88)."""
     from extensions.gh_management.github_planner.storage import read_issue_frontmatter
-    from extensions.gh_management.github_planner.skills import _SKILL_REGISTRY
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -383,41 +450,10 @@ def _do_generate_issue_workflows(slug: str) -> dict:
     title = fm.get("title", slug)
     labels: list[str] = fm.get("labels") or []
 
-    if any("bug" in lbl.lower() for lbl in labels):
-        change_type = "bug fix"
-    elif any(lbl in ("enhancement", "feature") for lbl in labels):
-        change_type = "feature"
-    elif any("refactor" in lbl.lower() for lbl in labels):
-        change_type = "refactor"
-    elif any("test" in lbl.lower() for lbl in labels):
-        change_type = "test"
-    elif any("doc" in lbl.lower() for lbl in labels):
-        change_type = "documentation"
-    else:
-        change_type = "implementation"
+    change_type = _change_type_from_labels(labels)
 
-    workflow_steps = [
-        "orient: re-read issue, identify affected files",
-        "plan: list changes, confirm approach fits codebase patterns",
-        "implement: atomic, test-verified changes",
-        "verify: all tests pass, coverage ≥ 80%, acceptance criteria met",
-    ]
-
-    registry = _SKILL_REGISTRY.get(str(root)) or {}
-    if "intent-expansion" in registry:
-        workflow_steps = [
-            "expand-intent: apply intent-expansion skill — map to domain, apply conventions, filter by stack + design principles",
-        ] + workflow_steps
-
-    import re as _re_wf
-    title_keywords = [w for w in _re_wf.split(r"[\s:/\-]+", title) if len(w) > 3]
-    context_findings = _do_scan_issue_context(title_keywords[:4])
-    affected_components_text = "<!-- Fill in: list files/modules that need to change -->"
-    if context_findings.get("reusable") or context_findings.get("patterns"):
-        refs = [f"- {r['name']} ({r['path']})" for r in context_findings["reusable"] if r.get("name")]
-        refs += [f"- {p}" for p in context_findings["patterns"]]
-        if refs:
-            affected_components_text = "\n".join(refs[:8])
+    workflow_steps = _base_workflow_steps(root)
+    affected_components_text = _affected_components_text(title)
 
     agent_workflow_text = (
         f"Orient → read issue #{slug} carefully. "
@@ -545,14 +581,95 @@ def _do_list_pending_drafts() -> dict:
     return {"pending_drafts": pending, "count": len(pending)}
 
 
+def _local_issue_index(root) -> dict[int, dict]:
+    """GitHub issue number -> the local file's slug, updated_at and status."""
+    from extensions.gh_management.github_planner.storage import list_issue_files
+
+    index: dict[int, dict] = {}
+    for fm in list_issue_files(root):
+        num = fm.get("issue_number")
+        if num:
+            index[num] = {
+                "slug": fm["slug"],
+                "updated_at": fm.get("updated_at", ""),
+                "status": fm.get("status", "open"),
+            }
+    return index
+
+
+def _parse_created_date(created_at_str: str):
+    """GitHub's created_at as a date, falling back to today when unparseable."""
+    import datetime as _dt
+
+    try:
+        return _dt.datetime.fromisoformat(created_at_str.replace("Z", "+00:00")).date()
+    except (ValueError, AttributeError):
+        return date.today()
+
+
+def _issue_slug(number, title: str, local_index: dict) -> str:
+    """The slug to write under — reusing the local one so files are not orphaned."""
+    from terminal_hub.io.slugify import slugify
+
+    if number in local_index:
+        return local_index[number]["slug"]
+    base = f"{number}-{slugify(title)}" if number else slugify(title)
+    return base or str(number or "unknown")
+
+
+def _write_synced_issue(root, raw: dict, local_index: dict) -> None:
+    """Write one GitHub issue to its local file."""
+    from extensions.gh_management.github_planner.storage import IssueStatus, write_issue_file
+
+    number = raw.get("number")
+    title = raw.get("title", "")
+    milestone = raw.get("milestone") or {}
+    write_issue_file(
+        root=root,
+        slug=_issue_slug(number, title, local_index),
+        title=title,
+        body=raw.get("body") or "",
+        assignees=[a["login"] for a in raw.get("assignees", [])],
+        labels=[lbl["name"] for lbl in raw.get("labels", [])],
+        created_at=_parse_created_date(raw.get("created_at", "")),
+        status=IssueStatus.OPEN if raw.get("state", "open") == "open" else IssueStatus.CLOSED,
+        issue_number=number,
+        github_url=raw.get("html_url", ""),
+        milestone_number=milestone.get("number") if milestone else None,
+        milestone_title=milestone.get("title") if milestone else None,
+        updated_at=raw.get("updated_at", ""),
+    )
+
+
+def _sync_one_issue(root, raw: dict, local_index: dict, refresh: bool) -> str:
+    """Reconcile one GitHub issue with its local file.
+
+    Returns what happened: "closed" (GitHub closed it, so close it locally
+    without rewriting the body), "skipped" (unchanged since last sync), or
+    "written".
+    """
+    from extensions.gh_management.github_planner.storage import (
+        IssueStatus,
+        update_issue_status,
+    )
+
+    number = raw.get("number")
+    if not refresh and number in local_index:
+        local = local_index[number]
+        if raw.get("state", "open") == "closed" and str(local["status"]) == "open":
+            update_issue_status(root, local["slug"], IssueStatus.CLOSED)
+            return "closed"
+        updated_at = raw.get("updated_at", "")
+        if updated_at and updated_at == local["updated_at"]:
+            return "skipped"
+
+    _write_synced_issue(root, raw, local_index)
+    return "written"
+
+
 def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
     """Two-phase GitHub issue sync (#204)."""
-    import datetime as _dt
-    from extensions.gh_management.github_planner.storage import (
-        IssueStatus, list_issue_files, write_issue_file, update_issue_status
-    )
     from extensions.gh_management.github_planner.labels import _do_save_github_local_config
-    from terminal_hub.io.slugify import slugify
     _p = _pkg()
 
     root = _p.get_workspace_root()
@@ -575,15 +692,7 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
 
     (root / "hub_agents" / "issues").mkdir(parents=True, exist_ok=True)
 
-    local_index: dict[int, dict] = {}
-    for fm in list_issue_files(root):
-        num = fm.get("issue_number")
-        if num:
-            local_index[num] = {
-                "slug": fm["slug"],
-                "updated_at": fm.get("updated_at", ""),
-                "status": fm.get("status", "open"),
-            }
+    local_index = _local_issue_index(root)
 
     total_raw = len(raw_issues)
     checked = 0
@@ -594,64 +703,14 @@ def _do_sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
     for raw in raw_issues:
         if raw.get("pull_request"):
             continue
-
         checked += 1
-        number = raw.get("number")
-        updated_at_str = raw.get("updated_at", "")
-        github_state = raw.get("state", "open")
-
-        if not refresh and number in local_index:
-            local = local_index[number]
-            if github_state == "closed" and str(local["status"]) == "open":
-                from extensions.gh_management.github_planner.storage import update_issue_status
-                update_issue_status(root, local["slug"], IssueStatus.CLOSED)
-                closed_locally += 1
-                continue
-            if updated_at_str and updated_at_str == local["updated_at"]:
-                skipped += 1
-                continue
-
-        title = raw.get("title", "")
-        body = raw.get("body") or ""
-        issue_state = raw.get("state", "open")
-        labels = [lbl["name"] for lbl in raw.get("labels", [])]
-        assignees = [a["login"] for a in raw.get("assignees", [])]
-        created_at_str = raw.get("created_at", "")
-        github_url = raw.get("html_url", "")
-        milestone = raw.get("milestone") or {}
-        milestone_number = milestone.get("number") if milestone else None
-        milestone_title = milestone.get("title") if milestone else None
-
-        try:
-            created_date = _dt.datetime.fromisoformat(
-                created_at_str.replace("Z", "+00:00")
-            ).date()
-        except (ValueError, AttributeError):
-            created_date = date.today()
-
-        issue_status = IssueStatus.OPEN if issue_state == "open" else IssueStatus.CLOSED
-
-        base_slug = f"{number}-{slugify(title)}" if number else slugify(title)
-        if not base_slug:
-            base_slug = str(number or "unknown")
-        slug = local_index[number]["slug"] if number in local_index else base_slug
-
-        write_issue_file(
-            root=root,
-            slug=slug,
-            title=title,
-            body=body,
-            assignees=assignees,
-            labels=labels,
-            created_at=created_date,
-            status=issue_status,
-            issue_number=number,
-            github_url=github_url,
-            milestone_number=milestone_number,
-            milestone_title=milestone_title,
-            updated_at=updated_at_str,
-        )
-        updated += 1
+        outcome = _sync_one_issue(root, raw, local_index, refresh)
+        if outcome == "closed":
+            closed_locally += 1
+        elif outcome == "skipped":
+            skipped += 1
+        else:
+            updated += 1
 
     _do_save_github_local_config({"issues_synced_at": time.time(), "issues_state": state})
 

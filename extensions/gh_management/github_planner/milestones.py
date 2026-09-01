@@ -320,11 +320,67 @@ def _do_assign_milestone(slug: str, milestone_number: int) -> dict:
     }
 
 
+def _load_docs_text(root, resolved: str):
+    """Project summary/detail text and parsed detail sections.
+
+    Served from _PROJECT_DOCS_CACHE when warm, read from disk when cold.
+    """
+    from extensions.gh_management.github_planner.project_docs import (
+        _PROJECT_DOCS_CACHE,
+        _gh_planner_docs_dir,
+        _parse_h2_sections,
+    )
+
+    cached = _PROJECT_DOCS_CACHE.get(resolved)
+    if cached:
+        return (
+            cached.get("summary") or "",
+            cached.get("detail") or "",
+            cached.get("_sections") or {},
+        )
+
+    docs_dir = _gh_planner_docs_dir(root)
+    summary_path = docs_dir / "project_summary.md"
+    detail_path = docs_dir / "project_detail.md"
+    summary_text = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
+    detail_text = detail_path.read_text(encoding="utf-8") if detail_path.exists() else ""
+    sections = _parse_h2_sections(detail_text) if detail_text else {}
+    return summary_text, detail_text, sections
+
+
+def _adjacent_milestones(index: dict, milestone_number: int) -> tuple[str, str]:
+    """(depends_on, enables) lines for the milestones either side of this one."""
+    prior = index.get(str(milestone_number - 1))
+    nxt = index.get(str(milestone_number + 1))
+    depends_on = (
+        f"M{milestone_number - 1} — {prior['title']}" if prior else "None (first milestone)"
+    )
+    enables = (
+        f"M{milestone_number + 1} — {nxt['title']}" if nxt else "None (last milestone)"
+    )
+    return depends_on, enables
+
+
+def _features_governed(planned_features_text: str) -> str:
+    """Up to 10 bullet lines from Planned Features, else a truncated blob."""
+    if not planned_features_text:
+        return "*(see project_summary.md)*"
+    lines = [
+        line for line in planned_features_text.splitlines()
+        if line.strip().startswith(("-", "*"))
+    ]
+    return "\n".join(lines[:10]) if lines else planned_features_text[:500]
+
+
+def _interface_contract(detail_sections: dict) -> str:
+    """Up to 5 detail H2 names as the milestone's interface contract."""
+    names = list(detail_sections.keys())[:5]
+    return "\n".join(f"- {s}" for s in names) if names else "*(see project_detail.md)*"
+
+
 def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
     """Generate a structured knowledge file for a milestone."""
-    from extensions.gh_management.github_planner.project_docs import (
-        _gh_planner_docs_dir, _PROJECT_DOCS_CACHE, _parse_h2_sections
-    )
+    from extensions.gh_management.github_planner.project_docs import _parse_h2_sections
     from extensions.gh_management.github_planner.storage import _atomic_write
     from datetime import datetime, timezone
     _p = _pkg()
@@ -345,18 +401,7 @@ def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
         description = milestone_entry.get("description", "")
 
     resolved = _p._resolve_repo(None) or "unknown"
-    cached_docs = _PROJECT_DOCS_CACHE.get(resolved)
-    if cached_docs:
-        summary_text = cached_docs.get("summary") or ""
-        detail_text = cached_docs.get("detail") or ""
-        detail_sections = cached_docs.get("_sections") or {}
-    else:
-        docs_dir = _gh_planner_docs_dir(root)
-        summary_path = docs_dir / "project_summary.md"
-        detail_path = docs_dir / "project_detail.md"
-        summary_text = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
-        detail_text = detail_path.read_text(encoding="utf-8") if detail_path.exists() else ""
-        detail_sections = _parse_h2_sections(detail_text) if detail_text else {}
+    summary_text, detail_text, detail_sections = _load_docs_text(root, resolved)
 
     summary_sections = _parse_h2_sections(summary_text) if summary_text else {}
     design_principles = summary_sections.get("Design Principles", "").strip()
@@ -364,35 +409,11 @@ def _do_generate_milestone_knowledge(milestone_number: int) -> dict:
 
     index = _load_milestone_index(root)
 
-    prior_number = milestone_number - 1
-    prior_entry = index.get(str(prior_number))
-    if prior_entry:
-        depends_on = f"M{prior_number} — {prior_entry['title']}"
-    else:
-        depends_on = "None (first milestone)"
-
-    next_number = milestone_number + 1
-    next_entry = index.get(str(next_number))
-    if next_entry:
-        enables = f"M{next_number} — {next_entry['title']}"
-    else:
-        enables = "None (last milestone)"
-
-    planned_features_text = summary_sections.get("Planned Features", "").strip()
-    if not planned_features_text:
-        features_governed = "*(see project_summary.md)*"
-    else:
-        feature_lines = [
-            line for line in planned_features_text.splitlines()
-            if line.strip().startswith("-") or line.strip().startswith("*")
-        ]
-        features_governed = "\n".join(feature_lines[:10]) if feature_lines else planned_features_text[:500]
-
-    if detail_sections:
-        section_names = list(detail_sections.keys())[:5]
-        interface_contract = "\n".join(f"- {s}" for s in section_names) if section_names else "*(see project_detail.md)*"
-    else:
-        interface_contract = "*(see project_detail.md)*"
+    depends_on, enables = _adjacent_milestones(index, milestone_number)
+    features_governed = _features_governed(
+        summary_sections.get("Planned Features", "").strip()
+    )
+    interface_contract = _interface_contract(detail_sections)
 
     relevant_principles = design_principles if design_principles else "*(see project_summary.md Design Principles)*"
 

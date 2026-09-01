@@ -16,6 +16,105 @@ from terminal_hub.config.env_store import read_env
 from terminal_hub.config.settings import load_config
 
 
+def _extension_summary(manifest_path: str) -> str:
+    """One-line summary for an extension, from the description.json beside it.
+
+    Returns "" when the file is absent, unreadable, or carries no summary —
+    the display degrades to the bare extension name.
+    """
+    if not manifest_path:
+        return ""
+    desc_path = Path(manifest_path).parent / "description.json"
+    if not desc_path.exists():
+        return ""
+    try:
+        raw = json.loads(desc_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    return raw.get("summary") or (raw.get("entry") or {}).get("use_when") or ""
+
+
+def _repo_line(github_repo: str | None, mode: str) -> str:
+    """The footer line naming the connected repo, or why there is none."""
+    if github_repo:
+        return f"GitHub repo: {github_repo}"
+    if mode == "local":
+        return "Local mode (no GitHub repo connected)"
+    return "Repo: not configured"
+
+
+def _item_row(item: dict) -> str:
+    """One '[type] label ✓/✗ detail' line of the CACHES block."""
+    icon = "✓" if item["status"] == "present" else "✗"
+    detail = ""
+    if item["status"] == "present":
+        if item["age_hours"] is not None:
+            detail = f"  {item['age_hours']}h old"
+        elif item["size_bytes"] is not None:
+            detail = f"  {item['size_bytes']} bytes"
+        if item["summary"]:
+            detail += f"  {item['summary']}"
+    return f"[{item['type']:<6}] {item['label']:<25} {icon}{detail}"
+
+
+def _disk_state_items(root) -> list[dict]:
+    """Presence, size and age of every on-disk artefact the hub tracks."""
+    items: list[dict] = []
+    # Analyzer snapshot
+    from extensions.gh_management.github_planner.analyzer import (
+        _snapshot_path,
+        load_snapshot,
+        snapshot_age_hours,
+        summarize_for_prompt,
+    )
+    snap_path = _snapshot_path(root)
+    if snap_path.exists():
+        snap = load_snapshot(root)
+        age = snapshot_age_hours(snap) if snap else None
+        summary = summarize_for_prompt(snap) if snap else None
+        items.append({
+            "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
+            "status": "present", "path": str(snap_path.relative_to(root)),
+            "size_bytes": snap_path.stat().st_size,
+            "age_hours": round(age, 1) if age is not None else None,
+            "summary": summary,
+        })
+    else:
+        items.append({
+            "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
+            "status": "absent", "path": str(snap_path.relative_to(root)),
+            "size_bytes": None, "age_hours": None, "summary": None,
+        })
+
+    # Project docs (namespaced under extensions/gh_planner/)
+    for key, label, path in [
+        ("project_summary", "Project summary", "hub_agents/extensions/gh_planner/project_summary.md"),
+        ("project_detail", "Project detail", "hub_agents/extensions/gh_planner/project_detail.md"),
+    ]:
+        p = root / path
+        items.append({
+            "key": key, "label": label, "type": "prompt",
+            "status": "present" if p.exists() else "absent",
+            "path": path,
+            "size_bytes": p.stat().st_size if p.exists() else None,
+            "age_hours": None, "summary": None,
+        })
+
+    # Issues summary
+    issues_dir = root / "hub_agents" / "issues"
+    issue_files = list(issues_dir.glob("*.md")) if issues_dir.exists() else []
+    pending = sum(1 for f in issue_files if "pending" in f.read_text(encoding="utf-8", errors="ignore"))
+    open_count = len(issue_files) - pending
+    items.append({
+        "key": "issues", "label": "Tracked issues", "type": "cache",
+        "status": "present" if issue_files else "absent",
+        "path": "hub_agents/issues/",
+        "size_bytes": None, "age_hours": None,
+        "summary": f"{len(issue_files)} total · {pending} pending · {open_count} open" if issue_files else None,
+    })
+    return items
+
+
 def register(mcp: FastMCP) -> None:
     """Attach get_runtime_state to *mcp*."""
     import terminal_hub.server as _srv
@@ -28,60 +127,7 @@ def register(mcp: FastMCP) -> None:
         if err := _srv.ensure_initialized(root):
             return err
 
-        items = []
-
-        # Analyzer snapshot
-        from extensions.gh_management.github_planner.analyzer import (
-            _snapshot_path,
-            load_snapshot,
-            snapshot_age_hours,
-            summarize_for_prompt,
-        )
-        snap_path = _snapshot_path(root)
-        if snap_path.exists():
-            snap = load_snapshot(root)
-            age = snapshot_age_hours(snap) if snap else None
-            summary = summarize_for_prompt(snap) if snap else None
-            items.append({
-                "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
-                "status": "present", "path": str(snap_path.relative_to(root)),
-                "size_bytes": snap_path.stat().st_size,
-                "age_hours": round(age, 1) if age is not None else None,
-                "summary": summary,
-            })
-        else:
-            items.append({
-                "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
-                "status": "absent", "path": str(snap_path.relative_to(root)),
-                "size_bytes": None, "age_hours": None, "summary": None,
-            })
-
-        # Project docs (namespaced under extensions/gh_planner/)
-        for key, label, path in [
-            ("project_summary", "Project summary", "hub_agents/extensions/gh_planner/project_summary.md"),
-            ("project_detail", "Project detail", "hub_agents/extensions/gh_planner/project_detail.md"),
-        ]:
-            p = root / path
-            items.append({
-                "key": key, "label": label, "type": "prompt",
-                "status": "present" if p.exists() else "absent",
-                "path": path,
-                "size_bytes": p.stat().st_size if p.exists() else None,
-                "age_hours": None, "summary": None,
-            })
-
-        # Issues summary
-        issues_dir = root / "hub_agents" / "issues"
-        issue_files = list(issues_dir.glob("*.md")) if issues_dir.exists() else []
-        pending = sum(1 for f in issue_files if "pending" in f.read_text(encoding="utf-8", errors="ignore"))
-        open_count = len(issue_files) - pending
-        items.append({
-            "key": "issues", "label": "Tracked issues", "type": "cache",
-            "status": "present" if issue_files else "absent",
-            "path": "hub_agents/issues/",
-            "size_bytes": None, "age_hours": None,
-            "summary": f"{len(issue_files)} total · {pending} pending · {open_count} open" if issue_files else None,
-        })
+        items = _disk_state_items(root)
 
         cfg = load_config(root) or {}
         env = read_env(root)
@@ -122,34 +168,13 @@ def register(mcp: FastMCP) -> None:
         }
 
         # Build _display
-        rows = []
-        for item in items:
-            icon = "✓" if item["status"] == "present" else "✗"
-            detail = ""
-            if item["status"] == "present":
-                if item["age_hours"] is not None:
-                    detail = f"  {item['age_hours']}h old"
-                elif item["size_bytes"] is not None:
-                    detail = f"  {item['size_bytes']} bytes"
-                if item["summary"]:
-                    detail += f"  {item['summary']}"
-            rows.append(f"[{item['type']:<6}] {item['label']:<25} {icon}{detail}")
+        rows = [_item_row(item) for item in items]
 
         ext_lines = []
         for e in _srv._LOADED_EXTENSIONS:
-            n_tools = len(e.get("tools", []))
-            desc = ""
-            mp = e.get("manifest_path", "")
-            if mp:
-                desc_path = Path(mp).parent / "description.json"
-                if desc_path.exists():
-                    try:
-                        raw = json.loads(desc_path.read_text(encoding="utf-8"))
-                        desc = raw.get("summary") or (raw.get("entry") or {}).get("use_when") or ""
-                    except Exception:
-                        pass
+            desc = _extension_summary(e.get("manifest_path", ""))
             summary = f" — {desc}" if desc else ""
-            ext_lines.append(f"  • {e['name']}{summary} ({n_tools} tools)")
+            ext_lines.append(f"  • {e['name']}{summary} ({len(e.get('tools', []))} tools)")
 
         tool_count = len(registered_tools)
         warn_lines = [f"  ⚠ {w}" for w in _srv._PLUGIN_WARNINGS]
@@ -167,13 +192,7 @@ def register(mcp: FastMCP) -> None:
         else:
             mem_block = ""
         mode = cfg.get("mode", "unknown")
-        github_repo = env.get("GITHUB_REPO")
-        if github_repo:
-            repo_line = f"GitHub repo: {github_repo}"
-        elif mode == "local":
-            repo_line = "Local mode (no GitHub repo connected)"
-        else:
-            repo_line = "Repo: not configured"
+        repo_line = _repo_line(env.get("GITHUB_REPO"), mode)
         footer = f"{repo_line}  (mode: {mode})\nRuntime reflects server startup state."
         display = header + "\n" + runtime_block + "\n" + "─" * 50 + "\n" + \
                   caches_block + "\n" + "─" * 50 + "\n" + \

@@ -49,6 +49,7 @@ testpaths = ["tests"]
 addopts = "--cov=terminal_hub --cov=extensions --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "network: test genuinely requires a live network connection (blocked by default)",
+    "fresh_server: build a new FastMCP instance instead of the shared one (patches registration)",
 ]
 
 [tool.coverage.run]

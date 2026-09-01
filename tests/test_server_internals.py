@@ -161,6 +161,7 @@ def test_assert_builtins_raises_when_file_missing():
 
 # ── plugin load warning ────────────────────────────────────────────────────────
 
+@pytest.mark.fresh_server
 def test_plugin_load_warning_recorded(tmp_path):
     """A failing plugin load appends to _PLUGIN_WARNINGS (line 404)."""
     import terminal_hub.server as srv

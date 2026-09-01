@@ -790,3 +790,140 @@ def _do_batch_create_issues(
         "all_succeeded": all_succeeded,
         "_display": f"📝 **Drafted** {len(drafts)} issues" + (f" — {len(validation_errors)} validation warning(s)" if validation_errors else ""),
     }
+
+
+def register_issue_tools(mcp) -> None:
+    """Register the issue drafting, submission and context tools."""
+    @mcp.tool()
+    def draft_issue(
+        title: str,
+        body: str,
+        labels: list[str] | None = None,
+        assignees: list[str] | None = None,
+        note: str | None = None,
+        agent_workflow: list[str] | None = None,
+        milestone_number: int | None = None,
+    ) -> dict:
+        """Save an issue draft locally as status=pending.
+
+        Returns {slug, title, status, _display, detail} — detail contains preview_body,
+        labels, assignees for use when needed without cluttering terminal output.
+        Local-only users can stop here — the draft is cached in hub_agents/issues/.
+
+        note: optional meta-note about user intent or experience level — stored in
+        front matter for agent reference.
+
+        agent_workflow: ordered steps for how an agent should resolve this issue.
+          Always generate this from the issue context — do NOT leave it empty.
+          Steps 1-2 are standard; steps 3-N are issue-specific:
+            1. Scan all files and cache the project file structure
+            2. Build a temporary knowledge base — group files as relevant (Group A)
+               vs unrelated (Group B)
+            3. <issue-specific implementation step>
+            4. <issue-specific test/verify step>
+            ...
+          Example for a bug fix:
+            ["Scan all files and cache project structure",
+             "Build knowledge base — group relevant files (Group A) vs unrelated (Group B)",
+             "Reproduce the bug: identify the failing code path",
+             "Fix minimally — change only what is needed",
+             "Add a regression test that would have caught this",
+             "Verify full test suite passes"]
+
+        milestone_number: optional GitHub milestone number to assign (from create_milestone
+          or list_milestones). Stored in front matter and passed to GitHub on submit.
+        """
+        return _do_draft_issue(title, body, labels, assignees, note=note, agent_workflow=agent_workflow,
+                               milestone_number=milestone_number)
+
+
+    @mcp.tool()
+    def generate_issue_workflows(slug: str) -> dict:
+        """Append agent + program workflow scaffolding to an existing issue file.
+
+        Call after draft_issue (or for any existing issue) to add structured workflow
+        sections: orient → plan → implement → verify, plus a change-type-aware test plan.
+        Idempotent — skips if workflow sections already exist (#88)."""
+        return _do_generate_issue_workflows(slug)
+
+
+    @mcp.tool()
+    def submit_issue(slug: str) -> dict:
+        """Submit a pending local issue draft to GitHub.
+
+        Reads the local hub_agents/issues/<slug>.md file, bootstraps any missing
+        labels, creates the GitHub issue, then updates the local file to status=open.
+
+        Call this only after the user has approved the draft shown by draft_issue.
+        On any failure Claude handles the error directly — no automatic retry.
+        """
+        return _do_submit_issue(slug)
+
+
+    @mcp.tool()
+    def list_issues(compact: bool = False) -> dict:
+        """Return tracked issues from local hub_agents/issues/ files.
+        compact=True: returns [{slug, title, status}] only (~3× fewer tokens).
+        compact=False (default): returns full issue metadata.
+        Issues never submitted to GitHub are marked with local_only: true (#102).
+        If cache is stale, _suggest_sync hints to call sync_github_issues() first (#113)."""
+        return _do_list_issues(compact)
+
+
+    @mcp.tool()
+    def sync_github_issues(state: str = "open", refresh: bool = False) -> dict:
+        """Fetch GitHub issues and cache them locally as .md files (#113).
+
+        Python fetches all issues (paginated) and writes to hub_agents/issues/.
+        ~30 tokens/issue vs ~150 tokens if Claude were to relay raw API responses.
+
+        state: 'open' (default), 'closed', or 'all'
+        refresh: True to re-fetch all issues even if unchanged (default: skip unchanged)
+
+        Returns {synced, skipped, total, _display}.
+        After syncing, call list_issues() to read the cached results.
+        """
+        return _do_sync_github_issues(state, refresh)
+
+
+    @mcp.tool()
+    def list_pending_drafts() -> dict:
+        """Return only issues that exist locally but have never been submitted to GitHub.
+        Use to identify status drift risk — local issues may diverge from GitHub state (#102)."""
+        return _do_list_pending_drafts()
+
+
+    @mcp.tool()
+    def get_issue_context(slug: str) -> dict:
+        """Read a specific issue file by slug to reload context cheaply."""
+        return _do_get_issue_context(slug)
+
+
+    @mcp.tool()
+    def scan_issue_context(feature_areas: list[str]) -> dict:
+        """Scan project_detail.md sections for code references relevant to feature_areas.
+
+        For each area, looks up the matching section and parses it for function/class
+        definitions, file paths, and pitfall warnings.
+
+        Returns:
+          {reusable: [{name, path, description}], extend: [], patterns: [str],
+           pitfalls: [str], sections_scanned: [str]}
+
+        Call before drafting an issue when project_detail.md has relevant sections.
+        Use findings to populate agent_workflow steps with explicit file and function references.
+        """
+        return _do_scan_issue_context(feature_areas)
+
+
+    @mcp.tool()
+    def batch_create_issues(issue_specs: list, confirm_before_submit: bool = True) -> dict:
+        """Draft and optionally submit multiple issues in one call.
+
+        Replaces the label-warm + draft×N + submit×N sequence for Step 6g.
+
+        issue_specs: list of {title, body, labels, assignees, agent_workflow, milestone_number}
+        confirm_before_submit: if True (default), only drafts — Claude calls submit_issue() after user confirms
+        Returns {drafts, validation_errors, confirmation_display, submitted, failed_submissions, all_succeeded, _display}
+        """
+        return _do_batch_create_issues(issue_specs, confirm_before_submit)

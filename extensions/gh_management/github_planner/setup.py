@@ -216,3 +216,45 @@ def _do_bootstrap_new_repo(
         "ready_to_plan": True,
         "_display": f"✅ **Repo created** — {repo_full_name} | workspace linked | caches warmed",
     }
+
+
+def register_setup_tools(mcp) -> None:
+    """Register the workspace bootstrap tools."""
+    @mcp.tool()
+    def bootstrap_gh_plan(project_root: str, confirm_repo: bool = True, sync_issues: bool = True, full_data: bool = False) -> dict:
+        """Bootstrap gh-plan in one call: set root, confirm repo, warm milestones, sync and list issues.
+
+        Replaces the 8-call gh-plan startup sequence with a single atomic operation.
+
+        project_root: absolute path to the project directory
+        confirm_repo: if False, skip repo confirmation (already confirmed this session)
+        sync_issues: if False, skip GitHub sync (use cached issues)
+        full_data: if True, include full issue objects in response (default False — returns issue_slugs only)
+        Returns {workspace_ready, confirmed_repo, milestones, sync_result, issue_slugs, issue_count, landscape_display, _display}
+        When full_data=True also returns: {issues}
+        """
+        return _do_bootstrap_gh_plan(project_root, confirm_repo, sync_issues, full_data)
+
+
+    @mcp.tool()
+    def bootstrap_new_repo(
+        project_title: str,
+        project_description: str,
+        tech_stack: list,
+        design_principles: list,
+        is_private: bool = True,
+        confirm_arch_changes: bool = False,
+    ) -> dict:
+        """Create a new GitHub repo and fully bootstrap the workspace in one call.
+
+        Replaces the 11-call new-repo path sequence.
+
+        project_title: name for the new repo
+        project_description: one-sentence description
+        tech_stack: list of tech stack items
+        design_principles: list of initial design principles
+        is_private: create as private repo (default: True)
+        confirm_arch_changes: persist confirm_arch_changes preference (default: False)
+        Returns {project_description_saved, repo_created, repo_url, workspace_linked, caches_warmed, ready_to_plan, _display}
+        """
+        return _do_bootstrap_new_repo(project_title, project_description, tech_stack, design_principles, is_private, confirm_arch_changes)

@@ -125,3 +125,46 @@ def _do_verify_auth() -> dict:
         "options": get_auth_options(),
         "_guidance": _G_AUTH,
     }
+
+
+def register_session_tools(mcp) -> None:
+    """Register the session repo-confirmation tools."""
+    @mcp.tool()
+    def confirm_session_repo(force: bool = False) -> dict:
+        """Check whether the current session repo has been confirmed by the user.
+
+        Returns {confirmed, repo, _display}.
+        - confirmed=True: repo is locked, proceed silently.
+        - confirmed=False: Claude must show _display and ask "yes / change" before continuing.
+
+        After user says "yes": call set_session_repo(repo=...) to lock it.
+        After user says "change": let user specify repo, then call set_session_repo(repo=new).
+        force=True: always re-prompt even if already confirmed.
+        """
+        return _do_confirm_session_repo(force)
+
+
+    @mcp.tool()
+    def set_session_repo(repo: str) -> dict:
+        """Lock the confirmed repo for this session.
+
+        Call after user confirms "yes" to confirm_session_repo, or after user
+        specifies a replacement repo. Prevents repeated prompting this session.
+        repo: 'owner/repo' string
+        """
+        return _do_set_session_repo(repo)
+
+
+    @mcp.tool()
+    def check_auth() -> dict:
+        """Check GitHub authentication status.
+        If not authenticated, presents login options to show the user.
+        Call this whenever a GitHub tool returns an auth error."""
+        return _do_check_auth()
+
+
+    @mcp.tool()
+    def verify_auth() -> dict:
+        """Verify GitHub CLI authentication after the user runs gh auth login.
+        Call this after the user reports they have completed gh auth login."""
+        return _do_verify_auth()

@@ -63,3 +63,30 @@ def test_creating_a_skill_leaves_shipped_files_untouched(workspace, shipped_byte
     assert (workspace / "hub_agents" / "skills" / "guard-check-skill.md").exists()
     for path, before in shipped_bytes.items():
         assert path.read_bytes() == before, f"{path.name} was modified at runtime"
+
+
+def test_docs_map_survives_a_read_only_installation(tmp_path):
+    """docs_map.json caches a scan of the install tree, so the install is the
+    right home for it — but a system-wide pip install or a read-only container
+    makes that unwritable. The cache is derived data: failing to store it must
+    not fail the call (R24)."""
+    import os
+    import stat
+    from unittest.mock import patch
+
+    from extensions.gh_management.github_planner.skills import _do_build_docs_map
+
+    read_only = tmp_path / "install"
+    (read_only / "commands").mkdir(parents=True)
+    (read_only / "skills").mkdir()
+    os.chmod(read_only, stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        with patch("extensions.gh_management.github_planner._PLUGIN_DIR", read_only), \
+             patch("extensions.gh_management.github_planner.skills._PLUGIN_DIR", read_only):
+            result = _do_build_docs_map()
+    finally:
+        os.chmod(read_only, 0o755)
+
+    assert result["cached"] is False
+    assert "not cached" in result["_display"]
+    assert "skills" in result and "commands" in result, "the map is still returned"

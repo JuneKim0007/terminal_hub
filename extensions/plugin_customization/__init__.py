@@ -55,6 +55,20 @@ def _load_config(force: bool = False) -> dict[str, Any]:
     return _config_cache
 
 
+# task_type → how to promote the parsed payload onto the response.
+# (expected type, keys to lift) — keys None means lift the whole payload under
+# the alias below. Keyed by the same task_type as _SYSTEM_PROMPTS and the
+# model routing table, so a new task type is added in one place per concern.
+_RESULT_PROMOTIONS: dict[str, tuple[type, tuple[str, ...] | None]] = {
+    "file_location": (list, None),
+    "issue_classification": (dict, ("size", "reason")),
+    "structure_scan": (list, None),
+}
+_RESULT_ALIASES: dict[str, str] = {
+    "file_location": "files",
+    "structure_scan": "areas",
+}
+
 def _model_for_task(task_type: str) -> str:
     cfg = _load_config()
     routing = cfg.get("model_routing", {})
@@ -153,13 +167,15 @@ def _do_dispatch_task(
     }
 
     # Promote well-known keys for convenience
-    if task_type == "file_location" and isinstance(parsed, list):
-        result["files"] = parsed
-    elif task_type == "issue_classification" and isinstance(parsed, dict):
-        result["size"] = parsed.get("size")
-        result["reason"] = parsed.get("reason")
-    elif task_type == "structure_scan" and isinstance(parsed, list):
-        result["areas"] = parsed
+    promotion = _RESULT_PROMOTIONS.get(task_type)
+    if promotion:
+        expected_type, keys = promotion
+        if isinstance(parsed, expected_type):
+            if keys is None:
+                result[_RESULT_ALIASES[task_type]] = parsed
+            else:
+                for key in keys:
+                    result[key] = parsed.get(key)
 
     return result
 

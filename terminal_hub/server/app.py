@@ -15,7 +15,8 @@ collected in ``server.state`` for later inspection.
 """
 from __future__ import annotations
 
-from pathlib import Path
+
+from terminal_hub.config import EXTENSIONS_DIR
 
 from mcp.server.fastmcp import FastMCP
 
@@ -32,7 +33,7 @@ from terminal_hub.server.tools import announce, plugin_registry, runtime_state, 
 _assert_builtins()
 
 # extensions/ sits at the project root, three levels up from this file.
-_EXTENSIONS_DIR = Path(__file__).resolve().parent.parent.parent / "extensions"
+_EXTENSIONS_DIR = EXTENSIONS_DIR
 
 
 def create_server() -> FastMCP:

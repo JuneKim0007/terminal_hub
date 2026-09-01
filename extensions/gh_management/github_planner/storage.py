@@ -40,7 +40,6 @@ class IssueStatus(str, Enum):
 # Keep module-level aliases for backwards compat within the codebase
 STATUS_PENDING = IssueStatus.PENDING
 STATUS_OPEN    = IssueStatus.OPEN
-STATUS_CLOSED  = IssueStatus.CLOSED
 
 
 def validate_slug(slug: str) -> None:

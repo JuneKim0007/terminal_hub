@@ -14,25 +14,29 @@ def run(*args) -> subprocess.CompletedProcess:
 
 
 # ── --help ────────────────────────────────────────────────────────────────────
+# One interpreter spawn, four assertions about its output. These four tests
+# previously ran `run("--help")` each, paying four subprocess launches to
+# inspect one string.
 
-def test_help_exits_zero():
-    result = run("--help")
-    assert result.returncode == 0
-
-
-def test_help_shows_install_subcommand():
-    result = run("--help")
-    assert "install" in result.stdout
+@pytest.fixture(scope="module")
+def help_output() -> subprocess.CompletedProcess:
+    return run("--help")
 
 
-def test_help_shows_verify_subcommand():
-    result = run("--help")
-    assert "verify" in result.stdout
+def test_help_exits_zero(help_output):
+    assert help_output.returncode == 0
 
 
-def test_help_shows_description():
-    result = run("--help")
-    assert "terminal-hub" in result.stdout.lower() or "github" in result.stdout.lower()
+def test_help_shows_install_subcommand(help_output):
+    assert "install" in help_output.stdout
+
+
+def test_help_shows_verify_subcommand(help_output):
+    assert "verify" in help_output.stdout
+
+
+def test_help_shows_description(help_output):
+    assert "terminal-hub" in help_output.stdout.lower() or "github" in help_output.stdout.lower()
 
 
 # ── subcommand help ───────────────────────────────────────────────────────────

@@ -6,10 +6,7 @@ import time
 from pathlib import Path
 
 
-def _pkg():
-    """Return the github_planner package module so patches applied by tests are respected."""
-    import sys
-    return sys.modules['extensions.gh_management.github_planner']
+from extensions.gh_management.github_planner.pkgref import _pkg
 
 # Label cache — Key: "owner/repo" string, Value: list[{"name", "color", "description"}]
 _LABEL_CACHE: dict[str, list[dict]] = {}
@@ -23,14 +20,6 @@ _GITHUB_DEFAULT_LABEL_NAMES = frozenset({
 })
 
 _LABEL_ACTIVE_DAYS = 30  # labels created within this many days are considered "active"
-
-
-def _get_cached_label_names(repo: str) -> list[str] | None:
-    """Return cached label names for repo, or None if not yet cached."""
-    cached = _LABEL_CACHE.get(repo)
-    if cached is None:
-        return None
-    return [lbl["name"] for lbl in cached]
 
 
 def _normalise_labels(raw_labels: list[dict]) -> list[dict]:

@@ -1,6 +1,5 @@
 """Setup helpers — workspace root, GitHub client factory, repo cache, guidance URIs."""
 # stdlib
-import sys
 from pathlib import Path
 
 # internal
@@ -8,9 +7,7 @@ from extensions.gh_management.github_planner.client import GitHubClient
 from terminal_hub.workspace import resolve_workspace_root
 
 
-def _pkg():
-    """Return the github_planner package module so patches applied by tests are respected."""
-    return sys.modules['extensions.gh_management.github_planner']
+from extensions.gh_management.github_planner.pkgref import _pkg
 
 # ── Guidance URIs ─────────────────────────────────────────────────────────────
 _G_INIT    = "terminal-hub://workflow/init"

@@ -297,3 +297,33 @@ def test_dispatch_task_via_mcp_tool_import_error():
     with patch.dict(sys.modules, {"anthropic": None}):
         result = call(server, "dispatch_task", {"task_type": "file_location", "prompt": "find auth"})
     assert result["error"] == "missing_dependency"
+
+
+# ── _model_for_task (merged from test_plugin_customization.py) ────────────────
+# These two exercise _model_for_task directly. They add no unique *line*
+# coverage — the routing lookup is one line — but they are the only tests that
+# check the lookup with a known vs an unknown key, which is the behaviour that
+# line has. Line coverage and behavioural coverage are not the same thing.
+
+def _write_routing(tmp_path, monkeypatch, tasks=None, default="claude-sonnet-4-6"):
+    import extensions.plugin_customization as pc
+    cfg = {"model_routing": {"default": default, "tasks": tasks or {}}}
+    config_file = tmp_path / "plugin_config.json"
+    config_file.write_text(json.dumps(cfg))
+    monkeypatch.setattr("extensions.plugin_customization._user_config_path", lambda: config_file)
+    pc._config_cache = {}
+    pc._config_mtime = 0.0
+
+
+def test_model_for_known_task_uses_its_mapping(tmp_path, monkeypatch):
+    """A task_type present in the routing table resolves to its own model."""
+    import extensions.plugin_customization as pc
+    _write_routing(tmp_path, monkeypatch, {"file_location": "claude-haiku-4-5-20251001"})
+    assert pc._model_for_task("file_location") == "claude-haiku-4-5-20251001"
+
+
+def test_model_for_unknown_task_falls_back_to_default(tmp_path, monkeypatch):
+    """A task_type absent from the routing table falls back to the default."""
+    import extensions.plugin_customization as pc
+    _write_routing(tmp_path, monkeypatch, default="claude-sonnet-4-6")
+    assert pc._model_for_task("unknown_task") == "claude-sonnet-4-6"

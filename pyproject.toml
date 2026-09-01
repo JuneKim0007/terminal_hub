@@ -47,6 +47,9 @@ artifacts = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=terminal_hub --cov=extensions --cov-report=term-missing --cov-fail-under=80"
+markers = [
+    "network: test genuinely requires a live network connection (blocked by default)",
+]
 
 [tool.coverage.run]
 source = ["terminal_hub", "extensions"]

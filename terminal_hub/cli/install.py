@@ -10,6 +10,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from terminal_hub.config import BUILTIN_COMMANDS_DIR, EXTENSIONS_DIR
+
 from terminal_hub.config.namespace import COMMAND_NAMESPACE
 
 _CLAUDE_JSON = Path.home() / ".claude.json"
@@ -55,7 +57,7 @@ def format_diff(config: dict) -> str:
     return "\n".join(lines)
 
 
-_COMMANDS_SRC = Path(__file__).resolve().parent.parent.parent / "extensions" / "builtin"
+_COMMANDS_SRC = BUILTIN_COMMANDS_DIR
 
 
 def install_commands(claude_dir: Path = Path.home() / ".claude") -> list[str]:
@@ -146,7 +148,7 @@ def run_install(claude_json_path: Path = _CLAUDE_JSON, claude_dir: Path = Path.h
 
     # Install plugin commands
     from terminal_hub.plugins.plugin_loader import discover_plugins
-    plugins_dir = Path(__file__).resolve().parent.parent.parent / "extensions"
+    plugins_dir = EXTENSIONS_DIR
     manifests = discover_plugins(plugins_dir)
     for manifest in manifests:
         try:

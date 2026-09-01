@@ -280,6 +280,67 @@ __all__ = [
     "write_issue_file",
 ]
 
+
+# ── Host hooks (see terminal_hub/plugins/hooks.py) ───────────────────────────
+# The host used to import these behaviours from this plugin by name. It now
+# announces events and this plugin answers, so terminal_hub names no plugin.
+
+def on_workspace_configured(root, github_repo: str | None) -> str | None:
+    """Warm the repo's labels after setup_workspace configured a workspace.
+
+    Returns a warning string when some labels could not be created, or None.
+    """
+    _invalidate_repo_cache()  # new repo → drop the cached detect_repo result
+    if not github_repo:
+        return None
+    from extensions.gh_management.github_planner.client import load_default_labels
+
+    gh, _ = get_github_client()
+    if gh is None:
+        return None
+    with gh:
+        return gh.ensure_labels([d["name"] for d in load_default_labels()])
+
+
+def disk_state_items(root) -> list[dict]:
+    """Rows for the analyzer snapshot this plugin owns."""
+    from extensions.gh_management.github_planner.analyzer import (
+        _snapshot_path,
+        load_snapshot,
+        snapshot_age_hours,
+        summarize_for_prompt,
+    )
+
+    snap_path = _snapshot_path(root)
+    if not snap_path.exists():
+        return [{
+            "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
+            "status": "absent", "path": str(snap_path.relative_to(root)),
+            "size_bytes": None, "age_hours": None, "summary": None,
+        }]
+    snap = load_snapshot(root)
+    age = snapshot_age_hours(snap) if snap else None
+    return [{
+        "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
+        "status": "present", "path": str(snap_path.relative_to(root)),
+        "size_bytes": snap_path.stat().st_size,
+        "age_hours": round(age, 1) if age is not None else None,
+        "summary": summarize_for_prompt(snap) if snap else None,
+    }]
+
+
+def cache_status() -> dict[str, str]:
+    """This plugin's in-memory caches and whether each is hot."""
+    hot = lambda c: "🔵 hot" if c else "⚪ empty"  # noqa: E731
+    return {
+        "analysis_cache":     hot(_ANALYSIS_CACHE),
+        "project_docs_cache": hot(_PROJECT_DOCS_CACHE),
+        "file_tree_cache":    hot(_FILE_TREE_CACHE),
+        "label_cache":        hot(_LABEL_CACHE),
+        "milestone_cache":    hot(_MILESTONE_CACHE),
+        "repo_cache":         hot(_REPO_CACHE),
+    }
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def _register_resources(mcp) -> None:

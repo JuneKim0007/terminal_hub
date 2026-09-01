@@ -12,6 +12,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from terminal_hub.plugins import hooks
+
 from terminal_hub.config.env_store import read_env
 from terminal_hub.config.settings import load_config
 
@@ -60,33 +62,11 @@ def _item_row(item: dict) -> str:
 def _disk_state_items(root) -> list[dict]:
     """Presence, size and age of every on-disk artefact the hub tracks."""
     items: list[dict] = []
-    # Analyzer snapshot
-    from extensions.gh_management.github_planner.analyzer import (
-        _snapshot_path,
-        load_snapshot,
-        snapshot_age_hours,
-        summarize_for_prompt,
-    )
-    snap_path = _snapshot_path(root)
-    if snap_path.exists():
-        snap = load_snapshot(root)
-        age = snapshot_age_hours(snap) if snap else None
-        summary = summarize_for_prompt(snap) if snap else None
-        items.append({
-            "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
-            "status": "present", "path": str(snap_path.relative_to(root)),
-            "size_bytes": snap_path.stat().st_size,
-            "age_hours": round(age, 1) if age is not None else None,
-            "summary": summary,
-        })
-    else:
-        items.append({
-            "key": "analyzer_snapshot", "label": "Analyzer snapshot", "type": "cache",
-            "status": "absent", "path": str(snap_path.relative_to(root)),
-            "size_bytes": None, "age_hours": None, "summary": None,
-        })
 
-    # Project docs (namespaced under extensions/gh_planner/)
+    # Plugins contribute the artefacts they own (R26).
+    for _plugin, rows in hooks.call_all(hooks.DISK_STATE_ITEMS, root):
+        items.extend(rows or [])
+
     for key, label, path in [
         ("project_summary", "Project summary", "hub_agents/extensions/gh_planner/project_summary.md"),
         ("project_detail", "Project detail", "hub_agents/extensions/gh_planner/project_detail.md"),
@@ -133,26 +113,10 @@ def register(mcp: FastMCP) -> None:
         env = read_env(root)
 
         # In-memory cache status from github_planner extension (#138)
+        # Plugins report their own caches; the host holds none of its own.
         cache_status: dict[str, str] = {}
-        try:
-            from extensions.gh_management.github_planner import (
-                _ANALYSIS_CACHE,
-                _FILE_TREE_CACHE,
-                _LABEL_CACHE,
-                _MILESTONE_CACHE,
-                _PROJECT_DOCS_CACHE,
-                _REPO_CACHE,
-            )
-            cache_status = {
-                "analysis_cache":     "🔵 hot" if _ANALYSIS_CACHE else "⚪ empty",
-                "project_docs_cache": "🔵 hot" if _PROJECT_DOCS_CACHE else "⚪ empty",
-                "file_tree_cache":    "🔵 hot" if _FILE_TREE_CACHE else "⚪ empty",
-                "label_cache":        "🔵 hot" if _LABEL_CACHE else "⚪ empty",
-                "milestone_cache":    "🔵 hot" if _MILESTONE_CACHE else "⚪ empty",
-                "repo_cache":         "🔵 hot" if _REPO_CACHE else "⚪ empty",
-            }
-        except ImportError:
-            pass
+        for _plugin, statuses in hooks.call_all(hooks.CACHE_STATUS):
+            cache_status.update(statuses or {})
 
         # Build runtime section
         try:

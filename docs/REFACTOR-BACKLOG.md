@@ -58,25 +58,26 @@ The one genuine duplicate this line of enquiry ever found (R18a) was identified
 by reading test NAMES, not coverage. Use that method if the question returns.
 ```
 
-### R26 · Inappropriate intimacy · the host still does GitHub work
-```
-status   planned
-evidence server/__init__.py imports get_github_client and _invalidate_repo_cache
-         from github_planner, and tools/setup.py imports load_default_labels.
-         Both are genuinely GitHub-specific, so the names are not the problem —
-         the problem is that setup_workspace configures a repo and warms its
-         labels, which is the host performing plugin work. The plugin loader
-         exists precisely so the host need not know its plugins.
-remedy   a post-setup plugin hook the plugin registers, so the host announces
-         "a workspace was configured" and github_planner reacts
-expect   terminal_hub stops naming any plugin
-blocked  none, but it is a design change rather than a move; wants its own pass
-first seen 2026-09-01
-```
-
 ---
 
 ## Done
+
+### R26 · Inappropriate intimacy · the host did GitHub work
+```
+closed 2026-09-01 — three optional plugin hooks in terminal_hub/plugins/hooks.py
+(on_workspace_configured, disk_state_items, cache_status), following the
+convention register(mcp) already set. github_planner implements all three.
+setup_workspace now announces that a workspace was configured instead of
+warming a GitHub repo's labels itself; get_runtime_state asks plugins what they
+own instead of importing six caches by name.
+`grep "from extensions" terminal_hub/` now returns nothing — the host names no
+plugin at all.
+Observer was justified by a present variation, not a speculative one: 8 plugins
+exist, and runtime_state's `except ImportError: pass` already admitted the
+dependency should not be there.
+Behaviour checked on output, not only on tests: same four item keys in the same
+order, same six cache keys.
+```
 
 ### R6 · Shotgun surgery · tool wrapper vs implementation — complete
 ```

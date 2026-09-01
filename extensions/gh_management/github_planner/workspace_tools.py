@@ -35,30 +35,34 @@ _MD_SUFFIXES = {".md", ".rst", ".txt"}
 _ALLOWED_PREFERENCES = {"confirm_arch_changes", "github_repo_connected", "milestone_assign"}
 
 
-def _load_unload_policy() -> dict:
-    """Load and return the full unload_policy.json contents."""
-    try:
-        policy = json.loads(_UNLOAD_POLICY_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        return {"error": str(exc), "commands": {}}
+def _cache_key_map() -> dict[str, tuple]:
+    """Map each unload_policy.json cache key to (in-memory dict, on-disk filename).
 
+    Exactly one of each pair is set. Built on call, not at import, so the
+    objects are the live module-level caches that tests patch. Both
+    _load_unload_policy (to validate keys) and _do_apply_unload_policy (to
+    clear them) need it; it used to be spelled out identically in both.
+    """
     from extensions.gh_management.github_planner.analysis import _ANALYSIS_CACHE, _FILE_TREE_CACHE
-    from extensions.gh_management.github_planner.project_docs import _PROJECT_DOCS_CACHE, _SESSION_HEADER_CACHE
-    from extensions.gh_management.github_planner.labels import _LABEL_CACHE, _LABEL_ANALYSIS_CACHE
+    from extensions.gh_management.github_planner.labels import _LABEL_ANALYSIS_CACHE, _LABEL_CACHE
     from extensions.gh_management.github_planner.milestones import _MILESTONE_CACHE
-    from extensions.gh_management.github_planner.setup import _REPO_CACHE
+    from extensions.gh_management.github_planner.project_docs import (
+        _PROJECT_DOCS_CACHE,
+        _SESSION_HEADER_CACHE,
+    )
     from extensions.gh_management.github_planner.session import _SESSION_REPO_CONFIRMED
+    from extensions.gh_management.github_planner.setup import _REPO_CACHE
 
-    _CACHE_KEY_MAP: dict[str, tuple] = {
-        "analysis_cache":            (_ANALYSIS_CACHE,          None),
-        "project_docs_cache":        (_PROJECT_DOCS_CACHE,      None),
-        "file_tree_cache":           (_FILE_TREE_CACHE,          None),
-        "session_header_cache":      (_SESSION_HEADER_CACHE,    None),
-        "label_cache":               (_LABEL_CACHE,             None),
+    return {
+        "analysis_cache":            (_ANALYSIS_CACHE,         None),
+        "project_docs_cache":        (_PROJECT_DOCS_CACHE,     None),
+        "file_tree_cache":           (_FILE_TREE_CACHE,        None),
+        "session_header_cache":      (_SESSION_HEADER_CACHE,   None),
+        "label_cache":               (_LABEL_CACHE,            None),
         "label_analysis_cache":      (_LABEL_ANALYSIS_CACHE,   None),
-        "milestone_cache":           (_MILESTONE_CACHE,         None),
-        "repo_cache":                (_REPO_CACHE,              None),
-        "session_repo_confirmation": (_SESSION_REPO_CONFIRMED,  None),
+        "milestone_cache":           (_MILESTONE_CACHE,        None),
+        "repo_cache":                (_REPO_CACHE,             None),
+        "session_repo_confirmation": (_SESSION_REPO_CONFIRMED, None),
         "analyzer_snapshot":         (None, "analyzer_snapshot.json"),
         "file_hashes":               (None, "file_hashes.json"),
         "file_tree":                 (None, "file_tree.json"),
@@ -66,6 +70,16 @@ def _load_unload_policy() -> dict:
         "docs_strategy":             (None, "docs_strategy.json"),
         "docs_config":               (None, "docs_config.json"),
     }
+
+
+def _load_unload_policy() -> dict:
+    """Load and return the full unload_policy.json contents."""
+    try:
+        policy = json.loads(_UNLOAD_POLICY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"error": str(exc), "commands": {}}
+
+    _CACHE_KEY_MAP = _cache_key_map()
 
     known_keys = set(_CACHE_KEY_MAP.keys()) | set(policy.get("cache_keys", {}).keys())
     for cmd_name, cmd_policy in policy.get("commands", {}).items():
@@ -423,11 +437,61 @@ def _do_unload_plugin(plugin: str) -> dict:
     }
 
 
+def _clear_caches(to_unload, key_map, docs_dir):
+    """Clear each named cache. Returns (cleared, errors).
+
+    A memory cache that is already empty is not reported as cleared — the
+    display distinguishes "dropped something" from "was already empty".
+    """
+    cleared: list[str] = []
+    errors: list[str] = []
+    for key in to_unload:
+        if key not in key_map:
+            errors.append(f"Unknown cache key: {key!r}")
+            continue
+        mem_cache, disk_file = key_map[key]
+        if mem_cache is not None and mem_cache:
+            mem_cache.clear()
+            cleared.append(key)
+        if disk_file is not None:
+            path = docs_dir / disk_file
+            if path.exists():
+                try:
+                    path.unlink()
+                    cleared.append(disk_file)
+                except OSError as exc:
+                    errors.append(f"{disk_file}: {exc}")
+    return cleared, errors
+
+
+def _render_unload_lines(to_unload, cleared, cache_descriptions):
+    """One display line per unloaded key."""
+    return [
+        f"  🗑️  {key} — {cache_descriptions.get(key, key)}"
+        if key in cleared else f"  ⚪ {key} — already empty"
+        for key in to_unload
+    ]
+
+
+def _render_keep_lines(to_keep, always_keep, cache_descriptions, key_map):
+    """One display line per retained key, showing hot/empty for memory caches."""
+    lines = []
+    for key in to_keep:
+        if key in always_keep:
+            lines.append(f"  🔵 {key} — persistent (never cleared)")
+            continue
+        mem_cache, _ = key_map.get(key, (None, None))
+        if mem_cache is not None:
+            lines.append(f"  🟢 {key} — {'hot' if mem_cache else 'empty'}")
+        else:
+            lines.append(f"  🔵 {key} — {cache_descriptions.get(key, key)}")
+    return lines
+
+
 def _do_apply_unload_policy(command: str) -> dict:
     """Clear only the caches listed in unload_policy.json for the given command."""
     from extensions.gh_management.github_planner.project_docs import _gh_planner_docs_dir
 
-    # Import all caches for _CACHE_KEY_MAP
     from extensions.gh_management.github_planner.analysis import _ANALYSIS_CACHE, _FILE_TREE_CACHE
     from extensions.gh_management.github_planner.project_docs import _PROJECT_DOCS_CACHE, _SESSION_HEADER_CACHE
     from extensions.gh_management.github_planner.labels import _LABEL_CACHE, _LABEL_ANALYSIS_CACHE
@@ -441,23 +505,7 @@ def _do_apply_unload_policy(command: str) -> dict:
         if err := _p.ensure_initialized(root):
             return err
 
-    _CACHE_KEY_MAP: dict[str, tuple] = {
-        "analysis_cache":            (_ANALYSIS_CACHE,          None),
-        "project_docs_cache":        (_PROJECT_DOCS_CACHE,      None),
-        "file_tree_cache":           (_FILE_TREE_CACHE,          None),
-        "session_header_cache":      (_SESSION_HEADER_CACHE,    None),
-        "label_cache":               (_LABEL_CACHE,             None),
-        "label_analysis_cache":      (_LABEL_ANALYSIS_CACHE,   None),
-        "milestone_cache":           (_MILESTONE_CACHE,         None),
-        "repo_cache":                (_REPO_CACHE,              None),
-        "session_repo_confirmation": (_SESSION_REPO_CONFIRMED,  None),
-        "analyzer_snapshot":         (None, "analyzer_snapshot.json"),
-        "file_hashes":               (None, "file_hashes.json"),
-        "file_tree":                 (None, "file_tree.json"),
-        "github_local_config":       (None, "github_local_config.json"),
-        "docs_strategy":             (None, "docs_strategy.json"),
-        "docs_config":               (None, "docs_config.json"),
-    }
+    _CACHE_KEY_MAP = _cache_key_map()
 
     policy = _p._load_unload_policy()
     if "error" in policy:
@@ -477,52 +525,16 @@ def _do_apply_unload_policy(command: str) -> dict:
     to_keep: list[str] = entry.get("keep", [])
     docs_dir = _gh_planner_docs_dir(root)
 
-    cleared: list[str] = []
-    errors: list[str] = []
-
-    for key in to_unload:
-        if key not in _CACHE_KEY_MAP:
-            errors.append(f"Unknown cache key: {key!r}")
-            continue
-        mem_cache, disk_file = _CACHE_KEY_MAP[key]
-        if mem_cache is not None and mem_cache:
-            mem_cache.clear()
-            cleared.append(key)
-        if disk_file is not None:
-            p = docs_dir / disk_file
-            if p.exists():
-                try:
-                    p.unlink()
-                    cleared.append(disk_file)
-                except OSError as exc:
-                    errors.append(f"{disk_file}: {exc}")
+    cleared, errors = _clear_caches(to_unload, _CACHE_KEY_MAP, docs_dir)
 
     success = len(errors) == 0
 
     cache_descriptions = policy.get("cache_keys", {})
     always_keep = set(policy.get("always_keep", []))
 
-    unloaded_lines = []
-    for key in to_unload:
-        desc = cache_descriptions.get(key, key)
-        if key in cleared:
-            unloaded_lines.append(f"  🗑️  {key} — {desc}")
-        else:
-            unloaded_lines.append(f"  ⚪ {key} — already empty")
-
-    kept_lines = []
+    unloaded_lines = _render_unload_lines(to_unload, cleared, cache_descriptions)
+    kept_lines = _render_keep_lines(to_keep, always_keep, cache_descriptions, _CACHE_KEY_MAP)
     _commands_dir = _p._COMMANDS_DIR
-    for key in to_keep:
-        if key in always_keep:
-            kept_lines.append(f"  🔵 {key} — persistent (never cleared)")
-        else:
-            desc = cache_descriptions.get(key, key)
-            mem_cache, _ = _CACHE_KEY_MAP.get(key, (None, None))
-            if mem_cache is not None:
-                status = "hot" if mem_cache else "empty"
-                kept_lines.append(f"  🟢 {key} — {status}")
-            else:
-                kept_lines.append(f"  🔵 {key} — {desc}")
 
     cmd_file = command.replace("/", "/") + ".md"
     cmd_path = _commands_dir / cmd_file

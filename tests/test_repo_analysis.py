@@ -2534,3 +2534,93 @@ def test_mcp_wrapper_generate_issue_workflows(workspace):
     result = _mcp_call("generate_issue_workflows", {"slug": "nonexistent-slug"}, workspace)
     # Should return issue_not_found since slug doesn't exist
     assert result.get("error") == "issue_not_found" or "status" in result
+
+
+# ── _do_generate_issue_workflows: characterisation (R21) ──────────────────────
+# Two reachable-but-unexercised branches, pinned so the function can be
+# decomposed later (R8).
+
+def test_generate_issue_workflows_prepends_intent_expansion_step(workspace):
+    """When the intent-expansion skill is registered, it becomes step 1."""
+    from extensions.gh_management.github_planner import _do_generate_issue_workflows
+    from extensions.gh_management.github_planner.skills import _SKILL_REGISTRY
+    from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
+    import datetime
+
+    write_issue_file(root=workspace, slug="with-skill", title="Fix login bug", body="body",
+                     assignees=[], labels=["bug"], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_PENDING)
+    _SKILL_REGISTRY[str(workspace)] = {"intent-expansion": {"tier": 1}}
+    try:
+        with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace):
+            _do_generate_issue_workflows("with-skill")
+    finally:
+        _SKILL_REGISTRY.pop(str(workspace), None)
+
+    content = (workspace / "hub_agents" / "issues" / "with-skill.md").read_text()
+    assert "expand-intent" in content
+    steps = [l for l in content.splitlines() if "expand-intent" in l or "orient:" in l]
+    assert "expand-intent" in steps[0], "intent-expansion must come before orient"
+
+
+def test_generate_issue_workflows_lists_reusable_components(workspace):
+    """Reusable findings and patterns from the context scan fill in
+    Affected Components instead of the placeholder comment."""
+    from extensions.gh_management.github_planner import _do_generate_issue_workflows
+    from extensions.gh_management.github_planner.storage import write_issue_file, STATUS_PENDING
+    import datetime
+
+    write_issue_file(root=workspace, slug="reuse", title="Add caching layer", body="body",
+                     assignees=[], labels=["enhancement"], created_at=datetime.date(2026, 1, 1),
+                     status=STATUS_PENDING)
+
+    findings = {
+        "reusable": [{"name": "CacheStore", "path": "app/cache.py"}, {"path": "no/name.py"}],
+        "patterns": ["write-through caching"],
+    }
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.issues._do_scan_issue_context",
+               return_value=findings):
+        _do_generate_issue_workflows("reuse")
+
+    content = (workspace / "hub_agents" / "issues" / "reuse.md").read_text()
+    assert "- CacheStore (app/cache.py)" in content
+    assert "- write-through caching" in content
+    assert "Fill in: list files/modules" not in content
+    assert "no/name.py" not in content, "entries without a name are skipped"
+
+
+def test_sync_github_issues_closes_local_issue_when_closed_on_github(workspace):
+    """An issue open locally but closed on GitHub is closed locally without a
+    full re-fetch — the fast path that avoids rewriting the file body."""
+    from extensions.gh_management.github_planner import _do_sync_github_issues
+    from extensions.gh_management.github_planner.storage import (
+        IssueStatus,
+        read_issue_frontmatter,
+        write_issue_file,
+    )
+    import datetime
+
+    write_issue_file(root=workspace, slug="7", title="Fix auth bug", body="body",
+                     assignees=[], labels=[], created_at=datetime.date(2026, 1, 1),
+                     status=IssueStatus.OPEN, issue_number=7,
+                     github_url="https://github.com/owner/repo/issues/7",
+                     updated_at="2026-01-02T00:00:00Z")
+
+    mock_gh = MagicMock()
+    mock_gh.__enter__ = lambda s: s
+    mock_gh.__exit__ = MagicMock(return_value=False)
+    mock_gh.list_issues_all.return_value = [
+        _make_raw_issue(7, "Fix auth bug", state="closed", updated_at="2026-01-09T00:00:00Z"),
+    ]
+
+    with patch("extensions.gh_management.github_planner.get_workspace_root", return_value=workspace), \
+         patch("extensions.gh_management.github_planner.get_github_client", return_value=(mock_gh, "")), \
+         patch("extensions.gh_management.github_planner.read_env", return_value={"GITHUB_REPO": "owner/repo"}):
+        result = _do_sync_github_issues()
+
+    assert result.get("error") is None
+    assert result["closed_locally"] == 1
+    assert result["synced"] == 0, "the close path skips the full write"
+    fm = read_issue_frontmatter(workspace, "7")
+    assert str(fm["status"]) == str(IssueStatus.CLOSED)

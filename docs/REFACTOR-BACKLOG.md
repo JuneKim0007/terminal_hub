@@ -3,7 +3,7 @@
 Surveyed 2026-08-31 · scope `terminal_hub/` + `extensions/` · 53 files
 Baseline: tests 1074 green · 9,672 lines · 237 comment lines · 126 commits of history
 
-Ids are permanent. Never renumber, never reuse a retired id. Next id: **R20**.
+Ids are permanent. Never renumber, never reuse a retired id. Next id: **R23**.
 
 This file is written by `/refactor-facade` and reconciled by it. Do not mark items
 closed by hand — re-run the survey after a stretch of work and let it find them.
@@ -54,23 +54,6 @@ evidence 17 named parameters, 7 required. 10 of them (title, status, created_at,
 remedy   Introduce Parameter Object -> refactor-simplifying-method
 expect   17 params -> 4 + one IssueFrontmatter
 blocked  safety gate returned ASK (46 call sites). Recommended: apply.
-first seen 2026-08-31
-```
-
-### R8 · Long method · 8 sites · the _do_* cluster
-```
-status   planned
-evidence runtime_state.py:24 get_runtime_state 77 stmts/d4 ·
-         issues.py:551 _do_sync_github_issues 72/d3 ·
-         workspace_tools.py:429 _do_apply_unload_policy 71/d4 ·
-         labels.py:54 _do_analyze_github_labels 67/d3 ·
-         analysis.py:430 _do_analyze_repo_full 66/d4 ·
-         milestones.py:326 _do_generate_milestone_knowledge 65/d1 ·
-         issues.py:372 _do_generate_issue_workflows 59/d5 ·
-         issues.py:20 _extract_design_refs 39/d5 + control flag `in_principles`
-remedy   Extract Method, Remove Control Flag -> refactor-composing-method
-expect   no body over 40 statements
-blocked  none
 first seen 2026-08-31
 ```
 
@@ -159,6 +142,63 @@ first seen 2026-08-31
 ---
 
 ## Done
+
+### R8 · Long method · the _do_* cluster — complete
+```
+closed 2026-09-01 — the five that R8a could not prove, refactored after R21
+supplied the coverage:
+  get_runtime_state                 77 -> 36 stmts  (depth 4 -> 1)
+  _do_sync_github_issues            72 -> 38
+  _do_generate_milestone_knowledge  65 -> 39
+  _do_generate_issue_workflows      59 -> 37  (depth 5 -> 1)
+  _extract_design_refs              39 -> 18  (depth 5 -> 3)
+No non-registry body in scope now exceeds 40 statements. _extract_design_refs
+also lost its `in_principles` control flag — extracting the scan made the flag
+local to it, which is Remove Control Flag falling out of Extract Method rather
+than being applied separately.
+Six stale imports dropped as a side effect.
+```
+
+### R21 · Tests · characterisation coverage for the R8 remainder
+```
+closed 2026-09-01 — 17 tests, written before any of the code they cover was
+touched:
+  _extract_design_refs              84.6% -> 100.0%
+  _do_generate_milestone_knowledge  78.5% -> 100.0%
+  _do_generate_issue_workflows      91.5% -> 100.0%
+  _do_sync_github_issues            94.6% -> 100.0%
+  get_runtime_state                 83.8% ->  96.2%
+get_runtime_state keeps 3 unhit lines: two are an ImportError guard around an
+optional cache import, one an else that the config schema makes unreachable.
+Suite 1067 -> 1084 tests, coverage 89.72% -> 91.11%.
+```
+
+### R8a · Long method · 3 of 8 sites (the ones coverage could prove)
+```
+closed 2026-09-01 — refactored the three targets at >=95% line coverage:
+  _do_analyze_github_labels  67 -> 33 stmts  (labels.py, was 98.6% covered)
+  _do_analyze_repo_full      66 -> 28 stmts  (analysis.py, 95.6%)
+  _do_apply_unload_policy    71 -> 41 stmts  (workspace_tools.py, 95.8%)
+Extracted _label_names_with_open_issues, _label_age_days, _classify_labels,
+_persist_label_analysis, _make_profile_filter, _partition_tree,
+_fetch_file_index, _clear_caches, _render_unload_lines, _render_keep_lines.
+Coverage 89.70% -> 89.72%; 1067 tests green throughout.
+_do_apply_unload_policy is 41 stmts, one over the threshold — the remainder is
+a flat result-assembly block with no reusable group, which the bloaters skill
+excludes explicitly.
+```
+
+### R22 · Duplicate code · workspace_tools.py · _CACHE_KEY_MAP defined twice
+```
+closed 2026-09-01 — the 15-entry cache-key map and its 6 imports were spelled
+out byte-identically in _load_unload_policy (line 52) and
+_do_apply_unload_policy (line 444) of the same file. Found by accident: a
+regex written to match one of them spanned both and broke the module. Now one
+_cache_key_map() serving both. -24 lines.
+Missed by the original sweep because 6-statement window hashing found it only
+as a single collision inside one file, which ranked below the cross-file
+findings and was never read.
+```
 
 ### R20 · Bug · tests/tools/test_setup_workspace.py:45 · live network call
 ```

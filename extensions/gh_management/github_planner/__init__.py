@@ -179,6 +179,11 @@ from extensions.gh_management.github_planner.skills import (
     _do_get_docs_map,
 )
 
+# Domains that own their own tool wrappers, so a tool change lands in one
+# file instead of two (R6 trial: labels and milestones).
+from extensions.gh_management.github_planner.labels import register_label_tools
+from extensions.gh_management.github_planner.milestones import register_milestone_tools
+
 # ── Plugin registration ───────────────────────────────────────────────────────
 
 def _register_resources(mcp) -> None:
@@ -739,69 +744,11 @@ def _register_batch_analysis_tools(mcp) -> None:
         """
         return _do_apply_unload_policy(command)
 
-    @mcp.tool()
-    def analyze_github_labels(refresh: bool = False) -> dict:
-        """Fetch and classify GitHub labels for the configured repo (#81).
 
-        Classifies labels as:
-          active_labels  — labels with open issues OR created < 30 days ago
-          closed_labels  — labels with no open issues AND created > 30 days ago
 
-        Results saved to hub_agents/extensions/gh_planner/github_local_config.json.
-        Use active_labels when suggesting labels for new issues via draft_issue.
 
-        If only GitHub default labels exist, returns suggestion for project-specific labels.
-        Set refresh=True to bypass the in-memory cache and re-fetch from GitHub.
-        """
-        return _do_analyze_github_labels(refresh)
 
-    @mcp.tool()
-    def load_github_local_config() -> dict:
-        """Read the saved github_local_config.json from disk (#81).
 
-        Returns {labels: {active: [...], closed: [...]}, fetched_at: float | null}.
-        Call analyze_github_labels first to populate this file.
-        """
-        return _do_load_github_local_config()
-
-    @mcp.tool()
-    def load_github_global_config() -> dict:
-        """Read or create hub_agents/github_global_config.json (#80).
-
-        Stores auth method, username, default_repo, and rate-limit metadata.
-        Never stores tokens. Never cleared by unload_plugin (persists across sessions).
-        Returns {auth: {method, username}, default_repo, rate_limit_remaining, last_checked}.
-        """
-        return _do_load_github_global_config()
-
-    @mcp.tool()
-    def save_github_local_config(data: dict) -> dict:
-        """Merge data into hub_agents/extensions/gh_planner/github_local_config.json (#80).
-
-        Shallow merge: top-level keys from data overwrite existing values.
-        Atomic write. Use for storing repo-specific fields like default_branch, issue_templates.
-        """
-        return _do_save_github_local_config(data)
-
-    @mcp.tool()
-    def get_github_config(scope: str = "both") -> dict:
-        """Return GitHub config for scope: 'global', 'local', or 'both' (#80).
-
-        global: auth method, default_repo, rate-limit metadata.
-        local:  project-specific labels, templates, etc.
-        both:   merged view with both sections (default).
-
-        Load only what you need — global is ~20 tokens, local is ~50 tokens.
-        """
-        return _do_get_github_config(scope)
-
-    @mcp.tool()
-    def list_repo_labels() -> dict:
-        """Fetch all labels from the GitHub repo and cache them locally.
-
-        Call before draft_issue to know which labels are available.
-        Returns {labels, names, count}. Returns from cache if available."""
-        return _do_list_repo_labels()
 
     @mcp.tool()
     def get_scan_profile_status() -> dict:
@@ -822,84 +769,11 @@ def _register_batch_analysis_tools(mcp) -> None:
         """
         return _do_create_scan_profile(content)
 
-    @mcp.tool()
-    def make_label(name: str, color: str, description: str = "") -> dict:
-        """Create a GitHub label (idempotent — returns existing if already present).
 
-        Follow the conventional palette:
-          bug=#d73a4a, enhancement=#a2eeef, feature=#0075ca,
-          documentation=#0075ca, refactor=#e4e669, performance=#e4e669,
-          chore=#ededed, test=#bfd4f2, priority:high=#e11d48,
-          priority:low=#86efac, status:needs-triage=#fbbf24
 
-        color: hex color WITHOUT the # prefix (e.g. 'd73a4a')
-        """
-        return _do_make_label(name, color, description)
 
-    @mcp.tool()
-    def list_milestones(state: str = "open") -> dict:
-        """List GitHub milestones. Uses in-memory cache if populated — no API call needed.
 
-        If _MILESTONE_CACHE is populated for this repo, return cached data directly.
-        Only call this when you genuinely don't know the current milestones.
-        state: 'open' | 'closed' | 'all'
-        """
-        return _do_list_milestones(state)
 
-    @mcp.tool()
-    def create_milestone(title: str, description: str = "", due_on: str | None = None) -> dict:
-        """Create a GitHub milestone (idempotent — returns existing if title already taken).
-
-        **Convention:** Only create a milestone when a coherent group of related features
-        warrants a named release phase — typically >= 3 issues with a shared theme.
-        Name pattern: descriptive theme (e.g. "Core Auth", "Posting & Feed", "Launch Polish").
-        Avoid generic names like "Milestone 1" or "Phase A".
-
-        **Auto-label:** After creation, a milestone label `m{N}` is automatically created
-        on GitHub and synced to labels.json so issues can be tagged by milestone.
-
-        title: short descriptive theme (e.g. "Core Auth")
-        description: one sentence — what the user can do after this milestone ships
-        due_on: optional ISO 8601 date string (e.g. '2026-04-01T00:00:00Z')
-        """
-        return _do_create_milestone(title, description, due_on)
-
-    @mcp.tool()
-    def assign_milestone(slug: str, milestone_number: int) -> dict:
-        """Assign a milestone to a local issue and update GitHub if the issue is submitted.
-
-        slug: local issue slug (e.g. '1', 'fix-auth-bug')
-        milestone_number: GitHub milestone number (from create_milestone or list_milestones)
-
-        Updates both local front matter and GitHub. Idempotent — safe to call multiple times.
-        """
-        return _do_assign_milestone(slug, milestone_number)
-
-    @mcp.tool()
-    def generate_milestone_knowledge(milestone_number: int) -> dict:
-        """Generate a structured knowledge file for a milestone at hub_agents/milestones/M{n}.md.
-
-        Reads milestone details from _MILESTONE_CACHE and project docs from _PROJECT_DOCS_CACHE.
-        Writes a structured markdown file covering: Goal, Features Governed, Interface Contract,
-        Depends On, Enables, and Design Principles Applicable.
-
-        Also updates milestone_index.json, syncs project_summary.md Milestones table,
-        and updates Enables/Depends On links in adjacent milestone knowledge files.
-
-        milestone_number: GitHub milestone number (e.g. 1, 2, 3)
-        """
-        return _do_generate_milestone_knowledge(milestone_number)
-
-    @mcp.tool()
-    def load_milestone_knowledge(milestone_number: int) -> dict:
-        """Load the knowledge file for a milestone from hub_agents/milestones/M{n}.md.
-
-        Returns {milestone_number, content, exists, _display}.
-        If the file does not exist, returns exists=False with instructions to generate it.
-
-        milestone_number: GitHub milestone number (e.g. 1, 2, 3)
-        """
-        return _do_load_milestone_knowledge(milestone_number)
 
     @mcp.tool()
     def build_docs_map() -> dict:
@@ -1017,4 +891,6 @@ def register(mcp) -> None:
     _register_repo_analysis_tools(mcp)
     _register_project_docs_tools(mcp)
     _register_batch_analysis_tools(mcp)
+    register_label_tools(mcp)
+    register_milestone_tools(mcp)
     _register_integrated_flow_tools(mcp)

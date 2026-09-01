@@ -353,3 +353,90 @@ def _do_make_label(name: str, color: str, description: str = "") -> dict:
         }
     except Exception as exc:
         return {"error": "make_label_failed", "message": str(exc)}
+
+
+def register_label_tools(mcp) -> None:
+    """Register the label and GitHub-config MCP tools."""
+    @mcp.tool()
+    def analyze_github_labels(refresh: bool = False) -> dict:
+        """Fetch and classify GitHub labels for the configured repo (#81).
+
+        Classifies labels as:
+          active_labels  — labels with open issues OR created < 30 days ago
+          closed_labels  — labels with no open issues AND created > 30 days ago
+
+        Results saved to hub_agents/extensions/gh_planner/github_local_config.json.
+        Use active_labels when suggesting labels for new issues via draft_issue.
+
+        If only GitHub default labels exist, returns suggestion for project-specific labels.
+        Set refresh=True to bypass the in-memory cache and re-fetch from GitHub.
+        """
+        return _do_analyze_github_labels(refresh)
+
+
+    @mcp.tool()
+    def load_github_local_config() -> dict:
+        """Read the saved github_local_config.json from disk (#81).
+
+        Returns {labels: {active: [...], closed: [...]}, fetched_at: float | null}.
+        Call analyze_github_labels first to populate this file.
+        """
+        return _do_load_github_local_config()
+
+
+    @mcp.tool()
+    def load_github_global_config() -> dict:
+        """Read or create hub_agents/github_global_config.json (#80).
+
+        Stores auth method, username, default_repo, and rate-limit metadata.
+        Never stores tokens. Never cleared by unload_plugin (persists across sessions).
+        Returns {auth: {method, username}, default_repo, rate_limit_remaining, last_checked}.
+        """
+        return _do_load_github_global_config()
+
+
+    @mcp.tool()
+    def save_github_local_config(data: dict) -> dict:
+        """Merge data into hub_agents/extensions/gh_planner/github_local_config.json (#80).
+
+        Shallow merge: top-level keys from data overwrite existing values.
+        Atomic write. Use for storing repo-specific fields like default_branch, issue_templates.
+        """
+        return _do_save_github_local_config(data)
+
+
+    @mcp.tool()
+    def get_github_config(scope: str = "both") -> dict:
+        """Return GitHub config for scope: 'global', 'local', or 'both' (#80).
+
+        global: auth method, default_repo, rate-limit metadata.
+        local:  project-specific labels, templates, etc.
+        both:   merged view with both sections (default).
+
+        Load only what you need — global is ~20 tokens, local is ~50 tokens.
+        """
+        return _do_get_github_config(scope)
+
+
+    @mcp.tool()
+    def list_repo_labels() -> dict:
+        """Fetch all labels from the GitHub repo and cache them locally.
+
+        Call before draft_issue to know which labels are available.
+        Returns {labels, names, count}. Returns from cache if available."""
+        return _do_list_repo_labels()
+
+
+    @mcp.tool()
+    def make_label(name: str, color: str, description: str = "") -> dict:
+        """Create a GitHub label (idempotent — returns existing if already present).
+
+        Follow the conventional palette:
+          bug=#d73a4a, enhancement=#a2eeef, feature=#0075ca,
+          documentation=#0075ca, refactor=#e4e669, performance=#e4e669,
+          chore=#ededed, test=#bfd4f2, priority:high=#e11d48,
+          priority:low=#86efac, status:needs-triage=#fbbf24
+
+        color: hex color WITHOUT the # prefix (e.g. 'd73a4a')
+        """
+        return _do_make_label(name, color, description)

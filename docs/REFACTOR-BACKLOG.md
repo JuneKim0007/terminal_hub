@@ -12,20 +12,6 @@ closed by hand — re-run the survey after a stretch of work and let it find the
 
 ## Open
 
-### R19 · Tests · contract-shaped assertions
-```
-status   planned
-evidence 256 `assert "x" in y` key-presence assertions and 65 `_display`
-         assertions across the suite. These pin response *shape* rather than
-         behaviour, so they duplicate what the MCP schema already declares.
-remedy   judgement call per site — not a mechanical sweep
-expect   unknown; measure before acting
-blocked  none, but low value. The _display assertions in particular are the
-         only check that user-facing strings render, so they are not obviously
-         waste. Do not sweep this without a per-site read.
-first seen 2026-08-31
-```
-
 ### R9 · Data clumps · 5 groups x 3 sites
 ```
 dropped 2026-09-01 — the original survey counted a tool's wrapper and its
@@ -56,6 +42,46 @@ test_config.py is the same shape — 8 focused tests of config save/load and
 preferences, all lines touched elsewhere.
 The one genuine duplicate this line of enquiry ever found (R18a) was identified
 by reading test NAMES, not coverage. Use that method if the question returns.
+```
+
+### R19 · Tests · contract-shaped assertions
+```
+dropped 2026-09-01 — investigated on request; the premise does not survive
+measurement, and acting on it would delete assertions that are load-bearing.
+
+The finding claimed "256 key-presence assertions ... they duplicate what the MCP
+schema already declares". Both halves are wrong.
+
+1. The count conflated three different assertions. Of 533 `"x" in y` sites:
+     170  dict-key checks      (the intended target)
+     165  substring checks on a string  — real assertions
+      40  list-membership checks       — real assertions
+     158  unclassifiable statically
+   Examples the first classifier flagged as "weak": `'Fix login bug' in
+   result['content']` (substring), `'write_plugin_file' in tool_names`
+   (membership). Neither is a schema check.
+
+2. The MCP contract does NOT declare the response shape. Measured: all 91
+   registered tools report output_schema = None. FastMCP puts the input
+   signature and the docstring in the schema; the returned dict is not in it.
+   So `assert "_display" in result` is not duplicating a contract — it is the
+   only thing checking that key exists at all.
+
+Proved empirically rather than argued: renaming one tool's "_display" key
+fails 2 tests. The assertions catch the regression they exist for.
+
+Also checked and found clean:
+  - exact duplicate assertions within a single test: 0
+  - "tool is registered" tests: these guard a real silent-failure path —
+    load_plugin() catches exceptions and only appends to _PLUGIN_WARNINGS, so
+    a plugin that fails to load registers nothing and reports nothing.
+
+Of the 170 dict-key checks, 34 are paired with a value assertion and 141 are
+not. Strengthening those 141 is a large diff for an unmeasured gain, and the
+weakest of them still fails when the key disappears. Not scheduled.
+
+Lesson for the next survey, same as the note below: a `"x" in y` assert cannot
+be classified without knowing what y is. Count containers, not syntax.
 ```
 
 ---
